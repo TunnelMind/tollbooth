@@ -12,5 +12,8 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "bin": {
+    "tollbooth": "./dist/cli.js"
+  }
 }
