@@ -5,13 +5,7 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
-    "types": [
-      "node"
-    ]
+    "types": ["node"]
   },
-  "include": [
-    "packages/*/src",
-    "packages/*/test",
-    "vitest.config.ts"
-  ]
+  "include": ["packages/*/src", "packages/*/test", "vitest.config.ts"]
 }
