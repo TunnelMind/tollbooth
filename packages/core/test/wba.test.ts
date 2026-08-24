@@ -74,9 +74,9 @@ describe("RFC 9421 parsers", () => {
     );
     expect(p.label).toBe("sig2");
     expect(p.components).toEqual(["@authority", "signature-agent"]);
-    expect(p.params["created"]).toBe(1735689600);
-    expect(p.params["keyid"]).toBe("abc");
-    expect(p.params["tag"]).toBe("web-bot-auth");
+    expect(p.params.created).toBe(1735689600);
+    expect(p.params.keyid).toBe("abc");
+    expect(p.params.tag).toBe("web-bot-auth");
     expect(p.inner.startsWith('("@authority"')).toBe(true);
   });
 

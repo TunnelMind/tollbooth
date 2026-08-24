@@ -221,17 +221,12 @@ export async function verifyWebBotAuth(
   );
 
   const p = parsed.params;
-  const keyId = typeof p["keyid"] === "string" ? p["keyid"] : null;
+  const keyId = typeof p.keyid === "string" ? p.keyid : null;
   const base: Partial<WbaResult> = { keyId, directoryUrl, params: p };
 
-  if (
-    !push("tag", p["tag"] === "web-bot-auth", `tag=${p["tag"] ?? "(absent)"}`)
-  )
+  if (!push("tag", p.tag === "web-bot-auth", `tag=${p.tag ?? "(absent)"}`))
     return result("malformed", base);
-  if (
-    p["alg"] !== undefined &&
-    !push("alg", p["alg"] === "ed25519", `alg=${p["alg"]}`)
-  )
+  if (p.alg !== undefined && !push("alg", p.alg === "ed25519", `alg=${p.alg}`))
     return result("malformed", base);
   if (
     !push(
@@ -317,20 +312,20 @@ export async function verifyWebBotAuth(
   const nowS = options.nowS ?? Math.floor(Date.now() / 1000);
   const skewS = options.skewToleranceS ?? DEFAULT_SKEW_S;
   if (
-    typeof p["expires"] === "number" &&
+    typeof p.expires === "number" &&
     !push(
       "not_expired",
-      nowS <= p["expires"] + skewS,
-      `expires=${p["expires"]} now=${nowS}`,
+      nowS <= p.expires + skewS,
+      `expires=${p.expires} now=${nowS}`,
     )
   )
     return result("stale", base);
   if (
-    typeof p["created"] === "number" &&
+    typeof p.created === "number" &&
     !push(
       "created_sane",
-      p["created"] <= nowS + skewS,
-      `created=${p["created"]} now=${nowS}`,
+      p.created <= nowS + skewS,
+      `created=${p.created} now=${nowS}`,
     )
   )
     return result("stale", base);
