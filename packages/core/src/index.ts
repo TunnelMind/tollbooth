@@ -9,3 +9,11 @@ export {
   toBase64Url,
   verify,
 } from "./keys.js";
+export type {
+  FetchDirectory,
+  WbaInput,
+  WbaOptions,
+  WbaResult,
+  WbaState,
+} from "./wba.js";
+export { ed25519Thumbprint, verifyWebBotAuth } from "./wba.js";
