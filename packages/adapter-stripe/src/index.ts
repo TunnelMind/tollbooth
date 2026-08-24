@@ -13,7 +13,7 @@ import { mintVoucher, type TollboothConfig } from "@tollbooth/core";
 
 const encoder = new TextEncoder();
 
-function hexToBytes(hex: string): Uint8Array {
+function hexToBytes(hex: string): Uint8Array<ArrayBuffer> {
   if (hex.length % 2 !== 0 || /[^0-9a-f]/i.test(hex))
     throw new Error("bad hex");
   const out = new Uint8Array(hex.length / 2);
