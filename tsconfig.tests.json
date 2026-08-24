@@ -4,7 +4,14 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "noEmit": true
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
   },
-  "include": ["packages/*/src", "packages/*/test", "vitest.config.ts"]
+  "include": [
+    "packages/*/src",
+    "packages/*/test",
+    "vitest.config.ts"
+  ]
 }
