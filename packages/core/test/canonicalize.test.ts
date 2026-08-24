@@ -20,7 +20,9 @@ describe("RFC 8785 sec 3.2.3 - canonical form", () => {
   it("matches the RFC's worked example byte-for-byte", () => {
     const input = {
       numbers: [
-        333333333.33333329, 1e30, 4.5, 2e-3, 0.000000000000000000000000001,
+        // biome-ignore lint/correctness/noPrecisionLoss: RFC 8785 vector exercises this exact rounding
+        333333333.33333329,
+        1e30, 4.5, 2e-3, 0.000000000000000000000000001,
       ],
       string: `${EURO}$\u000f\nA'B"\\\\"/`,
       literals: [null, true, false],
@@ -67,7 +69,7 @@ describe("RFC 8785 Appendix B - number serialization", () => {
     ["7fefffffffffffff", "1.7976931348623157e+308"], // largest finite
     ["3ff0000000000000", "1"],
     ["400921fb54442d18", "3.141592653589793"],
-    ["4340000000000000", "9007199254740994"], // 2^53
+    ["4340000000000000", "9007199254740992"], // 2^53
     ["444b1ae4d6e2ef50", "1e+21"],
     ["3eb0c6f7a0b5ed8d", "0.000001"],
     ["3eb0c6f7a0b5ed8c", "9.999999999999997e-7"],
