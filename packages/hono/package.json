@@ -17,6 +17,7 @@
     "@tollbooth/core": "workspace:*"
   },
   "devDependencies": {
+    "@tollbooth/adapter-x402": "workspace:*",
     "hono": "^4.13.3"
   },
   "peerDependencies": {

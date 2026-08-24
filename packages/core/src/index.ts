@@ -11,6 +11,8 @@ export {
   toBase64Url,
   verify,
 } from "./keys.js";
+export type { OfferState } from "./ledger.js";
+export { OfferLedger } from "./ledger.js";
 export type {
   Decision,
   Identity,
@@ -18,6 +20,7 @@ export type {
   OfferOption,
   PipelineDeps,
   PipelineRequest,
+  VerifyPayment,
 } from "./pipeline.js";
 export { buildOfferBody, decide } from "./pipeline.js";
 export type {

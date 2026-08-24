@@ -1,9 +1,11 @@
 // Decision pipeline, plan §1. This module is pure policy: it decides, the
-// HTTP binding acts (and in observe mode records instead of acting). Steps
-// 4-7 (maze wiring, vouchers, x402 proofs, offer exhaustion) land with their
-// tasks; the ladder below already classifies for them.
+// HTTP binding acts (and in observe mode records instead of acting). The
+// only state it touches is the injected offer ledger (D-3). Steps 5 and 7
+// (vouchers, offer exhaustion) land with their tasks; the ladder below
+// already classifies for them.
 import type { TollboothConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
+import type { OfferLedger } from "./ledger.js";
 import { type FetchDirectory, verifyWebBotAuth } from "./wba.js";
 
 export interface PipelineRequest {
@@ -19,6 +21,8 @@ export interface PipelineRequest {
   signature?: string;
   signatureInput?: string;
   signatureAgent?: string;
+  /** X-PAYMENT header, verbatim, when the client is retrying with proof. */
+  payment?: string;
 }
 
 export type Identity =
@@ -46,15 +50,29 @@ export type OfferOption =
     };
 
 export type Decision =
-  | { action: "pass"; reason: "free-path" | "human"; identity: Identity | null }
+  | {
+      action: "pass";
+      reason: "free-path" | "human" | "paid";
+      identity: Identity | null;
+    }
   | { action: "offer"; identity: Identity; body: OfferBody }
   /** Spoof consequence — served by the maze once T-017 wires it. */
   | { action: "consequence"; reason: "spoof"; identity: Identity };
+
+/** Payment verification is injected: core never imports chain libraries (AC-2.3). */
+export type VerifyPayment = (
+  payment: string,
+) =>
+  | { ok: boolean; payer: string | null }
+  | Promise<{ ok: boolean; payer: string | null }>;
 
 export interface PipelineDeps {
   fetchDirectory: FetchDirectory;
   /** Epoch seconds — injectable for deterministic tests. */
   nowS?: number;
+  /** D-3 offer-state ledger; verified agent keys only. */
+  ledger?: OfferLedger;
+  verifyPayment?: VerifyPayment;
 }
 
 /** Entries ending in "/" match as prefixes; everything else matches exactly. */
@@ -164,8 +182,24 @@ export async function decide(
   if (identity.kind === "spoofer")
     return { action: "consequence", reason: "spoof", identity };
 
-  // Steps 5-7 (vouchers, x402 proofs, offer exhaustion) land with their tasks.
+  const nowMs = deps.nowS !== undefined ? deps.nowS * 1000 : Date.now();
 
-  // Step 8: the offer.
+  // Step 5 (vouchers) lands at T-014.
+
+  // Step 6: a valid payment proof passes (AC-2.2).
+  if (req.payment !== undefined && deps.verifyPayment) {
+    const paid = await deps.verifyPayment(req.payment);
+    if (paid.ok) {
+      if (identity.kind === "agent")
+        deps.ledger?.recordPaid(identity.agentKey, nowMs);
+      return { action: "pass", reason: "paid", identity };
+    }
+  }
+
+  // Step 7 (offer exhaustion -> maze) lands at T-017; the ledger already counts.
+
+  // Step 8: the offer. Only verified keys are ledgered (spec sec 8).
+  if (identity.kind === "agent")
+    deps.ledger?.recordOffer(identity.agentKey, nowMs, cfg.toll.window);
   return { action: "offer", identity, body: buildOfferBody(cfg) };
 }

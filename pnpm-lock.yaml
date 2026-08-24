@@ -56,6 +56,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@tollbooth/adapter-x402':
+        specifier: workspace:*
+        version: link:../adapter-x402
       hono:
         specifier: ^4.13.3
         version: 4.13.3

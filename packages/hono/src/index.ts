@@ -1,20 +1,40 @@
 // @tollbooth/hono: thin binding of core's decide() to Hono. One package
 // covers Node, Bun and Workers, so nothing here may import node builtins.
 // Observe mode computes the decision and records it but always passes;
-// toll mode acts on it.
+// toll mode acts.
 import {
   type Decision,
   decide,
   type FetchDirectory,
+  OfferLedger,
   type PipelineRequest,
   parseConfig,
   type TollboothConfig,
 } from "@tollbooth/core";
 import type { Context, MiddlewareHandler } from "hono";
 
+/**
+ * The x402 adapter is injected, never imported: operators who only use
+ * Stripe never pull chain libraries (D-7, AC-2.3). @tollbooth/adapter-x402
+ * satisfies this shape structurally.
+ */
+export interface X402Adapter {
+  buildOffer(
+    cfg: TollboothConfig,
+    resource: string,
+  ): { headers: Record<string, string> };
+  verifyProof(
+    xPayment: string,
+    cfg: TollboothConfig,
+    opts?: { nowS?: number },
+  ): { ok: boolean; payer: string | null; reason?: string };
+}
+
 export interface TollboothOptions {
   /** Parsed config, or TOML source (parsed with the same fail-hard rules). */
   config: TollboothConfig | string;
+  /** The x402 payment adapter (pass @tollbooth/adapter-x402's exports). */
+  x402?: X402Adapter;
   /** Override the built-in fetching (tests; custom caching). */
   fetchDirectory?: FetchDirectory;
   /** Injectable clock, epoch seconds. */
@@ -91,6 +111,9 @@ function requestFromContext(c: Context): PipelineRequest {
     ...(header("signature-agent") !== undefined
       ? { signatureAgent: header("signature-agent") as string }
       : {}),
+    ...(header("x-payment") !== undefined
+      ? { payment: header("x-payment") as string }
+      : {}),
   };
 }
 
@@ -152,22 +175,6 @@ function reportJson(stats: Stats, cfg: TollboothConfig) {
   };
 }
 
-function offerResponse(
-  c: Context,
-  decision: Decision & { action: "offer" },
-  cfg: TollboothConfig,
-) {
-  // x402 payment-required headers are the adapter's job (T-009, wired at
-  // T-010); this layer owns the machine-readable body and the Link header
-  // to the Stripe option (AC-2.1).
-  if (cfg.toll.stripe.enabled)
-    c.header(
-      "link",
-      `<${cfg.toll.stripe.payment_link}>; rel="payment"; title="stripe-voucher"`,
-    );
-  return c.json(decision.body, 402);
-}
-
 export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const cfg =
     typeof options.config === "string"
@@ -179,7 +186,29 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     freePathHits: 0,
     robotsUAs: new Set(),
   };
+  const ledger = new OfferLedger(cfg.limits.agent_ledger_max);
   const fetchDirectory = options.fetchDirectory ?? makeDirectoryFetcher();
+  const x402 = options.x402;
+
+  const offerResponse = (
+    c: Context,
+    decision: Decision & { action: "offer" },
+  ) => {
+    // The adapter owns the x402 payment-required headers (D-7); this layer
+    // owns the machine-readable body and the Link header to the Stripe
+    // option (AC-2.1).
+    if (x402 && cfg.toll.x402.enabled) {
+      const { headers } = x402.buildOffer(cfg, c.req.path);
+      for (const [name, value] of Object.entries(headers))
+        c.header(name, value);
+    }
+    if (cfg.toll.stripe.enabled)
+      c.header(
+        "link",
+        `<${cfg.toll.stripe.payment_link}>; rel="payment"; title="stripe-voucher"`,
+      );
+    return c.json(decision.body, 402);
+  };
 
   return async (c, next) => {
     if (c.req.path === REPORT_PATH && c.req.method === "GET") {
@@ -190,14 +219,22 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     }
 
     const req = requestFromContext(c);
+    const nowS = options.nowS?.();
     const decision = await decide(req, cfg, {
       fetchDirectory,
-      ...(options.nowS !== undefined ? { nowS: options.nowS() } : {}),
+      ledger,
+      ...(x402
+        ? {
+            verifyPayment: (p: string) =>
+              x402.verifyProof(p, cfg, nowS !== undefined ? { nowS } : {}),
+          }
+        : {}),
+      ...(nowS !== undefined ? { nowS } : {}),
     });
     record(stats, req, decision, cfg.limits.agent_ledger_max);
 
     if (cfg.mode === "observe" || decision.action === "pass") return next();
-    if (decision.action === "offer") return offerResponse(c, decision, cfg);
+    if (decision.action === "offer") return offerResponse(c, decision);
     // decision.action === "consequence": the maze lands at T-017; until then
     // the safe interim for a spoofer is the offer — never a block, never a
     // challenge (Constitution II).

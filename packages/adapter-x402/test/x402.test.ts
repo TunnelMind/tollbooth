@@ -1,87 +1,21 @@
 import { readFileSync } from "node:fs";
-import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { parseConfig } from "@tollbooth/core";
 import { describe, expect, it } from "vitest";
+import { buildOffer, usdToAtomic, verifyProof } from "../src/index.js";
 import {
-  authorizationHash,
-  buildOffer,
-  encodePayment,
-  type PaymentPayload,
-  type TransferAuthorization,
-  usdToAtomic,
-  verifyProof,
-} from "../src/index.js";
-
-const NOW = 1_800_000_000;
-const PAY_TO = "0x1111111111111111111111111111111111111111";
+  makeAuth,
+  NOW,
+  PAY_TO,
+  PAYER,
+  payment,
+  signAuth,
+} from "./fixtures/payment.js";
 
 const CFG = parseConfig(`
 mode = "toll"
 [toll.x402]
 pay_to = "${PAY_TO}"
 `);
-
-// Fixed test key -> deterministic payer address.
-const PRIV = hexToBytes(
-  "2e0834786285daccd064ca17f1654f67b4aef298acbb82cef9ec422fb4975622",
-);
-const PUB = secp256k1.getPublicKey(PRIV, false);
-const PAYER = `0x${bytesToHex(keccak_256(PUB.slice(1)).slice(-20))}`;
-
-function ethAddressOf(point: Uint8Array): string {
-  return `0x${bytesToHex(keccak_256(point.slice(1)).slice(-20))}`;
-}
-
-/** Sign like an Ethereum wallet: 64-byte compact + recovery byte 27/28. */
-function signAuth(
-  auth: TransferAuthorization,
-  network = "base-sepolia",
-): string {
-  const digest = authorizationHash(network, auth);
-  const rs = secp256k1.sign(digest, PRIV, { prehash: false });
-  for (const rec of [0, 1]) {
-    const candidate = secp256k1.Signature.fromBytes(
-      rs,
-      "compact",
-    ).addRecoveryBit(rec);
-    const recovered = ethAddressOf(
-      candidate.recoverPublicKey(digest).toBytes(false),
-    );
-    if (recovered === PAYER)
-      return `0x${bytesToHex(rs)}${(27 + rec).toString(16)}`;
-  }
-  throw new Error("no recovery bit matched");
-}
-
-function makeAuth(
-  overrides: Partial<TransferAuthorization> = {},
-): TransferAuthorization {
-  return {
-    from: PAYER,
-    to: PAY_TO,
-    value: "1000",
-    validAfter: "0",
-    validBefore: String(NOW + 600),
-    nonce: `0x${"11".repeat(32)}`,
-    ...overrides,
-  };
-}
-
-function payment(
-  auth: TransferAuthorization,
-  signature: string,
-  network = "base-sepolia",
-): string {
-  const payload: PaymentPayload = {
-    x402Version: 1,
-    scheme: "exact",
-    network,
-    payload: { signature, authorization: auth },
-  };
-  return encodePayment(payload);
-}
 
 describe("AC-2.1 - buildOffer emits payment-required headers from config", () => {
   it("names price (atomic), pay-to, network and asset", () => {
