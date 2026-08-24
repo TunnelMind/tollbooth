@@ -33,6 +33,11 @@ export interface X402Adapter {
   ): { ok: boolean; payer: string | null; reason?: string };
 }
 
+/** @tollbooth/maze's makeMazeHandler satisfies this structurally. */
+export type MazeHandler = (
+  path: string,
+) => Promise<{ status: number; body: string; headers: Record<string, string> }>;
+
 /** @tollbooth/adapter-stripe's makeStripeAdapter satisfies this structurally. */
 export interface StripeRoutes {
   handleWebhook(
@@ -53,6 +58,8 @@ export interface TollboothOptions {
   siteKeys?: SiteKeyPair;
   /** The x402 payment adapter (pass @tollbooth/adapter-x402's exports). */
   x402?: X402Adapter;
+  /** The maze handler; serves the prefix and receives consequence redirects. */
+  maze?: MazeHandler;
   /** The Stripe adapter; mounts the webhook and redemption routes. */
   stripe?: StripeRoutes;
   /** Override the built-in fetching (tests; custom caching). */
@@ -214,7 +221,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const ledger = new OfferLedger(cfg.limits.agent_ledger_max);
   const jtiCache = new JtiCache(cfg.limits.jti_lru_max);
   const fetchDirectory = options.fetchDirectory ?? makeDirectoryFetcher();
-  const { x402, stripe, siteKeys } = options;
+  const { x402, stripe, siteKeys, maze } = options;
 
   const offerResponse = (
     c: Context,
@@ -265,6 +272,18 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       });
     }
 
+    if (
+      maze &&
+      (c.req.path === cfg.maze.prefix ||
+        c.req.path.startsWith(`${cfg.maze.prefix}/`))
+    ) {
+      const page = await maze(c.req.path);
+      return new Response(page.body, {
+        status: page.status,
+        headers: page.headers,
+      });
+    }
+
     const req = requestFromContext(c);
     const nowS = options.nowS?.();
     // Spending deps only in toll mode: observe must never mutate voucher
@@ -306,9 +325,14 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         { v: 1 as const, error: `voucher ${decision.reason}` },
         decision.status,
       );
-    // decision.action === "consequence": the maze lands at T-017; until then
-    // the safe interim for a spoofer is the offer - never a block, never a
-    // challenge (Constitution II).
+    // decision.action === "consequence" (spoof or toll-ignored): redirect
+    // into the maze - decoys are never served at real content URLs (VI.18).
+    // Without a maze the safe fallback stays the 402 offer - never a block,
+    // never a challenge (Constitution II).
+    if (maze && cfg.maze.enabled) {
+      c.header("cache-control", "no-store");
+      return c.redirect(`${cfg.maze.prefix}/`, 302);
+    }
     return c.json({ v: 1 as const, error: "payment required" }, 402);
   };
 }

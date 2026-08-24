@@ -70,7 +70,11 @@ export type Decision =
       identity: Identity;
     }
   /** Spoof consequence — served by the maze once T-017 wires it. */
-  | { action: "consequence"; reason: "spoof"; identity: Identity };
+  | {
+      action: "consequence";
+      reason: "spoof" | "toll-ignored";
+      identity: Identity;
+    };
 
 /** Payment verification is injected: core never imports chain libraries (AC-2.3). */
 export type VerifyPayment = (
@@ -251,7 +255,22 @@ export async function decide(
     }
   }
 
-  // Step 7 (offer exhaustion -> maze) lands at T-017; the ledger already counts.
+  // Step 7: grace offers ignored within the window -> the consequence
+  // (AC-4.1). Only when a maze exists to serve it, and never for anonymous
+  // keys (spec sec 8). Payment at steps 5/6 runs first, so a mazed key that
+  // pays never reaches this line - and recordPaid cleared its window (AC-4.4).
+  if (
+    identity.kind === "agent" &&
+    cfg.maze.enabled &&
+    deps.ledger?.exhausted(
+      identity.agentKey,
+      nowMs,
+      cfg.toll.window,
+      cfg.toll.offer_grace,
+    )
+  ) {
+    return { action: "consequence", reason: "toll-ignored", identity };
+  }
 
   // Step 8: the offer. Only verified keys are ledgered (spec sec 8).
   if (identity.kind === "agent")

@@ -52,8 +52,31 @@ export class OfferLedger {
     return state;
   }
 
+  /**
+   * Payment redeems (AC-4.4): besides marking paid_ever, it clears the
+   * offer window, so a mazed key that pays starts with fresh grace - the
+   * exit is always open.
+   */
   recordPaid(key: string, nowMs: number): void {
-    this.touch(key, nowMs).paidEver = true;
+    const state = this.touch(key, nowMs);
+    state.paidEver = true;
+    state.offersInWindow = 0;
+    state.windowStart = nowMs;
+  }
+
+  /** AC-4.1: >= grace offers inside the still-open window. Never mutates. */
+  exhausted(
+    key: string,
+    nowMs: number,
+    windowMs: number,
+    grace: number,
+  ): boolean {
+    const state = this.map.get(key);
+    return (
+      state !== undefined &&
+      nowMs - state.windowStart <= windowMs &&
+      state.offersInWindow >= grace
+    );
   }
 
   /** Peek without refreshing recency. */

@@ -66,6 +66,12 @@ importers:
       '@tollbooth/adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
+      '@tollbooth/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@tollbooth/maze':
+        specifier: workspace:*
+        version: link:../maze
       hono:
         specifier: ^4.13.3
         version: 4.13.3

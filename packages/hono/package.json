@@ -19,6 +19,8 @@
   "devDependencies": {
     "@tollbooth/adapter-stripe": "workspace:*",
     "@tollbooth/adapter-x402": "workspace:*",
+    "@tollbooth/cli": "workspace:*",
+    "@tollbooth/maze": "workspace:*",
     "hono": "^4.13.3"
   },
   "peerDependencies": {
