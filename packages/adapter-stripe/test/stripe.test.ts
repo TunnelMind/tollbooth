@@ -7,6 +7,11 @@ import {
 } from "@tollbooth/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeStripeAdapter, verifyStripeSignature } from "../src/index.js";
+import {
+  checkoutEvent,
+  extractVoucher,
+  stripeSign,
+} from "./fixtures/webhook.js";
 
 const NOW = 1_800_000_000;
 const SECRET = "whsec_test_secret";
@@ -21,54 +26,6 @@ enabled = true
 payment_link = "https://buy.stripe.com/test_123"
 webhook_secret = "${SECRET}"
 `);
-
-const encoder = new TextEncoder();
-
-async function stripeSign(
-  payload: string,
-  secret: string,
-  t: number,
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = new Uint8Array(
-    await crypto.subtle.sign("HMAC", key, encoder.encode(`${t}.${payload}`)),
-  );
-  const hex = [...mac].map((b) => b.toString(16).padStart(2, "0")).join("");
-  return `t=${t},v1=${hex}`;
-}
-
-function checkoutEvent(sessionId: string, agentPubkey: string | null): string {
-  return JSON.stringify({
-    type: "checkout.session.completed",
-    data: {
-      object: {
-        id: sessionId,
-        custom_fields:
-          agentPubkey === null
-            ? []
-            : [
-                {
-                  key: "agent_pubkey",
-                  type: "text",
-                  text: { value: agentPubkey },
-                },
-              ],
-      },
-    },
-  });
-}
-
-function extractVoucher(page: string): string {
-  const match = /<code id="voucher">([^<]+)<\/code>/.exec(page);
-  if (!match?.[1]) throw new Error("no voucher in page");
-  return match[1];
-}
 
 describe("stripe webhook signature verification", () => {
   it("accepts a valid v1 signature within tolerance", async () => {

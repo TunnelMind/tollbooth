@@ -1,14 +1,17 @@
 // @tollbooth/hono: thin binding of core's decide() to Hono. One package
 // covers Node, Bun and Workers, so nothing here may import node builtins.
-// Observe mode computes the decision and records it but always passes;
-// toll mode acts.
+// Observe mode computes the decision and records it but always passes -
+// and gets no spending deps, so it can never mutate voucher state.
 import {
   type Decision,
   decide,
   type FetchDirectory,
+  JtiCache,
   OfferLedger,
+  type PipelineDeps,
   type PipelineRequest,
   parseConfig,
+  type SiteKeyPair,
   type TollboothConfig,
 } from "@tollbooth/core";
 import type { Context, MiddlewareHandler } from "hono";
@@ -30,11 +33,28 @@ export interface X402Adapter {
   ): { ok: boolean; payer: string | null; reason?: string };
 }
 
+/** @tollbooth/adapter-stripe's makeStripeAdapter satisfies this structurally. */
+export interface StripeRoutes {
+  handleWebhook(
+    rawBody: string,
+    stripeSignature: string | undefined,
+  ): Promise<{ status: number; body: string }>;
+  redeem(sessionId: string): {
+    status: number;
+    body: string;
+    contentType: "text/html";
+  };
+}
+
 export interface TollboothOptions {
   /** Parsed config, or TOML source (parsed with the same fail-hard rules). */
   config: TollboothConfig | string;
+  /** Site keypair for voucher verify/re-sign (load via @tollbooth/core/node). */
+  siteKeys?: SiteKeyPair;
   /** The x402 payment adapter (pass @tollbooth/adapter-x402's exports). */
   x402?: X402Adapter;
+  /** The Stripe adapter; mounts the webhook and redemption routes. */
+  stripe?: StripeRoutes;
   /** Override the built-in fetching (tests; custom caching). */
   fetchDirectory?: FetchDirectory;
   /** Injectable clock, epoch seconds. */
@@ -42,6 +62,8 @@ export interface TollboothOptions {
 }
 
 const REPORT_PATH = "/_tollbooth/report";
+const WEBHOOK_PATH = "/_tollbooth/stripe-webhook";
+const VOUCHER_PATH_PREFIX = "/_tollbooth/voucher/";
 
 interface AgentStat {
   kind: "agent" | "anonymous-agent" | "spoofer";
@@ -113,6 +135,9 @@ function requestFromContext(c: Context): PipelineRequest {
       : {}),
     ...(header("x-payment") !== undefined
       ? { payment: header("x-payment") as string }
+      : {}),
+    ...(header("tollbooth-voucher") !== undefined
+      ? { voucher: header("tollbooth-voucher") as string }
       : {}),
   };
 }
@@ -187,8 +212,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     robotsUAs: new Set(),
   };
   const ledger = new OfferLedger(cfg.limits.agent_ledger_max);
+  const jtiCache = new JtiCache(cfg.limits.jti_lru_max);
   const fetchDirectory = options.fetchDirectory ?? makeDirectoryFetcher();
-  const x402 = options.x402;
+  const { x402, stripe, siteKeys } = options;
 
   const offerResponse = (
     c: Context,
@@ -217,26 +243,71 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         return c.text("Unauthorized", 401);
       return c.json(reportJson(stats, cfg));
     }
+    if (stripe && c.req.path === WEBHOOK_PATH && c.req.method === "POST") {
+      const result = await stripe.handleWebhook(
+        await c.req.text(),
+        c.req.header("stripe-signature"),
+      );
+      return new Response(result.body, {
+        status: result.status,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (
+      stripe &&
+      c.req.method === "GET" &&
+      c.req.path.startsWith(VOUCHER_PATH_PREFIX)
+    ) {
+      const page = stripe.redeem(c.req.path.slice(VOUCHER_PATH_PREFIX.length));
+      return new Response(page.body, {
+        status: page.status,
+        headers: { "content-type": page.contentType },
+      });
+    }
 
     const req = requestFromContext(c);
     const nowS = options.nowS?.();
+    // Spending deps only in toll mode: observe must never mutate voucher
+    // state or burn replay counts.
+    const spendDeps: Partial<PipelineDeps> =
+      cfg.mode === "toll"
+        ? {
+            ledger,
+            jtiCache,
+            ...(siteKeys ? { siteKeys } : {}),
+            ...(x402
+              ? {
+                  verifyPayment: (p: string) =>
+                    x402.verifyProof(
+                      p,
+                      cfg,
+                      nowS !== undefined ? { nowS } : {},
+                    ),
+                }
+              : {}),
+          }
+        : {};
     const decision = await decide(req, cfg, {
       fetchDirectory,
-      ledger,
-      ...(x402
-        ? {
-            verifyPayment: (p: string) =>
-              x402.verifyProof(p, cfg, nowS !== undefined ? { nowS } : {}),
-          }
-        : {}),
+      ...spendDeps,
       ...(nowS !== undefined ? { nowS } : {}),
     });
     record(stats, req, decision, cfg.limits.agent_ledger_max);
 
-    if (cfg.mode === "observe" || decision.action === "pass") return next();
+    if (cfg.mode === "observe") return next();
+    if (decision.action === "pass") {
+      if (decision.voucher !== undefined)
+        c.header("tollbooth-voucher", decision.voucher);
+      return next();
+    }
     if (decision.action === "offer") return offerResponse(c, decision);
+    if (decision.action === "reject")
+      return c.json(
+        { v: 1 as const, error: `voucher ${decision.reason}` },
+        decision.status,
+      );
     // decision.action === "consequence": the maze lands at T-017; until then
-    // the safe interim for a spoofer is the offer — never a block, never a
+    // the safe interim for a spoofer is the offer - never a block, never a
     // challenge (Constitution II).
     return c.json({ v: 1 as const, error: "payment required" }, 402);
   };

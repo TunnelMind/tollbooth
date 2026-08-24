@@ -1,11 +1,13 @@
 // Decision pipeline, plan §1. This module is pure policy: it decides, the
 // HTTP binding acts (and in observe mode records instead of acting). The
-// only state it touches is the injected offer ledger (D-3). Steps 5 and 7
-// (vouchers, offer exhaustion) land with their tasks; the ladder below
-// already classifies for them.
+// only state it touches is injected: the offer ledger (D-3) and the jti
+// replay cache (AC-3.3). Step 7 (offer exhaustion) lands with T-017; the
+// ladder below already classifies for it.
 import type { TollboothConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
+import type { JtiCache } from "./jti.js";
 import type { OfferLedger } from "./ledger.js";
+import { decodeVoucher, type SiteKeyPair, spendVoucher } from "./voucher.js";
 import { type FetchDirectory, verifyWebBotAuth } from "./wba.js";
 
 export interface PipelineRequest {
@@ -23,6 +25,8 @@ export interface PipelineRequest {
   signatureAgent?: string;
   /** X-PAYMENT header, verbatim, when the client is retrying with proof. */
   payment?: string;
+  /** Tollbooth-Voucher header, verbatim. */
+  voucher?: string;
 }
 
 export type Identity =
@@ -52,10 +56,19 @@ export type OfferOption =
 export type Decision =
   | {
       action: "pass";
-      reason: "free-path" | "human" | "paid";
+      reason: "free-path" | "human" | "paid" | "voucher";
       identity: Identity | null;
+      /** The re-signed successor voucher to set on the response (AC-3.2). */
+      voucher?: string;
     }
   | { action: "offer"; identity: Identity; body: OfferBody }
+  /** Voucher proof-of-possession failed (AC-3.4) — a rejection, not a consequence. */
+  | {
+      action: "reject";
+      status: 403;
+      reason: "mismatch" | "bearer-disabled";
+      identity: Identity;
+    }
   /** Spoof consequence — served by the maze once T-017 wires it. */
   | { action: "consequence"; reason: "spoof"; identity: Identity };
 
@@ -73,6 +86,10 @@ export interface PipelineDeps {
   /** D-3 offer-state ledger; verified agent keys only. */
   ledger?: OfferLedger;
   verifyPayment?: VerifyPayment;
+  /** Site keypair for voucher verify/re-sign (step 5 is skipped without it). */
+  siteKeys?: SiteKeyPair;
+  /** AC-3.3 replay damper. */
+  jtiCache?: JtiCache;
 }
 
 /** Entries ending in "/" match as prefixes; everything else matches exactly. */
@@ -182,9 +199,47 @@ export async function decide(
   if (identity.kind === "spoofer")
     return { action: "consequence", reason: "spoof", identity };
 
-  const nowMs = deps.nowS !== undefined ? deps.nowS * 1000 : Date.now();
+  const nowS = deps.nowS ?? Math.floor(Date.now() / 1000);
+  const nowMs = nowS * 1000;
 
-  // Step 5 (vouchers) lands at T-014.
+  // Step 5: voucher spending (AC-3.2/3.3/3.4). Damped replay and unusable
+  // vouchers fall through to the offer; only a failed proof-of-possession is
+  // a rejection.
+  if (req.voucher !== undefined && deps.siteKeys) {
+    let withinWindow = true;
+    if (deps.jtiCache) {
+      try {
+        withinWindow = deps.jtiCache.allow(
+          decodeVoucher(req.voucher).jti,
+          cfg.limits.replay_window,
+        );
+      } catch {
+        // undecodable: let spendVoucher classify it below
+      }
+    }
+    if (withinWindow) {
+      const spend = await spendVoucher(
+        req.voucher,
+        deps.siteKeys,
+        identity.kind === "agent" ? identity.agentKey : null,
+        { nowS, allowBearer: cfg.toll.stripe.bearer },
+      );
+      if (spend.state === "spent") {
+        if (identity.kind === "agent")
+          deps.ledger?.recordPaid(identity.agentKey, nowMs);
+        return {
+          action: "pass",
+          reason: "voucher",
+          identity,
+          voucher: spend.next,
+        };
+      }
+      if (spend.state === "mismatch" || spend.state === "bearer-disabled") {
+        return { action: "reject", status: 403, reason: spend.state, identity };
+      }
+      // expired / exhausted / bad-signature / malformed: fall through
+    }
+  }
 
   // Step 6: a valid payment proof passes (AC-2.2).
   if (req.payment !== undefined && deps.verifyPayment) {

@@ -60,6 +60,9 @@ importers:
         specifier: workspace:*
         version: link:../core
     devDependencies:
+      '@tollbooth/adapter-stripe':
+        specifier: workspace:*
+        version: link:../adapter-stripe
       '@tollbooth/adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
