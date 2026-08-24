@@ -1,6 +1,8 @@
 export { canonicalize } from "./canonicalize.js";
 export type { TollboothConfig } from "./config.js";
 export { ConfigError, parseConfig } from "./config.js";
+export type { HeuristicResult, HeuristicSignals } from "./heuristics.js";
+export { agentHeuristics } from "./heuristics.js";
 export {
   fromBase64Url,
   generateSecretKey,
