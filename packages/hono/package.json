@@ -12,5 +12,14 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "dependencies": {
+    "@tollbooth/core": "workspace:*"
+  },
+  "devDependencies": {
+    "hono": "^4.13.3"
+  },
+  "peerDependencies": {
+    "hono": "^4.13.3"
+  }
 }
