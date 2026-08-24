@@ -17,5 +17,9 @@
   ],
   "scripts": {
     "build": "tsc -b"
+  },
+  "dependencies": {
+    "smol-toml": "^1.8.0",
+    "zod": "^4.4.3"
   }
 }
