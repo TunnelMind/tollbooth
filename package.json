@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.5.1",
   "scripts": {
     "build": "tsc -b",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -b && tsc -p tsconfig.tests.json",
     "test": "vitest run",
     "lint": "biome check ."
   },
