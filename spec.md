@@ -19,7 +19,7 @@ A self-hosted middleware package that lets any site owner replace "block all bot
 
 ### US-1 · Operator installs in observe mode (default)
 As an operator, I install the middleware with a 5-line config and see who's knocking before charging anyone.
-- **AC-1.1** Given a fresh install with `mode = "observe"`, when any traffic arrives, then all requests pass unmodified and an in-memory summary (per agent key: request count, paths sampled, robots compliance, would-have-paid estimate) is available at a local, operator-authenticated endpoint `GET /_tollbooth/report`.
+- **AC-1.1** Given a fresh install with `mode = "observe"`, when any traffic arrives, then all requests pass unmodified and an in-memory summary (per agent key: request count, paths sampled, robots compliance, would-have-paid estimate) is available at a local, operator-authenticated endpoint `GET /_tollbooth/report` — authenticated by the `report_token` config key presented as `Authorization: Bearer`; the endpoint returns 404 until `report_token` is set.
 - **AC-1.2** Given no `site_key` in config, when the app starts, then a keypair is generated, written to the configured path with mode 0600, and the public key is printed once.
 - **AC-1.3** Given an invalid config value, when the app starts, then startup fails with the offending key named. No partial start.
 
@@ -30,13 +30,13 @@ As an operator, I install the middleware with a 5-line config and see who's knoc
 
 ### US-3 · Agent operator prepays via Stripe, crawler spends a voucher
 - **AC-3.1** Given the operator configured `stripe.payment_link` + webhook secret, when Stripe fires `checkout.session.completed` at the package-mounted webhook route, then a voucher is minted: `{ agent_key, credits, expires, jti, site_sig }` — key-bound to the agent public key the buyer supplied in the checkout's custom field — and delivered per §5.3.
-- **AC-3.2** Given a request with header `Tollbooth-Voucher` whose signature verifies, whose `expires` is future, whose `agent_key` matches the request's verified Web Bot Auth key, and whose `credits > 0`, then the request passes and the response carries `Tollbooth-Voucher` re-signed with `credits - 1`.
-- **AC-3.3** Given a voucher `jti` seen more than `replay_window` times in the in-memory LRU, then further spends of that jti get `402` (soft double-spend damping; Article V.14 applies).
+- **AC-3.2** Given a request with header `Tollbooth-Voucher` whose signature verifies, whose `expires` is future, whose `agent_key` matches the request's verified Web Bot Auth key, and whose `credits > 0`, then the request passes and the response carries `Tollbooth-Voucher` re-signed with `credits - 1` **and a fresh `jti`** (jti rotates on every re-sign; D-1).
+- **AC-3.3** Given a voucher `jti` seen more than `replay_window` times in the in-memory LRU, then further spends of that jti get `402` (soft double-spend damping; Article V.14 applies). Because jti rotates per re-sign, this damps parallel replay of one signed state without ever limiting sequential spending of a legitimate voucher.
 - **AC-3.4** A voucher presented by a *different* verified agent key MUST be rejected `403`, and a `VOUCHER_MISMATCH` receipt emitted.
 
 ### US-4 · Freeloader meets the maze
 - **AC-4.1** Given an agent key that received ≥ `offer_grace` distinct 402 offers within `window` and continued requesting content paths unpaid, when its next request arrives, then it is routed to the maze prefix and a `TOLL_IGNORED` receipt is emitted.
-- **AC-4.2** Given a request whose claimed Web Bot Auth signature fails verification, then route to maze immediately and emit `SPOOF` receipt. (Offer step skipped per Constitution II.5 spoofing clause.)
+- **AC-4.2** Given a request whose claimed Web Bot Auth signature fails verification *cryptographically*, then route to maze immediately and emit a `SPOOF` receipt carrying `claimed_key`, never `agent_key` (Constitution III.9). (Offer step skipped per Constitution II.5 spoofing clause.) A well-formed signature failing only on temporal grounds (expiry / clock skew) is treated as anonymous per Constitution IV.13 — offer-eligible, never spoof-mazed.
 - **AC-4.3** Maze responses: static pages from the pre-generated corpus, interlinked ≥ depth 20, `X-Robots-Tag: noindex, nofollow`, throttled to `maze_delay_ms`, ≤ `maze_page_bytes` each. Serving cost per maze request MUST be O(file read).
 - **AC-4.4** A mazed key that later pays MUST be un-mazed on next valid payment (redemption path — the exit is always open).
 
@@ -53,7 +53,8 @@ As an operator, I install the middleware with a 5-line config and see who's knoc
   "v": 1,
   "type": "TOLL_IGNORED | SPOOF | PASS_PAID | VOUCHER_MISMATCH",
   "site": "<site ed25519 pub, base64url>",
-  "agent_key": "<agent pub | null>",
+  "agent_key": "<VERIFIED agent pub | null — always null on SPOOF>",
+  "claimed_key": "<unverified claimed pub | null — SPOOF only, explicitly unverified>",
   "ua": "<user-agent string>",
   "path_class": "<first path segment only>",
   "count": 17,
@@ -79,7 +80,7 @@ Note `path_class`, not full paths, and no bodies — Constitution III.9.
 - **FR-6** Serve static maze under one prefix with hygiene headers and throttle.
 - **FR-7** Emit signed, canonicalized conduct receipts; optional batched reporting.
 - **FR-8** Observe-mode report endpoint.
-- **FR-9** CLI: `keygen`, `verify`, `corpus` (maze generation), `voucher inspect`.
+- **FR-9** CLI: `keygen`, `verify`, `corpus` (maze generation), `voucher inspect`, `voucher mint` (operator re-mint for expired-unredeemed purchases; §5.3).
 - **FR-10** Config: TOML, zod-validated, documented defaults for every key.
 
 ## 5. Non-functional requirements
@@ -87,7 +88,7 @@ Note `path_class`, not full paths, and no bodies — Constitution III.9.
 - **NFR-1 Overhead**: pass-path added latency ≤ 1 ms p50 / ≤ 5 ms p99 on the benchmark script (no network calls on the hot path except x402 proof verification, which is the agent's cost to bear via retry).
 - **NFR-2 Memory**: bounded — all maps LRU-capped; defaults sized for a 512 MB VPS.
 - **NFR-3 Footprint**: core + hono middleware install ≤ 5 MB node_modules added (excluding adapters).
-- **5.3 Voucher delivery**: webhook response page shows the voucher once + Stripe receipt email contains it; no storage (Stripe is the record of purchase).
+- **5.3 Voucher delivery**: the webhook (server-to-server; its response reaches Stripe, not the buyer) mints the voucher into a short-lived in-memory map keyed by Checkout session id (TTL from `redeem_ttl`, default 15 m, LRU-capped — Article I.2 compliant). The Payment Link's success URL points at the package-mounted redemption route `GET /_tollbooth/voucher/{CHECKOUT_SESSION_ID}`, which renders the voucher exactly once and deletes the entry. Expired unredeemed: the page tells the buyer to contact the operator, who re-mints via `cli voucher mint` — Stripe is the record of purchase; no customer table.
 
 ## 6. Explicitly out of scope for v1
 
@@ -96,3 +97,13 @@ Dashboards/UI beyond the report JSON · WordPress plugin (wrap later) · nginx/C
 ## 7. Success criteria for v1.0 release
 
 All ACs green in CI · a stranger can go from `npm install` to observing traffic in ≤ 10 minutes using only the README · `tollbooth verify` validates a receipt on an air-gapped machine · benchmark script output published in README.
+
+## 8. Honest limits (by design, not oversight)
+
+These are consequences of the constitution's own choices. The README's honest-limits section (T-023) MUST state each one; none is a bug to fix.
+
+- **Soft enforcement** (Article V.14): parallel replay of a voucher can over-spend within its lifetime, bounded by expiry × instance count. LRU eviction is amnesty. No database will be added to change this.
+- **Stealth agents pass free.** An agent running full-browser automation with human-shaped headers is indistinguishable from a human and passes untolled. This is the unavoidable price of fail-open (Article II.6): any mechanism that could catch it would sooner or later toll a person.
+- **Non-browser humans see 402s.** A human driving curl or a script matches the agent heuristics (D-4c) and receives payment offers in toll mode. They are never mazed, and `free_paths` always pass.
+- **Key-less freeloaders cannot be mazed.** The offer ledger (D-3) is keyed by verified agent key; anonymous traffic has none, so it receives offers indefinitely and consequence never escalates. Tolling it would require fingerprinting or IP reputation, which this package refuses to do.
+- **`ua` is free text.** It is the one unconstrained field in the receipt schema and may carry whatever the agent embeds in it, including PII. Every other field is enumerated, derived, or a key.
