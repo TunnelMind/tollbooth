@@ -55,7 +55,7 @@ export function makeMazeHandler(deps: {
     deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const prefix = cfg.maze.prefix;
 
-  return async (path) => {
+  return async (path): Promise<MazeResponse> => {
     if (path !== prefix && !path.startsWith(`${prefix}/`))
       return { status: 404, body: "", headers: {} };
 
