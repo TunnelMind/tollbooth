@@ -4,8 +4,6 @@
   "description": "Static decoy-maze corpus loader and handler. Pre-generated content only, never inference.",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,8 +12,5 @@
   },
   "files": [
     "dist"
-  ],
-  "scripts": {
-    "build": "tsc -b"
-  }
+  ]
 }

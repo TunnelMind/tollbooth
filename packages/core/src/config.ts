@@ -33,9 +33,7 @@ function duration(defaultValue: string) {
     .prefault(defaultValue);
 }
 
-const absolutePath = z.string().refine((s) => s.startsWith("/"), {
-  message: `must start with "/"`,
-});
+const absolutePath = z.string().startsWith("/");
 
 const x402Schema = z
   .strictObject({
@@ -94,9 +92,7 @@ const configSchema = z.strictObject({
   report: z.boolean().prefault(false),
   report_url: z
     .string()
-    .refine((s) => /^https?:\/\//.test(s), {
-      message: "must be an http(s) URL",
-    })
+    .regex(/^https?:\/\//, "must be an http(s) URL")
     .optional(),
   report_token: z.string().prefault(""),
   wba_skew_tolerance: duration("300s"),

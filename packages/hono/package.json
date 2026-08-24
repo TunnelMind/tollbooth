@@ -4,8 +4,6 @@
   "description": "Hono middleware binding of @tollbooth/core — one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,8 +12,5 @@
   },
   "files": [
     "dist"
-  ],
-  "scripts": {
-    "build": "tsc -b"
-  }
+  ]
 }
