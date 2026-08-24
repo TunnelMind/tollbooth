@@ -12,28 +12,28 @@ Format: `T-nnn (deps) — task → done-when`. Sized for one Claude Code session
 - **T-005** (T-004) — `core`: WBA verifier, RFC 9421 ed25519 subset (port from P71) → valid/invalid/tampered fixtures pass.
 - **T-006** (T-002) — `core`: heuristics module + UA fixtures file → D-4 ladder unit tests, human fixtures all pass-through.
 - **T-007** (T-005,T-006) — `core`: decision pipeline steps 1–3,8 (free_paths, identify, human pass, 402 offer w/ JSON body) → US-5 ACs + AC-2.1 (offer shape only).
-- **T-008** (T-007) — `hono`: middleware binding + observe mode + `/_tollbooth/report` → AC-1.1 integration test.
+- **T-008** (T-007) — `hono`: middleware binding + observe mode + `/_tollbooth/report` (bearer `report_token`; 404 until set) → AC-1.1 integration test incl. unauthenticated 404.
 - **T-009** (T-007) — `adapter-x402`: buildOffer + verifyProof, testnet fixture proofs → AC-2.1, AC-2.2, AC-2.3.
 - **T-010** (T-008,T-009) — offer-state LRU (D-3) + toll mode wiring → an agent with valid payment passes; unpaid gets 402s. *Milestone: usable x402 tollbooth.*
 
 ## Phase 2 — Vouchers · Stripe
-- **T-011** (T-004) — `core`: voucher mint/verify/decrement/resign, key-bound + bearer flag → AC-3.2, AC-3.4, property test (credits never increase).
+- **T-011** (T-004) — `core`: voucher mint/verify/decrement/resign (fresh jti each re-sign, D-1), key-bound + bearer flag → AC-3.2, AC-3.4, property tests (credits never increase; jti unique across a resign chain).
 - **T-012** (T-011) — jti LRU damping → AC-3.3.
-- **T-013** (T-011) — `adapter-stripe`: webhook route (sig verify, custom-field agent_pubkey, mint, render-once) → AC-3.1 with mocked Stripe events.
+- **T-013** (T-011) — `adapter-stripe`: webhook route (sig verify, custom-field agent_pubkey, mint into TTL'd session map) + `GET /_tollbooth/voucher/{CHECKOUT_SESSION_ID}` render-once redemption (D-8) → AC-3.1 with mocked Stripe events; second redemption attempt 404s.
 - **T-014** (T-010,T-012,T-013) — pipeline step 5 wiring + `Link` header on 402 → full US-3 integration test.
 
 ## Phase 3 — Maze · Receipts · Verify
 - **T-015** (T-002) — `cli corpus`: seeded deterministic generator per D-5 → same seed ⇒ same corpus hash; 2k pages ≤ 7 MB.
 - **T-016** (T-015) — `maze`: handler w/ prefix, X-Robots-Tag, delay, size cap, robots.txt fragment output → AC-4.3.
 - **T-017** (T-010,T-016) — consequence wiring: offers-exhausted → maze; spoof → maze; redemption on payment → AC-4.1, AC-4.2, AC-4.4.
-- **T-018** (T-003,T-004) — `core`: receipt build/sign per AC-6.2 (path_class only, no bodies) → schema + signature tests; grep test asserts no body capture in receipt path.
+- **T-018** (T-003,T-004) — `core`: receipt build/sign per AC-6.2 (path_class only, no bodies; SPOOF → claimed_key, agent_key null) → schema + signature tests; sentinel test: request whose body contains a known marker ⇒ marker appears in no emitted receipt.
 - **T-019** (T-018) — batched reporter (bounded, drop-oldest, non-blocking) → AC-6.3; queue-full drops counted.
 - **T-020** (T-018) — `cli verify` offline → AC-6.1 test runs with network disabled.
 
 ## Phase 4 — Ship
 - **T-021** (T-014,T-017) — examples: express-node, bun-hono, cloudflare-worker, agent-client.ts (≤ 80 lines) → each runs against local instance in CI; AC-7.1, AC-7.2.
 - **T-022** (all) — `bench/bench.ts` → NFR-1 met or hot path fixed; table auto-inserted into README.
-- **T-023** (T-022) — README: 10-minute quickstart (observe → toll), honest-limits section (soft enforcement, amnesty-on-eviction, per-instance state), receipt verification walkthrough → a cold reader test: hand it to someone, time them.
+- **T-023** (T-022) — README: 10-minute quickstart (observe → toll), honest-limits section covering every bullet of spec §8, receipt verification walkthrough → a cold reader test: hand it to someone, time them.
 - **T-024** (T-023) — constitution compliance sweep: checklist review of every article against the code; license headers; `npm publish --dry-run` clean → v1.0.0 tag.
 
 ## Post-v1 backlog (do not start)

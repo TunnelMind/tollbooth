@@ -57,13 +57,13 @@ Runtime dep count check (core): noble ed25519, noble hashes, smol-toml, zod = 4.
 
 ## 4. Key design decisions (pre-made; deviations need an ADR)
 
-**D-1 Voucher format** — `Tollbooth-Voucher: <b64url payload>.<b64url sig>`; payload `{v, agent_key, credits, expires, jti, iat}`; signed by site key; verified and re-signed with `credits-1` on each pass. Spend requires the request's WBA signature to verify against `agent_key` (proof-of-possession). Bearer mode replaces that check with nothing — flag-gated.
+**D-1 Voucher format** — `Tollbooth-Voucher: <b64url payload>.<b64url sig>`; payload `{v, agent_key, credits, expires, jti, iat}`; signed by site key; verified and re-signed with `credits-1` **and a freshly generated `jti`** on each pass — each signed voucher state has a unique jti, so the jti LRU (D-2) damps replay of one *state* while sequential spending is unlimited. Spend requires the request's WBA signature to verify against `agent_key` (proof-of-possession). Bearer mode replaces that check with nothing — flag-gated.
 
 **D-2 Double-spend stance** — jti LRU with `replay_window` tolerance per instance. Multi-instance operators share nothing; docs state the honest consequence (soft over-spend bounded by expiry × instances). No shared store. Ever. (Article I, V.)
 
 **D-3 Offer-state ledger** — LRU map agent_key → {offers_sent, first_seen, last_seen, paid_ever}. Bounded (default 50k keys). Eviction = amnesty. Amnesty is acceptable; a database is not.
 
-**D-4 Identification ladder** — (a) valid WBA sig → identified agent. (b) invalid sig where one was presented → spoofer. (c) no sig + heuristics (UA contains bot/crawler/spider token list, or known agent-UA prefixes, or `Accept` lacks text/html with no cookies AND no `Sec-Fetch-Site`) → anonymous agent: gets offers, never maze (II.5, II.6). (d) none of the above → human, pass. Heuristic list is data (`core/src/heuristics.ts`), unit-tested against a fixtures file of real UA strings.
+**D-4 Identification ladder** — (a) valid WBA sig → identified agent. (b) sig presented but *cryptographically* invalid → spoofer; sig valid but temporally stale (expiry / `created` beyond skew tolerance, default ±300 s) → fall through to (c), never spoofer (Constitution IV.13). (c) no sig + heuristics (UA contains bot/crawler/spider token list, or known agent-UA prefixes, or `Accept` lacks text/html with no cookies AND no `Sec-Fetch-Site`) → anonymous agent: gets offers, never maze (II.5, II.6). (d) none of the above → human, pass. Heuristic list is data (`core/src/heuristics.ts`), unit-tested against a fixtures file of real UA strings.
 
 **D-5 Maze corpus** — generated at build/CLI-time: templated pseudo-articles from a wordlist grammar, deterministic from a seed, internal links only within prefix, sitemap-free. Default 2,000 pages ≈ 6 MB. Served via streamed file reads with `maze_delay_ms` (default 800) via timer, not busy-wait.
 
@@ -71,7 +71,7 @@ Runtime dep count check (core): noble ed25519, noble hashes, smol-toml, zod = 4.
 
 **D-7 x402 adapter boundary** — adapter exposes `buildOffer(cfg) → headers/body` and `verifyProof(req, cfg) → {ok, payer}`. Chain specifics stay inside; testnet defaults in examples (Constitution V.15).
 
-**D-8 Stripe flow** — Payment Link with custom field `agent_pubkey`; webhook verifies Stripe signature with operator secret, mints voucher, renders once + relies on Stripe email. No customer table.
+**D-8 Stripe flow** — Payment Link with custom field `agent_pubkey` and success URL pointing at the package-mounted redemption route; webhook verifies Stripe signature with operator secret and mints the voucher into a TTL'd in-memory session→voucher map (`redeem_ttl`, LRU-capped; the webhook's own response goes to Stripe and reaches no buyer). `GET /_tollbooth/voucher/{CHECKOUT_SESSION_ID}` renders exactly once, then deletes. Expired unredeemed → operator re-mints via `cli voucher mint`; Stripe is the record of purchase. No customer table.
 
 ## 5. Config surface (complete, with defaults)
 
@@ -81,6 +81,8 @@ site_key_path = "./tollbooth.key"
 free_paths = ["/robots.txt", "/favicon.ico"]
 report = false                # receipt reporting off by default
 # report_url = "https://…"    # e.g. a transparency log ingest; no default
+report_token = ""             # bearer token for GET /_tollbooth/report; endpoint 404s until set
+wba_skew_tolerance = "300s"   # temporal slack before a sig counts as stale (D-4b)
 
 [toll]
 price_usd = "0.001"
@@ -96,6 +98,7 @@ payment_link = ""
 webhook_secret = ""
 credits_per_purchase = 5000
 voucher_ttl = "30d"
+redeem_ttl = "15m"            # session→voucher map TTL for the success-URL redemption route (D-8)
 
 [maze]
 enabled = true
