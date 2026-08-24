@@ -71,6 +71,7 @@ describe("FR-10 — documented defaults for every key (plan §5)", () => {
     expect(c.toll.stripe.credits_per_purchase).toBe(5000);
     expect(c.toll.stripe.voucher_ttl).toBe(30 * 86_400_000);
     expect(c.toll.stripe.redeem_ttl).toBe(900_000);
+    expect(c.toll.stripe.bearer).toBe(false);
 
     expect(c.maze.enabled).toBe(true);
     expect(c.maze.prefix).toBe("/.well-known/tollbooth-maze");

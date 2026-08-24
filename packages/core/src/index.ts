@@ -23,6 +23,8 @@ export type {
   VerifyPayment,
 } from "./pipeline.js";
 export { buildOfferBody, decide } from "./pipeline.js";
+export type { SiteKeyPair, SpendResult, VoucherPayload } from "./voucher.js";
+export { decodeVoucher, mintVoucher, spendVoucher } from "./voucher.js";
 export type {
   FetchDirectory,
   WbaInput,

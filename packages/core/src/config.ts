@@ -48,6 +48,7 @@ const stripeSchema = z
     enabled: z.boolean().prefault(false),
     payment_link: z.string().prefault(""),
     webhook_secret: z.string().prefault(""),
+    bearer: z.boolean().prefault(false),
     credits_per_purchase: z.number().int().positive().prefault(5000),
     voucher_ttl: duration("30d"),
     redeem_ttl: duration("15m"),

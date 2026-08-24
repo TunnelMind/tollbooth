@@ -99,6 +99,7 @@ webhook_secret = ""
 credits_per_purchase = 5000
 voucher_ttl = "30d"
 redeem_ttl = "15m"            # session→voucher map TTL for the success-URL redemption route (D-8)
+bearer = false                # accept bearer (key-unbound) vouchers — D-1 flag gate
 
 [maze]
 enabled = true
