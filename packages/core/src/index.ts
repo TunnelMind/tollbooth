@@ -12,6 +12,15 @@ export {
   verify,
 } from "./keys.js";
 export type {
+  Decision,
+  Identity,
+  OfferBody,
+  OfferOption,
+  PipelineDeps,
+  PipelineRequest,
+} from "./pipeline.js";
+export { buildOfferBody, decide } from "./pipeline.js";
+export type {
   FetchDirectory,
   WbaInput,
   WbaOptions,

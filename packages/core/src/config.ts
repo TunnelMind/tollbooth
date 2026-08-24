@@ -104,6 +104,27 @@ const configSchema = z.strictObject({
 /** Validated config. All duration keys hold milliseconds after parsing. */
 export type TollboothConfig = z.output<typeof configSchema>;
 
+/** Cross-field rules zod's per-key schema cannot express; same key-naming contract. */
+function tollModeProblems(cfg: TollboothConfig): string[] {
+  if (cfg.mode !== "toll") return [];
+  const problems: string[] = [];
+  if (!cfg.toll.x402.enabled && !cfg.toll.stripe.enabled)
+    problems.push(
+      "toll: toll mode requires at least one enabled payment option (x402 or stripe)",
+    );
+  if (cfg.toll.x402.enabled && cfg.toll.x402.pay_to === "")
+    problems.push(
+      "toll.x402.pay_to: required when x402 is enabled in toll mode",
+    );
+  if (cfg.toll.stripe.enabled && cfg.toll.stripe.payment_link === "")
+    problems.push("toll.stripe.payment_link: required when stripe is enabled");
+  if (cfg.toll.stripe.enabled && cfg.toll.stripe.webhook_secret === "")
+    problems.push(
+      "toll.stripe.webhook_secret: required when stripe is enabled",
+    );
+  return problems;
+}
+
 /**
  * Parse and validate TOML config source. Throws ConfigError naming every
  * offending key (AC-1.3); returns the complete config with plan §5 defaults
@@ -126,5 +147,8 @@ export function parseConfig(source: string): TollboothConfig {
     });
     throw new ConfigError(`invalid config: ${issues.join("; ")}`);
   }
+  const problems = tollModeProblems(result.data);
+  if (problems.length > 0)
+    throw new ConfigError(`invalid config: ${problems.join("; ")}`);
   return result.data;
 }
