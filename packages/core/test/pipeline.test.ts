@@ -110,7 +110,8 @@ describe("step 2 - the identification ladder (D-4)", () => {
       authority: "evil.example",
     };
     const decision = await decide(req, TOLL_CFG, deps(dirWith(agent.jwk)));
-    expect(decision.action).toBe("consequence");
+    if (decision.action !== "consequence")
+      throw new Error("expected consequence");
     expect(decision.identity.kind).toBe("spoofer");
     if (decision.identity.kind === "spoofer") {
       expect(decision.identity.claimedKey).toBe(agent.jwk.x);
@@ -177,7 +178,7 @@ describe("step 2 - the identification ladder (D-4)", () => {
 
   it("(c) heuristic agent -> anonymous, offered, with the matched rules as facts", async () => {
     const decision = await decide(crawler, TOLL_CFG, deps());
-    expect(decision.action).toBe("offer");
+    if (decision.action !== "offer") throw new Error("expected offer");
     expect(decision.identity.kind).toBe("anonymous-agent");
     if (decision.identity.kind === "anonymous-agent") {
       expect(decision.identity.via).toContain("ua-prefix:curl/");
