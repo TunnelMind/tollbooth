@@ -21,6 +21,30 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.2.0)(vite@8.2.2(@types/node@26.2.0))
 
+  examples:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.1
+        version: 2.1.1(hono@4.13.3)
+      '@noble/curves':
+        specifier: ^2.3.0
+        version: 2.3.0
+      '@noble/hashes':
+        specifier: ^2.3.0
+        version: 2.3.0
+      '@tollbooth/adapter-x402':
+        specifier: workspace:*
+        version: link:../packages/adapter-x402
+      '@tollbooth/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@tollbooth/hono':
+        specifier: workspace:*
+        version: link:../packages/hono
+      hono:
+        specifier: ^4.13.3
+        version: 4.13.3
+
   packages/adapter-stripe:
     dependencies:
       '@tollbooth/core':
@@ -147,6 +171,12 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@hono/node-server@2.1.1':
+    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
 
   '@jridgewell/sourcemap-codec@1.5.5':
     resolution: {integrity: sha512-cYQ9310grqxueWbl+WuIUIaiUaDcj7WOq5fVhEljNVgRfOUhY9fy2zTvfoqWsnebh8Sl70VScFbICvJnLKB0Og==}
@@ -744,6 +774,10 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.10':
     optional: true
+
+  '@hono/node-server@2.1.1(hono@4.13.3)':
+    dependencies:
+      hono: 4.13.3
 
   '@jridgewell/sourcemap-codec@1.5.5': {}
 
