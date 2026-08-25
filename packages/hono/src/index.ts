@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // @tollbooth/hono: thin binding of core's decide() to Hono. One package
 // covers Node, Bun and Workers, so nothing here may import node builtins.
 // Observe mode computes the decision and records it but always passes -

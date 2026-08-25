@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // AC-3.3: soft double-spend damping. Each signed voucher state has a unique
 // jti (D-1 rotates it per re-sign), so counting spends per jti damps parallel
 // replay of one state without ever limiting sequential spending. Bounded LRU;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // D-3: the offer-state ledger. A bounded LRU map agent_key -> state; when
 // full, the least recently seen key is evicted and its history forgotten.
 // Eviction is amnesty, never an error - a database is not (Articles I, V).

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // @tollbooth/maze: corpus loader interface and the serving handler.
 // Content is pre-generated (VI.17); serving cost is one corpus read plus a
 // timer (AC-4.3) - never generation, never a busy-wait. Every response

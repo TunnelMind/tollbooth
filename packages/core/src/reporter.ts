@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // AC-6.3 / D-6: the batched receipt reporter. Signing is synchronous with
 // the decision; POSTing is async, batched, fire-and-forget with backoff,
 // and NEVER blocks or fails a request. The queue is bounded drop-oldest and

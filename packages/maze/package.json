@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/maze",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Static decoy-maze corpus loader and handler. Pre-generated content only, never inference.",
   "license": "MIT",
   "type": "module",
@@ -15,10 +15,20 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "devDependencies": {
     "@tollbooth/cli": "workspace:*",
     "@tollbooth/core": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TunnelMind/tollbooth.git",
+    "directory": "packages/maze"
+  },
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

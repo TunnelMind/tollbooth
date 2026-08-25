@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Node-only entry (@tollbooth/maze/node): lazy directory-backed corpus.
 // Each request costs one readFile - nothing is preloaded, nothing is
 // generated (AC-4.3 O(file read)).

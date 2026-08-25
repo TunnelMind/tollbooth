@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/cli",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "tollbooth CLI: keygen, verify, corpus, voucher inspect/mint.",
   "license": "MIT",
   "type": "module",
@@ -11,12 +11,22 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "bin": {
     "tollbooth": "./dist/cli.js"
   },
   "dependencies": {
     "@tollbooth/core": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TunnelMind/tollbooth.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Node-only entry (@tollbooth/core/node): key-file I/O. The root entry stays
 // platform-free for Workers; anything touching the filesystem lives here.
 import { readFile, writeFile } from "node:fs/promises";

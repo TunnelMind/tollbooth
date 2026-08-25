@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // D-4(c): conservative heuristics for traffic with no Web Bot Auth signature.
 // A match means "anonymous agent" — offer-eligible, never maze-eligible
 // (Constitution II.5). No match means human: ambiguity fails open (II.6).

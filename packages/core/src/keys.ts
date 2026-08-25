@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Ed25519 via @noble/ed25519's async API, which digests SHA-512 through the
 // platform's WebCrypto — no @noble/hashes needed on any target (ADR 001).
 import {

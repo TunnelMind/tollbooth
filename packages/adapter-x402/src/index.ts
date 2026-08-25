@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // @tollbooth/adapter-x402: x402 offer headers and payment-proof verification.
 // ALL chain specifics live inside this boundary (AC-2.3, D-7) - core never
 // imports a chain library, and this adapter is off the hot path for

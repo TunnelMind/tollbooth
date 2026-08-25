@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Web Bot Auth (draft-meunier-web-bot-auth / RFC 9421 profile) verification,
 // ported from the estate's proven implementation (tunnelmind-data-api
 // api/lib/agents/wba.js, wire profile verified against Cloudflare's WBA docs).

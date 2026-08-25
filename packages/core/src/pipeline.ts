@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Decision pipeline, plan §1. This module is pure policy: it decides, the
 // HTTP binding acts (and in observe mode records instead of acting). The
 // only state it touches is injected: the offer ledger (D-3) and the jti

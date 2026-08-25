@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/hono",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "Hono middleware binding of @tollbooth/core — one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",
@@ -11,7 +11,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md"
   ],
   "dependencies": {
     "@tollbooth/core": "workspace:*"
@@ -25,5 +26,14 @@
   },
   "peerDependencies": {
     "hono": "^4.13.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TunnelMind/tollbooth.git",
+    "directory": "packages/hono"
+  },
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // D-1 vouchers: `<b64url(JCS payload)>.<b64url sig)>`, Ed25519-signed by the
 // site key, verified and re-signed with credits-1 AND a freshly generated jti
 // on every spend - each signed state has a unique jti, so the jti LRU (T-012)

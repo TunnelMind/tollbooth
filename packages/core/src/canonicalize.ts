@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // RFC 8785 (JCS) canonicalizer, ported from the estate's proven
 // implementation (tunnelmind-data-api api/utils/jcs.js, byte-for-byte via
 // oai-resolver src/rune.js, cross-checked there against Rust's

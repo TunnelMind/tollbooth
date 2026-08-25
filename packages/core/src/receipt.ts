@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Conduct receipts (AC-6.2): observations, never judgments (Article III).
 // Request metadata only - path_class is the FIRST SEGMENT of the path and
 // nothing more, and request/response bodies are never captured, logged or

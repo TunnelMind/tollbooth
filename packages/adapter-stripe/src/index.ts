@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // @tollbooth/adapter-stripe: webhook handling and voucher minting, mounted on
 // the operator's own app with the operator's own keys - we host nothing
 // (Article I.3). No Stripe SDK: webhook signatures are HMAC-SHA256 over

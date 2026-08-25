@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // D-5: the maze corpus generator. Pure and deterministic from a seed -
 // integer-only PRNG so the same seed yields the same bytes on every
 // platform. Pages are templated pseudo-articles from a wordlist grammar:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 

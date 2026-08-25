@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: MIT
 // tollbooth CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
 // mint is the re-mint fallback for expired-unredeemed purchases, spec 5.3).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
