@@ -24,6 +24,8 @@ export type {
   VerifyPayment,
 } from "./pipeline.js";
 export { buildOfferBody, decide } from "./pipeline.js";
+export type { Receipt, ReceiptFacts, ReceiptType } from "./receipt.js";
+export { buildReceipt, receiptFactsFor, verifyReceipt } from "./receipt.js";
 export type { SiteKeyPair, SpendResult, VoucherPayload } from "./voucher.js";
 export { decodeVoucher, mintVoucher, spendVoucher } from "./voucher.js";
 export type {
