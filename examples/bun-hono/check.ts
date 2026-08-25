@@ -1,5 +1,5 @@
 // CI check: the bun example actually serves and tolls under Bun.
-import app from "./index.ts";
+import app from "./index.js";
 
 declare const Bun: {
   serve(options: { fetch: typeof app.fetch; port: number }): {
