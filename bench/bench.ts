@@ -35,7 +35,7 @@ bearer = true
 `;
 
 async function measure(
-  run: () => Promise<unknown>,
+  run: () => unknown,
   warmup = 200,
   samples = 2000,
 ) {
