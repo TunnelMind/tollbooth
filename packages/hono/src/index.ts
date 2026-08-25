@@ -3,6 +3,7 @@
 // Observe mode computes the decision and records it but always passes -
 // and gets no spending deps, so it can never mutate voucher state.
 import {
+  buildReceipt,
   type Decision,
   decide,
   type FetchDirectory,
@@ -11,6 +12,8 @@ import {
   type PipelineDeps,
   type PipelineRequest,
   parseConfig,
+  ReceiptReporter,
+  receiptFactsFor,
   type SiteKeyPair,
   type TollboothConfig,
 } from "@tollbooth/core";
@@ -62,6 +65,8 @@ export interface TollboothOptions {
   maze?: MazeHandler;
   /** The Stripe adapter; mounts the webhook and redemption routes. */
   stripe?: StripeRoutes;
+  /** Receipt reporter override (tests); defaults from report/report_url config. */
+  reporter?: ReceiptReporter;
   /** Override the built-in fetching (tests; custom caching). */
   fetchDirectory?: FetchDirectory;
   /** Injectable clock, epoch seconds. */
@@ -188,12 +193,18 @@ function record(
     entry.paths.push(req.path);
 }
 
-function reportJson(stats: Stats, cfg: TollboothConfig) {
+function reportJson(
+  stats: Stats,
+  cfg: TollboothConfig,
+  reporter?: ReceiptReporter,
+) {
   const price = Number(cfg.toll.price_usd);
   return {
     mode: cfg.mode,
     humans_passed: stats.humansPassed,
     free_path_hits: stats.freePathHits,
+    receipts_queued: reporter?.queued ?? 0,
+    receipts_dropped: reporter?.dropped ?? 0,
     agents: [...stats.agents.entries()].map(([key, s]) => ({
       key,
       kind: s.kind,
@@ -222,6 +233,11 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const jtiCache = new JtiCache(cfg.limits.jti_lru_max);
   const fetchDirectory = options.fetchDirectory ?? makeDirectoryFetcher();
   const { x402, stripe, siteKeys, maze } = options;
+  const reporter =
+    options.reporter ??
+    (cfg.report && cfg.report_url !== undefined
+      ? new ReceiptReporter({ url: cfg.report_url })
+      : undefined);
 
   const offerResponse = (
     c: Context,
@@ -248,7 +264,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       if (cfg.report_token === "") return c.text("Not Found", 404);
       if (c.req.header("authorization") !== `Bearer ${cfg.report_token}`)
         return c.text("Unauthorized", 401);
-      return c.json(reportJson(stats, cfg));
+      return c.json(reportJson(stats, cfg, reporter));
     }
     if (stripe && c.req.path === WEBHOOK_PATH && c.req.method === "POST") {
       const result = await stripe.handleWebhook(
@@ -312,6 +328,27 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       ...(nowS !== undefined ? { nowS } : {}),
     });
     record(stats, req, decision, cfg.limits.agent_ledger_max);
+
+    // Receipt emission (AC-6.3): sign-and-enqueue in the background, gated
+    // on report=true - the request never waits and never fails on this.
+    if (reporter && siteKeys && cfg.report) {
+      const nowSec = nowS ?? Math.floor(Date.now() / 1000);
+      const agentKey =
+        decision.identity?.kind === "agent" ? decision.identity.agentKey : null;
+      const state = agentKey === null ? undefined : ledger.get(agentKey);
+      const window = state
+        ? {
+            count: Math.max(state.offersInWindow, 1),
+            windowStartS: Math.floor(state.windowStart / 1000),
+            windowEndS: nowSec,
+          }
+        : { count: 1, windowStartS: nowSec, windowEndS: nowSec };
+      const facts = receiptFactsFor(decision, req, window);
+      if (facts)
+        void buildReceipt(facts, siteKeys)
+          .then((receipt) => reporter.enqueue(receipt))
+          .catch(() => {});
+    }
 
     if (cfg.mode === "observe") return next();
     if (decision.action === "pass") {
