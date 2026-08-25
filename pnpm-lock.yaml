@@ -40,7 +40,11 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/cli: {}
+  packages/cli:
+    dependencies:
+      '@tollbooth/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core:
     dependencies:

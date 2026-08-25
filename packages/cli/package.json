@@ -15,5 +15,8 @@
   ],
   "bin": {
     "tollbooth": "./dist/cli.js"
+  },
+  "dependencies": {
+    "@tollbooth/core": "workspace:*"
   }
 }
