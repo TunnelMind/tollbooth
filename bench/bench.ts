@@ -34,11 +34,7 @@ webhook_secret = "whsec_x"
 bearer = true
 `;
 
-async function measure(
-  run: () => unknown,
-  warmup = 200,
-  samples = 2000,
-) {
+async function measure(run: () => unknown, warmup = 200, samples = 2000) {
   for (let i = 0; i < warmup; i++) await run();
   const times: number[] = [];
   for (let i = 0; i < samples; i++) {
