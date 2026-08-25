@@ -21,6 +21,21 @@ importers:
         specifier: ^4.1.11
         version: 4.1.11(@types/node@26.2.0)(vite@8.2.2(@types/node@26.2.0))
 
+  bench:
+    dependencies:
+      '@tollbooth/adapter-x402':
+        specifier: workspace:*
+        version: link:../packages/adapter-x402
+      '@tollbooth/core':
+        specifier: workspace:*
+        version: link:../packages/core
+      '@tollbooth/hono':
+        specifier: workspace:*
+        version: link:../packages/hono
+      hono:
+        specifier: ^4.13.3
+        version: 4.13.3
+
   examples:
     dependencies:
       '@hono/node-server':

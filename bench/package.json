@@ -1,0 +1,11 @@
+{
+  "name": "tollbooth-bench",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@tollbooth/adapter-x402": "workspace:*",
+    "@tollbooth/core": "workspace:*",
+    "@tollbooth/hono": "workspace:*",
+    "hono": "^4.13.3"
+  }
+}

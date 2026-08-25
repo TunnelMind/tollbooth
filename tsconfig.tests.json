@@ -11,6 +11,7 @@
     "packages/*/src",
     "packages/*/test",
     "vitest.config.ts",
-    "examples"
+    "examples",
+    "bench"
   ]
 }
