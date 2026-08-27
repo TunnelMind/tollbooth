@@ -27,10 +27,28 @@ The offer always precedes the consequence, and a human is never tolled — a
 false positive on a person is treated as the worst failure this software can
 have.
 
+## Install
+
+> **v1.0.0 is tagged but not yet on npm.** Until the packages publish, install
+> from source — everything below works from a clone, and the `@tollbooth/*`
+> imports resolve through the workspace unchanged. They become
+> `npm install @tollbooth/core @tollbooth/hono …` the day the packages land on
+> npm; the import lines and the code do not change.
+
+```bash
+git clone https://github.com/TunnelMind/tollbooth
+cd tollbooth
+pnpm install && pnpm build
+```
+
+`pnpm build` is `tsc -b` — it emits every package's `dist/`. Run it once after
+cloning (and `pnpm test` runs it for you). The runnable [examples/](examples/)
+are the fastest way to see the snippets below working end to end.
+
 ## Quickstart: observe first
 
-Watch who is knocking before charging anyone. Fresh install, observe mode,
-every request passes unmodified:
+Watch who is knocking before charging anyone. Observe mode, every request
+passes unmodified:
 
 ```ts
 import { serve } from "@hono/node-server";
@@ -118,7 +136,9 @@ const key = await loadOrCreateSiteKey(cfg.site_key_path);
 if (key.created) console.log(`site public key: ${toBase64Url(key.publicKey)}`);
 const siteKeys = { secret: key.secretKey, pub: key.publicKey };
 
-// pre-generate the maze corpus first:  npx @tollbooth/cli corpus --out ./maze-corpus
+// pre-generate the maze corpus first (from source until published:
+//   node packages/cli/dist/cli.js corpus --out ./maze-corpus
+// once on npm:  npx @tollbooth/cli corpus --out ./maze-corpus)
 const maze = makeMazeHandler({ corpus: await loadCorpusDir(cfg.maze.corpus_path), cfg });
 
 const app = new Hono();
@@ -192,8 +212,8 @@ functional without it. A receipt records observations, never judgments:
   "ua": "SomeCrawler/2.0",
   "path_class": "/articles",
   "count": 17,
-  "window_start": "2027-01-15T09:00:00.000Z",
-  "window_end": "2027-01-15T09:10:00.000Z",
+  "window_start": "2026-08-26T09:00:00.000Z",
+  "window_end": "2026-08-26T09:10:00.000Z",
   "sig": "b64url-ed25519-signature"
 }
 ```
@@ -208,6 +228,7 @@ Verify one on an air-gapped machine — only the receipt and the site's public
 key are needed:
 
 ```bash
+# from source until published:  node packages/cli/dist/cli.js verify …
 npx @tollbooth/cli verify receipt.json --pubkey <site-public-key>
 # schema: PASS
 # canonical form: PASS

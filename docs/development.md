@@ -24,6 +24,22 @@ If anything forces a deviation from plan.md, STOP and draft an ADR instead of co
 3. One task per session. Review the diff against the constitution checklist before the next task.
 4. Amend the spec, not the code, when requirements change — then regenerate the affected task.
 
+## Working in this repo
+
+```bash
+pnpm install
+pnpm build      # tsc -b — emits every package's dist/ (project references)
+pnpm test       # runs pnpm build first, then vitest
+pnpm typecheck  # tsc -b + the tests-project typecheck
+pnpm lint       # biome
+```
+
+`dist/` is only produced by `tsc -b`, so **build before anything that imports a
+package by its `@tollbooth/*` name** — cross-package tests resolve to `dist/`,
+not `src/`. `pnpm test` builds for you (via `pretest`); if you run vitest
+directly, `pnpm build` first or those cross-package suites go red on a clean
+clone.
+
 ## Order of operations
 Phase 1 alone yields a working x402 tollbooth (T-010 milestone). Ship value before the maze exists — the offer must predate the consequence in the codebase, same as in the pipeline.
 
