@@ -58,9 +58,10 @@ the two plan deviations. License headers and publish metadata added in
 this commit.
 
 ## Known limits accepted at v1.0.0
-- EIP-712 encoding is round-trip tested; byte-compatibility with mainnet
-  USDC domain parameters is unexercised until the agent client runs against
-  Base Sepolia for real.
+- ~~EIP-712 round-trip tested only~~ — CLOSED post-tag: a cross-
+  implementation suite pins our digest byte-for-byte to viem's
+  hashTypedData and verifies a viem-wallet-signed authorization through
+  verifyProof (adapter-x402/test/eip712-crosscheck.test.ts, in CI).
 - hono's siteKeys option wants {secret, pub} while loadOrCreateSiteKey
   returns {secretKey, publicKey} — mapping shown in the README; candidate
   v1.1 alias.

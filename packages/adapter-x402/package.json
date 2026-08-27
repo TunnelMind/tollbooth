@@ -19,7 +19,8 @@
     "@noble/hashes": "^2.3.0"
   },
   "devDependencies": {
-    "@tollbooth/core": "workspace:*"
+    "@tollbooth/core": "workspace:*",
+    "viem": "^2.55.19"
   },
   "repository": {
     "type": "git",
