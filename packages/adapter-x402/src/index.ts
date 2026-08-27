@@ -20,8 +20,9 @@ import {
 import type { TollboothConfig } from "@tollbooth/core";
 
 /**
- * Testnet only in v1 (Constitution V.15): mainnet entries are added by
- * deliberate PR, never shipped as defaults.
+ * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example
+ * uses it; base (mainnet) is present but must be named explicitly by the
+ * operator (Constitution V.15, ADR 003). No mainnet is ever a default.
  */
 export const NETWORKS: Record<
   string,
@@ -31,6 +32,15 @@ export const NETWORKS: Record<
     chainId: 84532n,
     asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e", // USDC on Base Sepolia
     assetName: "USDC",
+    assetVersion: "2",
+  },
+  // Mainnet is available but never the default (V.15, ADR 003): every example
+  // and the config default stay base-sepolia. An operator opts into real
+  // settlement by naming this network explicitly.
+  base: {
+    chainId: 8453n,
+    asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // Circle USDC on Base
+    assetName: "USD Coin",
     assetVersion: "2",
   },
 };
