@@ -34,7 +34,9 @@ export interface X402Adapter {
     xPayment: string,
     cfg: TollboothConfig,
     opts?: { nowS?: number },
-  ): { ok: boolean; payer: string | null; reason?: string };
+  ):
+    | { ok: boolean; payer: string | null; reason?: string }
+    | Promise<{ ok: boolean; payer: string | null; reason?: string }>;
 }
 
 /** @tollbooth/maze's makeMazeHandler satisfies this structurally. */

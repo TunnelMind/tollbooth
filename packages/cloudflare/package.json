@@ -1,0 +1,34 @@
+{
+  "name": "@tollbooth/cloudflare",
+  "version": "1.0.0",
+  "description": "Batteries-included Cloudflare Pages middleware: config in, tolling out — maze, receipts, snapshots, and settle-then-serve x402 pre-wired.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "dependencies": {
+    "@tollbooth/adapter-x402": "workspace:*",
+    "@tollbooth/cli": "workspace:*",
+    "@tollbooth/core": "workspace:*",
+    "@tollbooth/hono": "workspace:*",
+    "@tollbooth/maze": "workspace:*",
+    "hono": "^4.13.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TunnelMind/tollbooth.git",
+    "directory": "packages/cloudflare"
+  },
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

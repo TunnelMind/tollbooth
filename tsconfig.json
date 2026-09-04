@@ -6,6 +6,7 @@
     { "path": "packages/adapter-x402" },
     { "path": "packages/adapter-stripe" },
     { "path": "packages/maze" },
-    { "path": "packages/cli" }
+    { "path": "packages/cli" },
+    { "path": "packages/cloudflare" }
   ]
 }

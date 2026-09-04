@@ -36,5 +36,8 @@ Format: `T-nnn (deps) — task → done-when`. Sized for one Claude Code session
 - **T-023** (T-022) — README: 10-minute quickstart (observe → toll), honest-limits section covering every bullet of spec §8, receipt verification walkthrough → a cold reader test: hand it to someone, time them.
 - **T-024** (T-023) — constitution compliance sweep: checklist review of every article against the code; license headers; `npm publish --dry-run` clean → v1.0.0 tag.
 
+## Phase 5 — Distribution
+- **T-025** (T-024) — `cloudflare`: batteries-included Pages middleware, `createPagesMiddleware(options)` (ADR-004) — TOML config (or an env→TOML builder for tokens/prices in vars); per-isolate state cache keyed off the built config; seeded maze corpus; receipt reporting + signed traffic snapshots, optionally over a service binding (same-zone fetches 522 on Cloudflare); settle-then-serve x402 (local verifyProof, then a settle POST — pass ONLY on `settled:true`, fails closed) with facilitator damping (seen-payment cache + payer cooldown, LRU-capped, eviction = amnesty); whole middleware fails OPEN. Widens hono's `X402Adapter.verifyProof` to allow a Promise return (core's `VerifyPayment` always did; the pipeline awaits) → acceptance tests port every behavior the tunnelmind.ai deployment proved live: human pass, offer, free paths exact+prefix, settle pass/fail/garbage/unconfigured, damping, price forwarding, report diagnostics, snapshot signature, fail-open, env-driven config rebuild.
+
 ## Post-v1 backlog (do not start)
 sidecar single binary (nginx auth_request) · WordPress wrapper · Caddy/Traefik modules · voucher top-up flow · conduct-history query client.
