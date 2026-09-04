@@ -32,7 +32,9 @@ tollbooth/
 │  ├─ adapter-x402/    # x402 offer headers + proof verification
 │  ├─ adapter-stripe/  # webhook route handler + voucher mint
 │  ├─ maze/            # corpus loader + handler; corpus generator lives in cli
-│  └─ cli/             # keygen · verify · corpus · voucher inspect
+│  ├─ cli/             # keygen · verify · corpus · voucher inspect
+│  └─ cloudflare/      # batteries-included Pages middleware; imports every
+│                      # in-house package by design (ADR-004)
 ├─ examples/
 │  ├─ express-node/  ├─ bun-hono/  ├─ cloudflare-worker/
 │  └─ agent-client.ts

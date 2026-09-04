@@ -88,6 +88,27 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/cloudflare:
+    dependencies:
+      '@tollbooth/adapter-x402':
+        specifier: workspace:*
+        version: link:../adapter-x402
+      '@tollbooth/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@tollbooth/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tollbooth/hono':
+        specifier: workspace:*
+        version: link:../hono
+      '@tollbooth/maze':
+        specifier: workspace:*
+        version: link:../maze
+      hono:
+        specifier: ^4.13.3
+        version: 4.13.3
+
   packages/core:
     dependencies:
       '@noble/ed25519':
