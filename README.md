@@ -236,6 +236,32 @@ npx @tollbooth/cli verify receipt.json --pubkey <site-public-key>
 # PASS
 ```
 
+## Reporting to the Conduct Log Commons (optional, off by default)
+
+TunnelMind runs a free, public, append-only log of tollbooth conduct data: free to report to,
+free to read, verifiable without trusting TunnelMind. Reporting stays opt-in and off by default
+(Article I.4). Three lines turn it on:
+
+```toml
+report = true
+report_url = "https://data.tunnelmind.ai/v1/tollbooth/receipts"
+report_domain = "your-domain.example"   # the domain that vouches for your site key (below)
+```
+
+`report_domain` is a **claim**. The commons turns it into a fact by fetching
+`https://your-domain.example/.well-known/tollbooth-site.json`, which you serve as
+
+```json
+{ "v": 1, "keys": ["<your site public key, base64url>"] }
+```
+
+Until a domain vouches for a key its receipts are stored but labelled *unattested* and kept out of
+the exhibits; there is no token and nothing to register — the signature on each receipt is the
+authentication. Reads: `GET https://data.tunnelmind.ai/v1/tollbooth/stats` (live exhibit) and
+`GET https://data.tunnelmind.ai/v1/tollbooth/export?day=YYYY-MM-DD` (a UTC day of verbatim signed
+documents as JSON Lines, verifiable offline with `tollbooth verify`). How-to and stated limits:
+https://tunnelmind.ai/conduct/join
+
 ## Honest limits — read before deploying
 
 - **Enforcement is soft.** Vouchers are stateless signed credits: parallel

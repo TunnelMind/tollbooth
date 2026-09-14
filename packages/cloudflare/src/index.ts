@@ -204,6 +204,7 @@ export function createPagesMiddleware(
       siteKeys && reportUrl
         ? new ReceiptReporter({
             url: reportUrl,
+            domain: cfg.report_domain,
             fetchFn: routedFetch as typeof fetch,
           })
         : undefined;
@@ -282,7 +283,12 @@ export function createPagesMiddleware(
     );
     await s.routedFetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(s.cfg.report_domain
+          ? { "x-tollbooth-domain": s.cfg.report_domain }
+          : {}),
+      },
       body: JSON.stringify({ ...unsigned, sig }),
     });
   }

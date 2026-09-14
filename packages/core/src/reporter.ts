@@ -9,6 +9,8 @@ import type { Receipt } from "./receipt.js";
 
 export interface ReporterOptions {
   url: string;
+  /** Domain claim (config report_domain); rides outside the signed receipts. */
+  domain?: string;
   /** Injectable for tests; defaults to global fetch. */
   fetchFn?: typeof fetch;
   batchSize?: number;
@@ -35,6 +37,7 @@ export class ReceiptReporter {
   private running = false;
 
   private readonly url: string;
+  private readonly domain: string | undefined;
   private readonly fetchFn: typeof fetch;
   private readonly batchSize: number;
   private readonly flushIntervalMs: number;
@@ -46,6 +49,7 @@ export class ReceiptReporter {
 
   constructor(options: ReporterOptions) {
     this.url = options.url;
+    this.domain = options.domain || undefined;
     this.fetchFn = options.fetchFn ?? fetch;
     this.batchSize = options.batchSize ?? 50;
     this.flushIntervalMs = options.flushIntervalMs ?? 5000;
@@ -85,8 +89,15 @@ export class ReceiptReporter {
       try {
         const resp = await this.fetchFn(this.url, {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ v: 1, receipts: batch }),
+          headers: {
+            "content-type": "application/json",
+            ...(this.domain ? { "x-tollbooth-domain": this.domain } : {}),
+          },
+          body: JSON.stringify({
+            v: 1,
+            receipts: batch,
+            ...(this.domain ? { domain: this.domain } : {}),
+          }),
         });
         if (!resp.ok) throw new Error(`ingest ${resp.status}`);
         this.backoff = 0;

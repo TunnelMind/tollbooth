@@ -105,3 +105,28 @@ describe("AC-6.3 / D-6 - batched receipt reporter", () => {
     reporter.stop();
   });
 });
+
+it("domain claim rides on the batch wrapper and a header, never inside a receipt", async () => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  const fetchFn = (async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return new Response("", { status: 200 });
+  }) as unknown as typeof fetch;
+  const r = new ReceiptReporter({
+    url: "https://log.example/ingest",
+    domain: "example.org",
+    fetchFn,
+    autoFlush: false,
+  });
+  r.enqueue({ v: 1, sig: "x" } as unknown as Receipt);
+  await r.flush();
+  const body = JSON.parse(calls[0].init?.body as string) as {
+    domain?: string;
+    receipts: unknown[];
+  };
+  expect(body.domain).toBe("example.org");
+  expect(
+    (calls[0].init?.headers as Record<string, string>)["x-tollbooth-domain"],
+  ).toBe("example.org");
+  expect(JSON.stringify(body.receipts)).not.toContain("example.org");
+});

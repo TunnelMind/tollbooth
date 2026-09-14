@@ -239,7 +239,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const reporter =
     options.reporter ??
     (cfg.report && cfg.report_url !== undefined
-      ? new ReceiptReporter({ url: cfg.report_url })
+      ? new ReceiptReporter({ url: cfg.report_url, domain: cfg.report_domain })
       : undefined);
 
   const offerResponse = (

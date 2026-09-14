@@ -150,3 +150,10 @@ replay_window = 1
     expect(h.toll.window).toBe(7_200_000);
   });
 });
+
+it("report_domain: off by default, carried verbatim when set", () => {
+  expect(parseConfig("").report_domain).toBe("");
+  expect(parseConfig('report_domain = "example.org"').report_domain).toBe(
+    "example.org",
+  );
+});
