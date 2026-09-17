@@ -1,0 +1,66 @@
+# Trusted publishing (TunnelMind spec 094): a version tag publishes all seven @tollbooth/*
+# packages to npm with OIDC identity and provenance. No registry token exists anywhere in this
+# repository — the trusted publisher configured on npmjs.com binds this exact workflow file
+# (publish.yml) in TunnelMind/tollbooth to the packages.
+#
+# Facts this relies on (docs.npmjs.com/trusted-publishers, read 2026-09-17): npm CLI ≥ 11.5.1
+# and Node ≥ 22.14; `permissions: id-token: write`; provenance is generated automatically for
+# a public package from a public repository; the workflow filename must match exactly.
+#
+# Dry run: `gh workflow run publish.yml --ref <tag> -f dry_run=true` performs the OIDC token
+# request (and prints the decoded claims — never the token) and runs `pnpm publish --dry-run`.
+name: publish
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Request the OIDC token and dry-run the publish; nothing is published"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write   # OIDC — the only credential this workflow has
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.14"
+          cache: pnpm
+          registry-url: "https://registry.npmjs.org"
+      - name: npm ≥ 11.5.1 (trusted publishing minimum)
+        run: npm install -g npm@11.6.1 && npm --version
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm test
+
+      - name: The tag must equal every package version (one repo-wide version)
+        if: github.event_name == 'push'
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for f in packages/*/package.json; do
+            v=$(node -p "require('./$f').version")
+            [ "$v" = "$tag" ] || { echo "::error::$f is $v, tag is $tag"; exit 1; }
+          done
+
+      - name: OIDC token claims (proof of the exchange; the token itself is never printed)
+        id: oidc
+        run: |
+          tok=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=npm:registry.npmjs.org" | jq -r .value)
+          echo "::add-mask::$tok"
+          echo "$tok" | cut -d. -f2 | tr '_-' '/+' | awk '{ l=length($0)%4; if (l) $0=$0 substr("===",1,4-l); print }' | base64 -d | jq '{iss, aud, sub, repository, ref, workflow_ref, job_workflow_ref, runner_environment}'
+
+      - name: Publish (dry run)
+        if: github.event_name == 'workflow_dispatch' && inputs.dry_run
+        run: pnpm -r publish --access public --no-git-checks --dry-run
+      - name: Publish
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && !inputs.dry_run)
+        run: pnpm -r publish --access public --no-git-checks
