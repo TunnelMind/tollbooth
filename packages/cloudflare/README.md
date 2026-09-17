@@ -32,7 +32,7 @@ export const onRequest = createPagesMiddleware({
   corpus: { seed: "my-maze", pages: 256 },
   settle: { url: "https://collector.example/v1/settle" },
   snapshots: { url: "https://collector.example/v1/report" },
-  binding: "COLLECTOR", // service binding; same-zone self-fetches 522
+  binding: "COLLECTOR", // service binding; same-zone self-fetches 522 — REQUIRED when named (no global-fetch fallback since 2.0.0)
 });
 ```
 

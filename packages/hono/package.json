@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/hono",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Hono middleware binding of @tollbooth/core — one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",

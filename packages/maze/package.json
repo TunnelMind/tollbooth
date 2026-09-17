@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/maze",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Static decoy-maze corpus loader and handler. Pre-generated content only, never inference.",
   "license": "MIT",
   "type": "module",

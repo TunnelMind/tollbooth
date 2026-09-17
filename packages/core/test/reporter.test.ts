@@ -120,13 +120,15 @@ it("domain claim rides on the batch wrapper and a header, never inside a receipt
   });
   r.enqueue({ v: 1, sig: "x" } as unknown as Receipt);
   await r.flush();
-  const body = JSON.parse(calls[0].init?.body as string) as {
+  const first = calls[0];
+  if (!first) throw new Error("reporter made no call");
+  const body = JSON.parse(first.init?.body as string) as {
     domain?: string;
     receipts: unknown[];
   };
   expect(body.domain).toBe("example.org");
-  expect(
-    (calls[0].init?.headers as Record<string, string>)["x-tollbooth-domain"],
-  ).toBe("example.org");
+  expect(new Headers(first.init?.headers).get("x-tollbooth-domain")).toBe(
+    "example.org",
+  );
   expect(JSON.stringify(body.receipts)).not.toContain("example.org");
 });

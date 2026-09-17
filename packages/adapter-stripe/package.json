@@ -1,6 +1,6 @@
 {
   "name": "@tollbooth/adapter-stripe",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Stripe webhook route and voucher mint, mounted on the operator's own app with the operator's own keys.",
   "license": "MIT",
   "type": "module",

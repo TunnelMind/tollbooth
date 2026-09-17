@@ -1,0 +1,13 @@
+{
+  "name": "tunnelmind",
+  "version": "1.2.0",
+  "constitution": "1.1.0",
+  "templates": ["spec", "plan", "tasks", "closeout"],
+  "bumped": "2026-09-17",
+  "versioning": "the constitution's rules: MAJOR when a template's semantics change incompatibly; MINOR when a template or section is added or materially expanded; PATCH for wording",
+  "history": {
+    "1.0.0": "2026-08-05 — spec/plan/tasks overrides adopted with constitution 1.0.0",
+    "1.1.0": "2026-08-06 — constitution 1.1.0 (preflight consultation exception)",
+    "1.2.0": "2026-09-17 — closeout template added; Phase V requires it (spec 086)"
+  }
+}
