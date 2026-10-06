@@ -1,5 +1,13 @@
 # @tollbooth/cloudflare
 
+## 2.0.1 — 2026-10-06
+
+DRAFT (Josh rewrites public prose)
+
+- The service-binding fetch was called detached, so on workerd it threw
+  "Illegal invocation" and the settle, snapshot and report paths that route
+  through the binding failed. The fix calls `binding.fetch(...)` as a method.
+
 ## 2.0.0 — 2026-09-17
 
 **Breaking.** No global-fetch fallback (TunnelMind estate hardening, spec 088).
