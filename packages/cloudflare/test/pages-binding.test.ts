@@ -6,6 +6,11 @@
 import { generateSecretKey, toBase64Url } from "@tollbooth/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  makeAuth,
+  payment,
+  signAuth,
+} from "../../adapter-x402/test/fixtures/payment.js";
+import {
   createPagesMiddleware,
   ENV_HEADER,
   TollboothBindingMissingError,
@@ -143,5 +148,107 @@ describe("no global-fetch fallback", () => {
       ctx("/_tollbooth/report", { authorization: "Bearer report-token-5" }, {}),
     );
     expect(r.headers.get("x-tollbooth-env")).toBe("test");
+  });
+});
+
+// Spec 107: in workerd a service binding's fetch is a host method that throws
+// `TypeError: Illegal invocation` when called without the binding as `this`.
+// A plain arrow-function stub (as above) cannot see that, so this fake checks
+// the receiver the way workerd does. The flush and reporter paths catch and
+// only log, so each case asserts on the calls that actually reached the
+// binding, never on a thrown error.
+const SETTLE_URL = "https://collector.example/v1/settle";
+
+function strictBinding() {
+  const binding = {
+    calls: [] as string[],
+    async fetch(this: unknown, req: Request): Promise<Response> {
+      if (this !== binding) throw new TypeError("Illegal invocation");
+      binding.calls.push(req.url);
+      if (req.url === SETTLE_URL)
+        return new Response(
+          JSON.stringify({ ok: true, data: { settled: true, payer: "0xabc" } }),
+          { status: 200 },
+        );
+      return new Response("{}", { status: 200 });
+    },
+  };
+  return binding;
+}
+
+function freshPayment(): string {
+  const nowS = Math.floor(Date.now() / 1000);
+  const auth = makeAuth({
+    value: "1000", // toml()'s default price, 0.001 USD
+    validAfter: "0",
+    validBefore: String(nowS + 300),
+    nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+  });
+  return payment(auth, signAuth(auth));
+}
+
+describe("a service binding is called with itself as `this`", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("the snapshot flush reaches the binding", async () => {
+    const b = strictBinding();
+    const flushed: Promise<unknown>[] = [];
+    const mw = createPagesMiddleware({
+      config: toml("report-token-6"),
+      snapshots: { url: "https://collector.example/v1/report", intervalMs: 0 },
+      binding: "DATA_API",
+    });
+    await mw(
+      ctx("/research", agent(), { ...seedEnv(), DATA_API: b }, (p) =>
+        flushed.push(p),
+      ),
+    );
+    await Promise.all(flushed);
+    expect(b.calls).toContain("https://collector.example/v1/report");
+  });
+
+  it("the receipt report reaches the binding", async () => {
+    // The reporter batches on a 5 s setTimeout loop; fake only setTimeout so
+    // the test advances it instead of waiting, while signing stays real.
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    const b = strictBinding();
+    const mw = createPagesMiddleware({
+      config: toml("report-token-7"),
+      settle: { url: SETTLE_URL },
+      binding: "DATA_API",
+    });
+    // An unsigned agent's offer emits no receipt; a paid pass emits
+    // PASS_PAID, so this rides a settled payment (settle is covered below).
+    await mw(
+      ctx("/research", agent({ "x-payment": freshPayment() }), {
+        ...seedEnv(),
+        TOLLBOOTH_SETTLE_TOKEN: "settle-secret",
+        DATA_API: b,
+      }),
+    );
+    await vi.waitFor(
+      async () => {
+        await vi.advanceTimersByTimeAsync(6000);
+        expect(b.calls).toContain("https://collector.example/v1/receipts");
+      },
+      { timeout: 2000, interval: 20 },
+    );
+  });
+
+  it("the x402 settle call reaches the binding", async () => {
+    const b = strictBinding();
+    const mw = createPagesMiddleware({
+      config: toml(),
+      settle: { url: SETTLE_URL },
+      binding: "DATA_API",
+    });
+    const r = await mw(
+      ctx("/research", agent({ "x-payment": freshPayment() }), {
+        TOLLBOOTH_SETTLE_TOKEN: "settle-secret",
+        DATA_API: b,
+      }),
+    );
+    expect(b.calls).toContain(SETTLE_URL);
+    expect(r.status).toBe(200);
   });
 });

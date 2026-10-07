@@ -235,12 +235,16 @@ function resolveRoutedFetch(
   needsFetch: boolean,
 ): FetchLike | null {
   if (opts.binding !== undefined) {
-    const binding = env[opts.binding] as { fetch?: unknown } | undefined;
+    const binding = env[opts.binding] as
+      | { fetch: (req: Request) => Promise<Response> }
+      | undefined;
     if (!binding || typeof binding.fetch !== "function") {
       throw new TollboothBindingMissingError(opts.binding, Object.keys(env));
     }
-    const boundFetch = binding.fetch as (req: Request) => Promise<Response>;
-    return (url, init) => boundFetch(new Request(url, init));
+    // Call fetch as a method: workerd throws `Illegal invocation` when a
+    // service binding's fetch runs without the binding as `this`.
+    // https://developers.cloudflare.com/workers/observability/errors/#illegal-invocation-errors
+    return (url, init) => binding.fetch(new Request(url, init));
   }
   if (opts.fetch !== undefined) return opts.fetch;
   if (needsFetch)
