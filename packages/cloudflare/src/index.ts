@@ -44,7 +44,11 @@ import {
   type TollboothConfig,
   toBase64Url,
 } from "@tollbooth/core";
-import { tollbooth, type X402Adapter } from "@tollbooth/hono";
+import {
+  tollbooth,
+  type X402Adapter,
+  type X402VerifyResult,
+} from "@tollbooth/hono";
 import { corpusFromMap, makeMazeHandler } from "@tollbooth/maze";
 import { Hono } from "hono";
 import { TollboothBindingMissingError } from "./errors.js";
@@ -61,6 +65,10 @@ export const ENV_HEADER = "x-tollbooth-env";
 const DAMP_CAP = 512;
 const PAYER_FAIL_LIMIT = 3;
 const PAYER_COOLDOWN_MS = 600_000;
+// ponytail: per-isolate bucket on facilitator calls, not a global budget —
+// N isolates spend N × this; move to a Durable Object if that ever matters.
+export const SETTLE_BUCKET_CAP = 20;
+const SETTLE_REFILL_PER_S = 5;
 
 export interface PagesContext {
   request: Request;
@@ -174,56 +182,92 @@ function makeSettlingVerify(
   settleUrl: string,
   settleToken: string,
 ): X402Adapter["verifyProof"] {
+  // Keyed `${from}:${nonce}` — the EIP-3009 identity — so a re-encoded copy
+  // of the same authorization is still the same payment.
   const seenPayments = new Map<string, string>();
   const payerFails = new Map<string, { n: number; untilMs: number }>();
+  // Concurrent identical payments share one settle and one result.
+  const inflight = new Map<string, Promise<X402VerifyResult>>();
+  const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
   return async (xPayment, cfg, opts = {}) => {
     const local = verifyProof(xPayment, cfg, opts);
     if (!local.ok || local.payer === null) return local;
     const payer = local.payer;
     if (settleToken === "")
       return { ok: false, payer: null, reason: "settlement-unconfigured" };
-    const seen = seenPayments.get(xPayment);
+    // verifyProof already proved this decodes to a well-formed authorization.
+    // It hashes pad32(hexToBytes(nonce.slice(2))): any 2-char prefix, any
+    // leading zeros, any hex case sign the same bytes32. Key on that value.
+    // Odd-length hex is rejected there; "" (nonce 0) is not, hence `|| "0"`.
+    const nonce = (
+      JSON.parse(atob(xPayment)) as {
+        payload: { authorization: { nonce: string } };
+      }
+    ).payload.authorization.nonce;
+    const key = `${payer}:${BigInt(`0x${nonce.slice(2) || "0"}`).toString(16)}`;
+    const seen = seenPayments.get(key);
     if (seen !== undefined) return { ok: false, payer: null, reason: seen };
+    const pending = inflight.get(key);
+    if (pending !== undefined) return await pending;
     const now = Date.now();
     const fails = payerFails.get(payer);
     if (fails && fails.n >= PAYER_FAIL_LIMIT && now < fails.untilMs)
       return { ok: false, payer: null, reason: "payer-cooldown" };
-    try {
-      const resp = await routedFetch(settleUrl, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${settleToken}`,
-        },
-        body: JSON.stringify({
-          payment: xPayment,
-          price_usd: cfg.toll.price_usd,
-        }),
-      });
-      const data =
-        ((await resp.json()) as { data?: Record<string, unknown> })?.data ?? {};
-      if (data.settled === true) {
-        remember(seenPayments, xPayment, "already-settled"); // EIP-3009 nonces are single-use
-        payerFails.delete(payer);
-        return {
-          ok: true,
-          payer: typeof data.payer === "string" ? data.payer : payer,
-          // Surfaced to the payer in X-PAYMENT-RESPONSE.
-          ...(typeof data.transaction === "string"
-            ? { transaction: data.transaction }
-            : {}),
-        };
+    bucket.tokens = Math.min(
+      SETTLE_BUCKET_CAP,
+      bucket.tokens + ((now - bucket.atMs) / 1000) * SETTLE_REFILL_PER_S,
+    );
+    bucket.atMs = now;
+    // The operator's own limit, not the payer's fault: no damping, no cache.
+    if (bucket.tokens < 1)
+      return { ok: false, payer: null, reason: "settle-throttled" };
+    bucket.tokens -= 1;
+    const settle = async (): Promise<X402VerifyResult> => {
+      try {
+        const resp = await routedFetch(settleUrl, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${settleToken}`,
+          },
+          body: JSON.stringify({
+            payment: xPayment,
+            price_usd: cfg.toll.price_usd,
+          }),
+        });
+        const data =
+          ((await resp.json()) as { data?: Record<string, unknown> })?.data ??
+          {};
+        if (data.settled === true) {
+          remember(seenPayments, key, "already-settled"); // EIP-3009 nonces are single-use
+          payerFails.delete(payer);
+          return {
+            ok: true,
+            payer: typeof data.payer === "string" ? data.payer : payer,
+            // Surfaced to the payer in X-PAYMENT-RESPONSE.
+            ...(typeof data.transaction === "string"
+              ? { transaction: data.transaction }
+              : {}),
+          };
+        }
+        const reason =
+          typeof data.reason === "string" ? data.reason : "settle-failed";
+        remember(seenPayments, key, reason);
+        remember(payerFails, payer, {
+          n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
+          untilMs: now + PAYER_COOLDOWN_MS,
+        });
+        return { ok: false, payer: null, reason };
+      } catch {
+        return { ok: false, payer: null, reason: "settle-unreachable" };
       }
-      const reason =
-        typeof data.reason === "string" ? data.reason : "settle-failed";
-      remember(seenPayments, xPayment, reason);
-      remember(payerFails, payer, {
-        n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
-        untilMs: now + PAYER_COOLDOWN_MS,
-      });
-      return { ok: false, payer: null, reason };
-    } catch {
-      return { ok: false, payer: null, reason: "settle-unreachable" };
+    };
+    const p = settle();
+    inflight.set(key, p);
+    try {
+      return await p;
+    } finally {
+      inflight.delete(key);
     }
   };
 }

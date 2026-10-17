@@ -3,33 +3,41 @@
 // on-chain failure, garbage, missing configuration — stays 402. Facilitator
 // damping: an exact payment already seen is never relayed twice, and a payer
 // with repeated fresh failures is cooled down locally (ADR-004).
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   makeAuth,
   payment,
   signAuth,
 } from "../../adapter-x402/test/fixtures/payment.js";
-import { createPagesMiddleware } from "../src/index.js";
+import { createPagesMiddleware, SETTLE_BUCKET_CAP } from "../src/index.js";
 import { agent, ctx, toml } from "./helpers.js";
 
 const SETTLE_URL = "https://collector.example/v1/settle";
 
-function freshPayment(priceUsd = "0.001"): string {
+function freshPayment(priceUsd = "0.001", nonceHex?: string): string {
   const nowS = Math.floor(Date.now() / 1000);
   const auth = makeAuth({
     value: String(Math.round(Number(priceUsd) * 1_000_000)),
     validAfter: "0",
     validBefore: String(nowS + 300),
-    nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+    nonce: `0x${nonceHex ?? (crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
   });
   return payment(auth, signAuth(auth));
 }
 
-function settleBinding(outcome: Record<string, unknown>) {
+/** Same payment and signature, nonce field rewritten to `nonce`. */
+function respell(xp: string, nonce: string): string {
+  const p = JSON.parse(atob(xp));
+  p.payload.authorization.nonce = nonce;
+  return btoa(JSON.stringify(p));
+}
+
+function settleBinding(outcome: Record<string, unknown>, delayMs = 0) {
   const b = {
     settles: [] as { auth: string | null; body: Record<string, unknown> }[],
     fetch: async (req: Request) => {
       if (req.url === SETTLE_URL) {
+        if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
         b.settles.push({
           auth: req.headers.get("authorization"),
           body: (await req.json()) as Record<string, unknown>,
@@ -162,6 +170,129 @@ describe("createPagesMiddleware — settle-then-serve", () => {
       expect(r.status).not.toBe(200);
     }
     expect(b.settles.length).toBe(3);
+  });
+
+  it("concurrent identical payments settle once and all pass", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" }, 20);
+    const mw = settlingMw();
+    // Warm the isolate state first: a cold burst builds one state per request.
+    await mw(ctx("/r", agent(), envOf(b)));
+    const xp = freshPayment();
+    const rs = await Promise.all(
+      Array.from({ length: 10 }, () =>
+        mw(ctx("/r", agent({ "x-payment": xp }), envOf(b))),
+      ),
+    );
+    expect(rs.map((r) => r.status)).toEqual(Array(10).fill(200));
+    expect(b.settles.length).toBe(1);
+  });
+
+  it("a re-encoded copy of a settled payment is refused without a settle", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const mw = settlingMw();
+    const xp = freshPayment();
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(200);
+    const reencoded = btoa(JSON.stringify(JSON.parse(atob(xp)), null, 1));
+    expect(reencoded).not.toBe(xp);
+    // Valid on its own: a fresh isolate would settle it.
+    const fresh = settleBinding({ settled: true, payer: "0xabc" });
+    expect(
+      (
+        await settlingMw()(
+          ctx("/r", agent({ "x-payment": reencoded }), envOf(fresh)),
+        )
+      ).status,
+    ).toBe(200);
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": reencoded }), envOf(b)))).status,
+    ).toBe(402);
+    expect(b.settles.length).toBe(1);
+  });
+
+  it("other spellings of a settled nonce (prefix, leading zeros, case) are refused without a settle", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const mw = settlingMw();
+    // 31 bytes: the signed bytes32 nonce is 0x00 followed by these.
+    const hex = "ab".repeat(31);
+    const xp = freshPayment("0.001", hex);
+    const spellings = [`0x00${hex}`, `zz${hex}`, `0X${hex.toUpperCase()}`];
+    // Each spelling verifies on its own: a fresh isolate would settle it.
+    for (const n of spellings) {
+      const fresh = settleBinding({ settled: true, payer: "0xabc" });
+      expect(
+        (
+          await settlingMw()(
+            ctx("/r", agent({ "x-payment": respell(xp, n) }), envOf(fresh)),
+          )
+        ).status,
+      ).toBe(200);
+    }
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(200);
+    for (const n of spellings) {
+      const r = await mw(
+        ctx("/r", agent({ "x-payment": respell(xp, n) }), envOf(b)),
+      );
+      expect(r.status).toBe(402);
+    }
+    expect(b.settles.length).toBe(1);
+  });
+
+  it("a concurrent burst of nonce spellings settles once", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" }, 20);
+    const mw = settlingMw();
+    await mw(ctx("/r", agent(), envOf(b)));
+    const hex = "cd".repeat(31);
+    const xp = freshPayment("0.001", hex);
+    const rs = await Promise.all(
+      [`0x${hex}`, `0x00${hex}`, `zz${hex}`, `0x${hex.toUpperCase()}`].map(
+        (n) => mw(ctx("/r", agent({ "x-payment": respell(xp, n) }), envOf(b))),
+      ),
+    );
+    expect(rs.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    expect(b.settles.length).toBe(1);
+  });
+
+  it("past the per-isolate settle budget, payments are throttled without a facilitator call", async () => {
+    const outcome: Record<string, unknown> = { settled: true, payer: "0xabc" };
+    const b = settleBinding(outcome);
+    const mw = settlingMw();
+    const t0 = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      for (let i = 0; i < SETTLE_BUCKET_CAP; i++) {
+        const r = await mw(
+          ctx("/r", agent({ "x-payment": freshPayment() }), envOf(b)),
+        );
+        expect(r.status).toBe(200);
+      }
+      const throttled = Array.from({ length: 3 }, () => freshPayment());
+      for (const xp of throttled) {
+        const r = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)));
+        expect(r.status).toBe(402);
+      }
+      expect(b.settles.length).toBe(SETTLE_BUCKET_CAP);
+      // One second refills the bucket. The throttled payment was never
+      // cached as seen, so it settles now.
+      clock.mockReturnValue(t0 + 1000);
+      expect(
+        (
+          await mw(
+            ctx("/r", agent({ "x-payment": throttled[0] ?? "" }), envOf(b)),
+          )
+        ).status,
+      ).toBe(200);
+      // Three throttles did not count as payer failures: a failing payment
+      // still reaches the facilitator instead of hitting payer-cooldown.
+      outcome.settled = false;
+      await mw(ctx("/r", agent({ "x-payment": freshPayment() }), envOf(b)));
+      expect(b.settles.length).toBe(SETTLE_BUCKET_CAP + 2);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("the authed report says settling:true when the wire is live", async () => {
