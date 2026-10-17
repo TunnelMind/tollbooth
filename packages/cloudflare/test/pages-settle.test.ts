@@ -172,7 +172,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     expect(b.settles.length).toBe(3);
   });
 
-  it("concurrent identical payments settle once and all pass", async () => {
+  it("concurrent identical payments settle once and only the first passes", async () => {
     const b = settleBinding({ settled: true, payer: "0xabc" }, 20);
     const mw = settlingMw();
     // Warm the isolate state first: a cold burst builds one state per request.
@@ -183,7 +183,8 @@ describe("createPagesMiddleware — settle-then-serve", () => {
         mw(ctx("/r", agent({ "x-payment": xp }), envOf(b))),
       ),
     );
-    expect(rs.map((r) => r.status)).toEqual(Array(10).fill(200));
+    expect(rs.filter((r) => r.status === 200).length).toBe(1);
+    expect(rs.filter((r) => r.status === 402).length).toBe(9);
     expect(b.settles.length).toBe(1);
   });
 
@@ -252,7 +253,8 @@ describe("createPagesMiddleware — settle-then-serve", () => {
         (n) => mw(ctx("/r", agent({ "x-payment": respell(xp, n) }), envOf(b))),
       ),
     );
-    expect(rs.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    expect(rs.filter((r) => r.status === 200).length).toBe(1);
+    expect(rs.filter((r) => r.status === 402).length).toBe(3);
     expect(b.settles.length).toBe(1);
   });
 

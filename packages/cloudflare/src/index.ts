@@ -186,7 +186,9 @@ function makeSettlingVerify(
   // of the same authorization is still the same payment.
   const seenPayments = new Map<string, string>();
   const payerFails = new Map<string, { n: number; untilMs: number }>();
-  // Concurrent identical payments share one settle and one result.
+  // Concurrent identical payments share one settle; only the starter passes.
+  // The x402 resource is not in the signed EIP-3009 authorization, so sharing
+  // ok:true would let one payment sent to many paths unlock all of them.
   const inflight = new Map<string, Promise<X402VerifyResult>>();
   const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
   return async (xPayment, cfg, opts = {}) => {
@@ -208,7 +210,14 @@ function makeSettlingVerify(
     const seen = seenPayments.get(key);
     if (seen !== undefined) return { ok: false, payer: null, reason: seen };
     const pending = inflight.get(key);
-    if (pending !== undefined) return await pending;
+    if (pending !== undefined) {
+      const leader = await pending;
+      return {
+        ok: false,
+        payer: null,
+        reason: leader.ok ? "already-settled" : leader.reason,
+      };
+    }
     const now = Date.now();
     const fails = payerFails.get(payer);
     if (fails && fails.n >= PAYER_FAIL_LIMIT && now < fails.untilMs)
