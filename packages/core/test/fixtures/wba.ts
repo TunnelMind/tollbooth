@@ -36,14 +36,28 @@ export async function signedRequest(
   {
     created = NOW,
     expires = NOW + 60,
-  }: { created?: number; expires?: number } = {},
+    components = ["@authority", "signature-agent"],
+    authority = "example.com",
+    path,
+  }: {
+    created?: number;
+    /** `null` omits the expires parameter entirely. */
+    expires?: number | null;
+    components?: string[];
+    authority?: string;
+    /** Signed over when components include "@path"; echoed in the result. */
+    path?: string;
+  } = {},
 ) {
   const signatureAgent = '"https://signature-agent.test"';
-  const inner = `("@authority" "signature-agent");created=${created};expires=${expires};keyid="${agent.keyid}";alg="ed25519";tag="web-bot-auth"`;
+  const list = components.map((c) => `"${c}"`).join(" ");
+  const exp = expires === null ? "" : `;expires=${expires}`;
+  const inner = `(${list});created=${created}${exp};keyid="${agent.keyid}";alg="ed25519";tag="web-bot-auth"`;
   const signatureInput = `sig2=${inner}`;
   const base = buildSignatureBase(parseSignatureInput(signatureInput), {
-    authority: "example.com",
+    authority,
     signatureAgent,
+    ...(path !== undefined ? { path } : {}),
   });
   const sig = await sign(base, agent.secretKey);
   let b64 = "";
@@ -52,7 +66,8 @@ export async function signedRequest(
     signature: `sig2=:${btoa(b64)}:`,
     signatureInput,
     signatureAgent,
-    authority: "example.com",
+    authority,
+    ...(path !== undefined ? { path } : {}),
   };
 }
 

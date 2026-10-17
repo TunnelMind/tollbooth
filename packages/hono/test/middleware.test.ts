@@ -128,6 +128,51 @@ describe("US-1 AC-1.1 - the report endpoint", () => {
       expect.objectContaining({ key: agent.jwk.x, kind: "agent" }),
     ]);
   });
+
+  it("hands the pipeline the raw %-encoded path, so an @path signature verifies", async () => {
+    const agent = await makeAgent();
+    const app = appWith(`report_token = "t"`, {
+      fetchDirectory: dirWith(agent.jwk),
+    });
+    const wba = await signedRequest(agent, {
+      components: ["@authority", "@path", "signature-agent"],
+      path: "/foo%20bar",
+    });
+    await app.request("http://example.com/foo%20bar", {
+      headers: {
+        ...curlHeaders,
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      },
+    });
+    const report = (await (
+      await app.request("http://example.com/_tollbooth/report", {
+        headers: { authorization: "Bearer t" },
+      })
+    ).json()) as {
+      agents: Array<{ key: string; kind: string; paths: string[] }>;
+    };
+    expect(report.agents).toEqual([
+      expect.objectContaining({
+        key: agent.jwk.x,
+        kind: "agent",
+        paths: ["/foo%20bar"],
+      }),
+    ]);
+  });
+
+  it("matches a %-encoded free_paths entry against the raw path", async () => {
+    const app = appWith(`mode = "toll"
+free_paths = ["/foo%20bar"]
+[toll.x402]
+pay_to = "0xabc"
+`);
+    const resp = await app.request("http://example.com/foo%20bar", {
+      headers: curlHeaders,
+    });
+    expect(resp.status).toBe(200);
+  });
 });
 
 describe("toll mode acts on the decision", () => {

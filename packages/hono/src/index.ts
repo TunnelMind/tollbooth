@@ -135,7 +135,9 @@ function requestFromContext(c: Context): PipelineRequest {
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);
   return {
-    path: c.req.path,
+    // Raw (still %-encoded) pathname: c.req.path is decoded, which would break
+    // a WBA "@path" signature made over the wire bytes and free-path matching.
+    path: url.pathname,
     authority: header("host") ?? url.host,
     method: c.req.method,
     scheme: url.protocol.replace(":", ""),

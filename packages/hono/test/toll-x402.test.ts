@@ -109,7 +109,7 @@ describe("T-010 milestone - usable x402 tollbooth", () => {
     // A signature replayed against another host is a spoof - a consequence;
     // with no maze configured the fallback is a 402.
     const agent = await makeAgent();
-    const wba = await signedRequest(agent, { expires: NOW + 7200 });
+    const wba = await signedRequest(agent, { expires: NOW + 300 });
     const resp = await app(agent).request("http://evil.example/article", {
       headers: {
         ...curlHeaders,
