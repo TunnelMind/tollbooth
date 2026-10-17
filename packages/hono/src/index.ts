@@ -15,6 +15,7 @@ import {
   type PipelineDeps,
   type PipelineRequest,
   parseConfig,
+  type ReceiptFacts,
   ReceiptReporter,
   receiptFactsFor,
   type SiteKeyPair,
@@ -112,6 +113,12 @@ const ROBOTS_UA_MAX = 1000;
 // needs the full raw path for free-path matching and the WBA "@path" check.
 const UA_MAX = 512;
 const PATH_MAX = 256;
+// SPOOF aggregation (B007): one receipt per claimed key per window, a
+// bounded number of pending buckets, and the attacker-chosen strings in a
+// SPOOF receipt cut tighter than the intake cap.
+const SPOOF_WINDOW_S = 60;
+const SPOOF_BUCKETS_MAX = 1000;
+const SPOOF_FIELD_MAX = 128;
 // The entry cap alone would still let 50k entries of max-size UA + paths
 // pin ~300 MB; this budget evicts oldest-first long before that.
 const AGENT_STATS_MAX_BYTES = 1_000_000;
@@ -379,6 +386,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     (cfg.report && cfg.report_url !== undefined
       ? new ReceiptReporter({ url: cfg.report_url, domain: cfg.report_domain })
       : undefined);
+  // Pending SPOOF buckets, keyed by the (capped) claimed key; null is the
+  // "no key claimed" bucket. Insertion order is window-start order.
+  const spoofBuckets = new Map<string | null, ReceiptFacts>();
 
   const offerResponse = (c: Context, body: OfferBody) => {
     // The adapter owns the x402 payment-required headers (D-7); this layer
@@ -516,9 +526,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
           | { WAIT_UNTIL?: ((p: Promise<unknown>) => void) | null }
           | undefined
       )?.WAIT_UNTIL;
-      if (facts && waitUntil === null) reporter.noteDropped();
-      else if (facts) {
-        const work = buildReceipt(facts, siteKeys)
+      const emit = (f: ReceiptFacts) => {
+        if (waitUntil === null) return reporter.noteDropped();
+        const work = buildReceipt(f, siteKeys)
           .then((receipt) => reporter.enqueue(receipt))
           .catch(() => reporter.noteDropped());
         if (typeof waitUntil === "function") {
@@ -528,7 +538,55 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
             reporter.noteDropped();
           }
         } else void work;
-      }
+      };
+      // SPOOF is unauthenticated: anyone can claim any key. The commons must
+      // never attribute a SPOOF receipt to the claimed key; it is evidence of
+      // an attack naming that key, not of that key's conduct. So spoofs are
+      // aggregated per claimed key per SPOOF_WINDOW_S into ONE receipt with a
+      // count - 1,000 junk signatures naming a key are one receipt, not a
+      // thousand rows framing it. The bucket keeps the first request's facts.
+      // ponytail: buckets emit lazily on the next SPOOF request (any key), so
+      // a bucket with no later spoof traffic stays pending until the process
+      // restarts; upgrade path = a timer, or a flush at shutdown.
+      if (facts?.type === "SPOOF") {
+        for (const [k, b] of spoofBuckets) {
+          if (nowSec - b.windowStartS < SPOOF_WINDOW_S) break;
+          spoofBuckets.delete(k);
+          emit(b);
+        }
+        const claimed =
+          typeof facts.claimedKey === "string"
+            ? facts.claimedKey.slice(0, SPOOF_FIELD_MAX)
+            : null;
+        let bucket = spoofBuckets.get(claimed);
+        if (bucket && nowSec - bucket.windowStartS >= SPOOF_WINDOW_S) {
+          spoofBuckets.delete(claimed);
+          emit(bucket);
+          bucket = undefined;
+        }
+        if (bucket) {
+          bucket.count += 1;
+          bucket.windowEndS = Math.max(bucket.windowEndS, nowSec);
+        } else {
+          // Full: emit the oldest bucket early rather than lose its count.
+          if (spoofBuckets.size >= SPOOF_BUCKETS_MAX) {
+            const [k, b] = spoofBuckets.entries().next().value as [
+              string | null,
+              ReceiptFacts,
+            ];
+            spoofBuckets.delete(k);
+            emit(b);
+          }
+          spoofBuckets.set(claimed, {
+            ...facts,
+            claimedKey: claimed,
+            ua: facts.ua.replace(/\p{Cc}/gu, "").slice(0, SPOOF_FIELD_MAX),
+            count: 1,
+            windowStartS: nowSec,
+            windowEndS: nowSec,
+          });
+        }
+      } else if (facts) emit(facts);
     }
 
     if (cfg.mode === "observe") return next();

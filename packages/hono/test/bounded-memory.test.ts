@@ -10,12 +10,12 @@ import {
 } from "@tollbooth/core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
-import { NOW, PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";
 import {
-  dirWith,
-  makeAgent,
-  signedRequest,
-} from "../../core/test/fixtures/wba.js";
+  NOW,
+  PAY_TO,
+  validPayment,
+} from "../../adapter-x402/test/fixtures/payment.js";
+import { dirWith, makeAgent } from "../../core/test/fixtures/wba.js";
 import { tollbooth } from "../src/index.js";
 
 const LONG_PATH = `/${"p".repeat(1000)}`;
@@ -84,19 +84,17 @@ describe("B004 bounded memory", () => {
       }),
     );
     app.get("*", (c) => c.text("content"));
-    // A signature from another key: a SPOOF, which always emits a receipt.
-    const wba = await signedRequest(agent);
-    await app.request(`http://evil.example${LONG_PATH}`, {
+    // A paid request emits its receipt immediately. (SPOOF receipts are
+    // aggregated per window and cut tighter, to 128: spoof-aggregate.test.ts.)
+    await app.request(`http://example.com${LONG_PATH}`, {
       headers: {
         "user-agent": `curl/8.7.1 ${"u".repeat(1000)}`,
         accept: "*/*",
-        signature: wba.signature,
-        "signature-input": wba.signatureInput,
-        "signature-agent": wba.signatureAgent,
-        host: "evil.example",
+        "x-payment": validPayment(),
       },
     });
     await vi.waitFor(() => expect(enqueued).toHaveLength(1));
+    expect(enqueued[0]?.type).toBe("PASS_PAID");
     // receipts keep only the first segment, cut from the 256-char path
     expect(enqueued[0]?.path_class).toBe(LONG_PATH.slice(0, 256));
     expect(enqueued[0]?.ua.length).toBe(512);

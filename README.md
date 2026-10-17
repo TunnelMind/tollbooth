@@ -237,6 +237,12 @@ never captured — a test in this repo plants a marker in a request body and
 asserts it appears in no receipt. `SPOOF` receipts never name a verified
 `agent_key`: they carry the *claimed* key, explicitly unverified, because
 anyone can send garbage signatures naming any key.
+SPOOF is unauthenticated: anyone can claim any key. The commons must never
+attribute a SPOOF receipt to the claimed key; it is evidence of an attack
+naming that key, not of that key's conduct. Spoofs are therefore aggregated:
+one `SPOOF` receipt per claimed key per 60 s window, with `count` holding the
+number of spoofs and `ua` cut to 128 characters with control characters
+stripped.
 
 Verify one on an air-gapped machine — only the receipt and the site's public
 key are needed:
