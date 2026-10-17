@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+export { botRanges, ipInRanges } from "./botranges.js";
 export { canonicalize } from "./canonicalize.js";
 export type { TollboothConfig } from "./config.js";
 export { ConfigError, parseConfig } from "./config.js";

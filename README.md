@@ -15,6 +15,7 @@ No hosted service. No database. No telemetry. MIT.
 | step | check | outcome |
 |---|---|---|
 | 1 | `free_paths` (robots.txt, favicon, yours) | pass, always, for everyone |
+| 1b | `pass_verified` (opt-in, default off) | verified search / preview bots pass |
 | 2 | identify: Web Bot Auth → heuristics → neither | — |
 | 3 | human or ambiguous | pass — no challenge pages, no CAPTCHA, ever |
 | 4 | forged signature | maze |
@@ -71,6 +72,8 @@ curl -H "Authorization: Bearer choose-a-secret" http://localhost:8787/_tollbooth
 {
   "mode": "observe",
   "humans_passed": 1042,
+  "verified_search_passed": 0,
+  "verified_preview_passed": 0,
   "free_path_hits": 33,
   "receipts_queued": 0,
   "receipts_dropped": 0,
@@ -115,6 +118,22 @@ pay_to = "0xYOUR_ADDRESS"
 enabled = true
 payment_link = "https://buy.stripe.com/..."
 webhook_secret = "whsec_..."
+```
+
+`pass_verified` is an opt-in pass for crawlers you want to let through,
+**off by default** (`[]`). `"search"` passes Googlebot and bingbot only when
+the client IP is inside the ranges Google and Bing publish (a dated snapshot
+vendored in `@tollbooth/core`, never fetched at runtime); a spoofed UA from
+any other IP, or a request with no trusted IP, gets the normal 402.
+`"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
+Discordbot by UA, for HTML page GET/HEAD requests only. A request carrying
+Web Bot Auth headers is never shortcut. Each pass is counted in the report as
+its own class (`verified_search_passed`, `verified_preview_passed`). The
+client IP comes from `cf-connecting-ip`, which only Cloudflare guarantees;
+elsewhere pass `tollbooth({ clientIp: (c) => ... })` with a source you trust.
+
+```toml
+pass_verified = ["search", "preview"]
 ```
 
 ```ts

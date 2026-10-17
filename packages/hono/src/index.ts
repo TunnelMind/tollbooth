@@ -88,6 +88,12 @@ export interface TollboothOptions {
   fetchDirectory?: FetchDirectory;
   /** Injectable clock, epoch seconds. */
   nowS?: () => number;
+  /**
+   * Trusted client IP for `pass_verified = ["search"]`. Defaults to the
+   * cf-connecting-ip header, which is only trustworthy behind Cloudflare;
+   * on Node or Bun supply your own (e.g. the socket address).
+   */
+  clientIp?: (c: Context) => string | undefined;
 }
 
 const REPORT_PATH = "/_tollbooth/report";
@@ -104,6 +110,9 @@ interface AgentStat {
 interface Stats {
   agents: Map<string, AgentStat>;
   humansPassed: number;
+  /** B009 opt-in passes: their own class, neither human nor agent. */
+  verifiedSearchPassed: number;
+  verifiedPreviewPassed: number;
   freePathHits: number;
   robotsUAs: Set<string>;
   /** Approximate retained size of `agents` (key + ua + paths, in chars). */
@@ -254,7 +263,17 @@ async function readCapped(resp: Response): Promise<string> {
   return text + decoder.decode();
 }
 
-function requestFromContext(c: Context): PipelineRequest {
+function requestFromContext(
+  c: Context,
+  clientIpOf?: (c: Context) => string | undefined,
+): PipelineRequest {
+  // cf-connecting-ip is set by Cloudflare's edge and cannot be forged on
+  // Workers; anywhere else any client can send it, so non-Workers
+  // deployments must pass options.clientIp. x-forwarded-for is never read
+  // by default: it is client-supplied unless a known proxy rewrites it.
+  const clientIp = clientIpOf
+    ? clientIpOf(c)
+    : c.req.header("cf-connecting-ip");
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);
   return {
@@ -287,6 +306,7 @@ function requestFromContext(c: Context): PipelineRequest {
     ...(header("tollbooth-voucher") !== undefined
       ? { voucher: header("tollbooth-voucher") as string }
       : {}),
+    ...(clientIp !== undefined ? { clientIp } : {}),
   };
 }
 
@@ -300,6 +320,14 @@ function record(
     stats.freePathHits += 1;
     if (req.path === "/robots.txt" && stats.robotsUAs.size < ROBOTS_UA_MAX)
       stats.robotsUAs.add(req.userAgent);
+    return;
+  }
+  if (decision.action === "pass" && decision.reason === "verified-search") {
+    stats.verifiedSearchPassed += 1;
+    return;
+  }
+  if (decision.action === "pass" && decision.reason === "verified-preview") {
+    stats.verifiedPreviewPassed += 1;
     return;
   }
   const identity = decision.identity;
@@ -354,6 +382,8 @@ function reportJson(
   return {
     mode: cfg.mode,
     humans_passed: stats.humansPassed,
+    verified_search_passed: stats.verifiedSearchPassed,
+    verified_preview_passed: stats.verifiedPreviewPassed,
     free_path_hits: stats.freePathHits,
     receipts_queued: reporter?.queued ?? 0,
     receipts_dropped: reporter?.dropped ?? 0,
@@ -390,6 +420,8 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const stats: Stats = {
     agents: new Map(),
     humansPassed: 0,
+    verifiedSearchPassed: 0,
+    verifiedPreviewPassed: 0,
     freePathHits: 0,
     robotsUAs: new Set(),
     bytes: 0,
@@ -481,7 +513,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       });
     }
 
-    const req = requestFromContext(c);
+    const req = requestFromContext(c, options.clientIp);
     const nowS = options.nowS?.();
     // The verify result for this request, kept for X-PAYMENT-RESPONSE.
     let payment: X402VerifyResult | undefined;

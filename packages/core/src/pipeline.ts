@@ -4,6 +4,7 @@
 // only state it touches is injected: the offer ledger (D-3) and the jti
 // replay cache (AC-3.3). Step 7 (offer exhaustion) lands with T-017; the
 // ladder below already classifies for it.
+import { botRanges, ipInRanges } from "./botranges.js";
 import type { TollboothConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
 import type { JtiCache } from "./jti.js";
@@ -28,6 +29,8 @@ export interface PipelineRequest {
   payment?: string;
   /** Tollbooth-Voucher header, verbatim. */
   voucher?: string;
+  /** Client IP from a source the binding trusts; absent when it has none. */
+  clientIp?: string;
 }
 
 export type Identity =
@@ -57,7 +60,13 @@ export type OfferOption =
 export type Decision =
   | {
       action: "pass";
-      reason: "free-path" | "human" | "paid" | "voucher";
+      reason:
+        | "free-path"
+        | "human"
+        | "paid"
+        | "voucher"
+        | "verified-search"
+        | "verified-preview";
       identity: Identity | null;
       /** The re-signed successor voucher to set on the response (AC-3.2). */
       voucher?: string;
@@ -103,6 +112,24 @@ const isFreePath = (path: string, free: string[]): boolean =>
     entry.endsWith("/") ? path.startsWith(entry) : path === entry,
   );
 
+const SEARCH_UA = /Googlebot|bingbot/i;
+const PREVIEW_UA =
+  /Slackbot|Twitterbot|facebookexternalhit|LinkedInBot|Discordbot/i;
+const SEARCH_RANGES = [...botRanges.google, ...botRanges.bing];
+// Paths with these endings are assets or API payloads, not pages.
+const NON_HTML_EXT =
+  /\.(json|xml|txt|csv|js|mjs|css|map|png|jpe?g|gif|webp|avif|svg|ico|woff2?|ttf|pdf|zip|gz|mp4|webm|mp3|wasm)$/i;
+
+/**
+ * A preview bot unfurling a link wants the page: a GET or HEAD whose Accept
+ * is absent or includes text/html, for a path that is not an asset or API
+ * file by extension. Everything else is ordinary agent traffic.
+ */
+const isHtmlPageRequest = (req: PipelineRequest): boolean =>
+  (req.method === "GET" || req.method === "HEAD") &&
+  (req.accept === undefined || req.accept.includes("text/html")) &&
+  !NON_HTML_EXT.test(req.path);
+
 /** Every enabled payment option, with enough data to complete each (AC-7.2). */
 export function buildOfferBody(cfg: TollboothConfig): OfferBody {
   const options: OfferOption[] = [];
@@ -125,17 +152,17 @@ export function buildOfferBody(cfg: TollboothConfig): OfferBody {
   return { v: 1, price_usd: cfg.toll.price_usd, options };
 }
 
+const hasWba = (req: PipelineRequest): boolean =>
+  req.signature !== undefined ||
+  req.signatureInput !== undefined ||
+  req.signatureAgent !== undefined;
+
 async function identify(
   req: PipelineRequest,
   cfg: TollboothConfig,
   deps: PipelineDeps,
 ): Promise<Identity> {
-  const wbaPresent =
-    req.signature !== undefined ||
-    req.signatureInput !== undefined ||
-    req.signatureAgent !== undefined;
-
-  if (wbaPresent) {
+  if (hasWba(req)) {
     const result = await verifyWebBotAuth(
       {
         signature: req.signature ?? "",
@@ -192,6 +219,26 @@ export async function decide(
   // identity is not even computed.
   if (isFreePath(req.path, cfg.free_paths))
     return { action: "pass", reason: "free-path", identity: null };
+
+  // Step 1b (B009, opt-in): verified search and preview bots pass. Never for
+  // a Web Bot Auth request, which keeps its normal path. Search needs the
+  // operator-published IP range, so a spoofed UA (or no trusted client IP)
+  // falls through to the offer like any other agent.
+  if (cfg.pass_verified.length > 0 && !hasWba(req)) {
+    if (
+      cfg.pass_verified.includes("search") &&
+      SEARCH_UA.test(req.userAgent) &&
+      req.clientIp !== undefined &&
+      ipInRanges(req.clientIp, SEARCH_RANGES)
+    )
+      return { action: "pass", reason: "verified-search", identity: null };
+    if (
+      cfg.pass_verified.includes("preview") &&
+      PREVIEW_UA.test(req.userAgent) &&
+      isHtmlPageRequest(req)
+    )
+      return { action: "pass", reason: "verified-preview", identity: null };
+  }
 
   // Step 2: identify.
   const identity = await identify(req, cfg, deps);
