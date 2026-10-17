@@ -100,10 +100,21 @@ interface Stats {
   humansPassed: number;
   freePathHits: number;
   robotsUAs: Set<string>;
+  /** Approximate retained size of `agents` (key + ua + paths, in chars). */
+  bytes: number;
 }
 
 const PATH_SAMPLE_MAX = 20;
 const ROBOTS_UA_MAX = 1000;
+// Bounded memory: headers and paths are attacker-sized, so every recorded
+// copy is capped. The UA is cut at intake (no rule matches past 512 chars of
+// a real UA); the path is cut only where it is recorded, because decide()
+// needs the full raw path for free-path matching and the WBA "@path" check.
+const UA_MAX = 512;
+const PATH_MAX = 256;
+// The entry cap alone would still let 50k entries of max-size UA + paths
+// pin ~300 MB; this budget evicts oldest-first long before that.
+const AGENT_STATS_MAX_BYTES = 1_000_000;
 
 const DIRECTORY_MAX_BYTES = 65536;
 
@@ -241,7 +252,7 @@ function requestFromContext(c: Context): PipelineRequest {
     authority: header("host") ?? url.host,
     method: c.req.method,
     scheme: url.protocol.replace(":", ""),
-    userAgent: header("user-agent") ?? "",
+    userAgent: (header("user-agent") ?? "").slice(0, UA_MAX),
     ...(header("accept") !== undefined
       ? { accept: header("accept") as string }
       : {}),
@@ -294,16 +305,32 @@ function record(
   let entry = stats.agents.get(key);
   if (!entry) {
     // Bounded map; eviction is amnesty (D-3 spirit), never an error.
-    if (stats.agents.size >= cap) {
-      const oldest = stats.agents.keys().next().value;
-      if (oldest !== undefined) stats.agents.delete(oldest);
-    }
+    if (stats.agents.size >= cap) evictOldest(stats);
     entry = { kind: identity.kind, ua: req.userAgent, requests: 0, paths: [] };
     stats.agents.set(key, entry);
+    stats.bytes += key.length + entry.ua.length;
   }
   entry.requests += 1;
-  if (!entry.paths.includes(req.path) && entry.paths.length < PATH_SAMPLE_MAX)
-    entry.paths.push(req.path);
+  const path = req.path.slice(0, PATH_MAX);
+  if (!entry.paths.includes(path) && entry.paths.length < PATH_SAMPLE_MAX) {
+    entry.paths.push(path);
+    stats.bytes += path.length;
+  }
+  // Byte budget, oldest first; the current entry is always kept (it is the
+  // newest unless it was an existing one; ua + 20 paths keep it near 6 KB).
+  while (stats.bytes > AGENT_STATS_MAX_BYTES && stats.agents.size > 1) {
+    if (stats.agents.keys().next().value === key) break;
+    evictOldest(stats);
+  }
+}
+
+function evictOldest(stats: Stats): void {
+  const oldest = stats.agents.entries().next().value;
+  if (oldest === undefined) return;
+  const [key, s] = oldest;
+  stats.agents.delete(key);
+  stats.bytes -= key.length + s.ua.length;
+  for (const p of s.paths) stats.bytes -= p.length;
 }
 
 function reportJson(
@@ -341,6 +368,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     humansPassed: 0,
     freePathHits: 0,
     robotsUAs: new Set(),
+    bytes: 0,
   };
   const ledger = new OfferLedger(cfg.limits.agent_ledger_max);
   const jtiCache = new JtiCache(cfg.limits.jti_lru_max);
@@ -473,7 +501,11 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
             windowEndS: nowSec,
           }
         : { count: 1, windowStartS: nowSec, windowEndS: nowSec };
-      const facts = receiptFactsFor(decision, req, window);
+      const facts = receiptFactsFor(
+        decision,
+        { userAgent: req.userAgent, path: req.path.slice(0, PATH_MAX) },
+        window,
+      );
       if (facts)
         void buildReceipt(facts, siteKeys)
           .then((receipt) => reporter.enqueue(receipt))
