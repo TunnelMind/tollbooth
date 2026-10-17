@@ -15,6 +15,7 @@ No hosted service. No database. No telemetry. MIT.
 | step | check | outcome |
 |---|---|---|
 | 1 | `free_paths` (robots.txt, favicon, yours) | pass, always, for everyone |
+| 1b | `pass_verified` (opt-in, default off) | verified search / preview bots pass |
 | 2 | identify: Web Bot Auth → heuristics → neither | — |
 | 3 | human or ambiguous | pass — no challenge pages, no CAPTCHA, ever |
 | 4 | forged signature | maze |
@@ -71,6 +72,8 @@ curl -H "Authorization: Bearer choose-a-secret" http://localhost:8787/_tollbooth
 {
   "mode": "observe",
   "humans_passed": 1042,
+  "verified_search_passed": 0,
+  "verified_preview_passed": 0,
   "free_path_hits": 33,
   "receipts_queued": 0,
   "receipts_dropped": 0,
@@ -115,6 +118,24 @@ pay_to = "0xYOUR_ADDRESS"
 enabled = true
 payment_link = "https://buy.stripe.com/..."
 webhook_secret = "whsec_..."
+```
+
+`pass_verified` is an opt-in pass for crawlers you want to let through,
+**off by default** (`[]`). `"search"` passes Googlebot and bingbot only when
+the client IP is inside the ranges Google and Bing publish (a dated snapshot
+vendored in `@tollbooth/core`, never fetched at runtime); a spoofed UA from
+any other IP, or a request with no trusted IP, gets the normal 402.
+`"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
+Discordbot by UA, for HTML page GET/HEAD requests only. A request carrying
+Web Bot Auth headers is never shortcut. Each pass is counted in the report as
+its own class (`verified_search_passed`, `verified_preview_passed`). 
+`@tollbooth/hono` has no default client IP, so the search pass fails closed
+until you pass `tollbooth({ clientIp: (c) => ... })` with a source you trust;
+`@tollbooth/cloudflare` wires `cf-connecting-ip` itself, since Cloudflare's
+edge sets it.
+
+```toml
+pass_verified = ["search", "preview"]
 ```
 
 ```ts
@@ -191,6 +212,20 @@ enabled payment option with enough data to complete each:
 }
 ```
 
+With x402 enabled the same body also speaks [x402 v1](https://www.x402.org/):
+`x402Version: 1`, `error`, and `accepts[]` holding one `PaymentRequirements`
+(`scheme`, `network`, `maxAmountRequired`, `resource` — the absolute request
+URL — `description`, `mimeType`, `payTo`, `maxTimeoutSeconds`, `asset`,
+`outputSchema`, `extra`). No key is shared, so an x402 client and an older
+tollbooth client each read their own fields. Every `402` is
+`cache-control: no-store`. A paid response carries `X-PAYMENT-RESPONSE`:
+base64 JSON `{success, transaction, network, payer}` (`transaction` is `""`
+when only local verification ran, with no settle step).
+
+**Deprecated:** the `x-payment-required` response header (the same
+requirement as `accepts[0]`, as JSON) is kept for one release cycle and will
+be removed in the next minor. Read `accepts[0]` from the body instead.
+
 [examples/agent-client.ts](examples/agent-client.ts) is a complete paying
 client in under 80 lines: request, read the offer, pay by voucher or by
 signing an x402 authorization, retry.
@@ -223,6 +258,12 @@ never captured — a test in this repo plants a marker in a request body and
 asserts it appears in no receipt. `SPOOF` receipts never name a verified
 `agent_key`: they carry the *claimed* key, explicitly unverified, because
 anyone can send garbage signatures naming any key.
+SPOOF is unauthenticated: anyone can claim any key. The commons must never
+attribute a SPOOF receipt to the claimed key; it is evidence of an attack
+naming that key, not of that key's conduct. Spoofs are therefore aggregated:
+one `SPOOF` receipt per claimed key per 60 s window, with `count` holding the
+number of spoofs and `ua` cut to 128 characters with control characters
+stripped.
 
 Verify one on an air-gapped machine — only the receipt and the site's public
 key are needed:
@@ -233,8 +274,13 @@ npx @tollbooth/cli verify receipt.json --pubkey <site-public-key>
 # schema: PASS
 # canonical form: PASS
 # signature: PASS
+# key not bound to a domain
 # PASS
 ```
+
+`--pin <file>` reads the key from a file instead. `--domain <host>` is the one
+networked option: it fetches `https://<host>/.well-known/tollbooth-site.json`
+(below) and FAILs unless that file lists the receipt's key.
 
 ## Reporting to the Conduct Log Commons (optional, off by default)
 

@@ -12,7 +12,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@tollbooth/adapter-x402": "workspace:*",
@@ -20,7 +21,7 @@
     "@tollbooth/core": "workspace:*",
     "@tollbooth/hono": "workspace:*",
     "@tollbooth/maze": "workspace:*",
-    "hono": "^4.13.3"
+    "hono": "^4.13.7"
   },
   "repository": {
     "type": "git",

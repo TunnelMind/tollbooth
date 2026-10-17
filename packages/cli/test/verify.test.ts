@@ -20,18 +20,21 @@ const CLI = new URL("../dist/cli.js", import.meta.url).pathname;
 const KILLNET = pathToFileURL(
   new URL("./fixtures/killnet.mjs", import.meta.url).pathname,
 ).href;
+const FAKESITE = pathToFileURL(
+  new URL("./fixtures/fakesite.mjs", import.meta.url).pathname,
+).href;
 const NOW = 1_800_000_000;
 
 async function cli(
   args: string[],
+  opts: { preload?: string; siteJson?: string } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await run("node", [
-      "--import",
-      KILLNET,
-      CLI,
-      ...args,
-    ]);
+    const { stdout, stderr } = await run(
+      "node",
+      ["--import", opts.preload ?? KILLNET, CLI, ...args],
+      { env: { ...process.env, TB_SITE_JSON: opts.siteJson ?? "" } },
+    );
     return { code: 0, stdout, stderr };
   } catch (error) {
     const e = error as { code?: number; stdout?: string; stderr?: string };
@@ -123,6 +126,107 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
     ]);
     expect(result.code).toBe(1);
     expect(result.stdout).toContain("schema: FAIL");
+  });
+});
+
+/** A genuine receipt on disk plus its site key, for the key-source tests. */
+async function receiptFile() {
+  const site = await makeSite();
+  const receipt = await buildReceipt(
+    {
+      type: "PASS_PAID",
+      agentKey: "k",
+      ua: "u",
+      path: "/a",
+      count: 1,
+      windowStartS: NOW,
+      windowEndS: NOW,
+    },
+    site,
+  );
+  const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+  const file = join(dir, "receipt.json");
+  await writeFile(file, JSON.stringify(receipt));
+  const pin = join(dir, "key.txt");
+  await writeFile(pin, `${toBase64Url(site.pub)}\n`);
+  return { file, pin, pub: toBase64Url(site.pub) };
+}
+
+describe("verify key sources: --pin offline, --domain as explicit network opt-in", () => {
+  it("--pin verifies offline and says the key is not domain-bound", async () => {
+    const { file, pin } = await receiptFile();
+    // fakesite logs every fetch to stderr: none may happen without --domain
+    const result = await cli(["verify", file, "--pin", pin], {
+      preload: FAKESITE,
+    });
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("signature: PASS");
+    expect(result.stdout).toContain("key not bound to a domain");
+    expect(result.stdout.trim().endsWith("PASS")).toBe(true);
+    expect(result.stderr).not.toContain("fetch:");
+  });
+
+  it("--pubkey also prints the unbound-key line, exit code unchanged", async () => {
+    const { file, pub } = await receiptFile();
+    const result = await cli(["verify", file, "--pubkey", pub]);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain("key not bound to a domain");
+  });
+
+  it("--domain PASSes when tollbooth-site.json lists the receipt's key", async () => {
+    const { file, pub } = await receiptFile();
+    const result = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys: ["other", pub] }),
+    });
+    expect(result.code).toBe(0);
+    expect(result.stderr).toContain(
+      "fetch: https://example.com/.well-known/tollbooth-site.json redirect=error",
+    );
+    expect(result.stdout).toContain("signature: PASS");
+    expect(result.stdout).toContain("domain: PASS");
+    expect(result.stdout).not.toContain("key not bound");
+    expect(result.stdout.trim().endsWith("PASS")).toBe(true);
+  });
+
+  it("--domain FAILs (exit 1) when the key is not listed", async () => {
+    const { file } = await receiptFile();
+    const result = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys: ["someone-else"] }),
+    });
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("signature: PASS");
+    expect(result.stdout).toContain("domain: FAIL");
+    expect(result.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
+  it("--domain FAILs on a malformed site file and refuses a host with a path", async () => {
+    const { file, pin } = await receiptFile();
+    const bad = await cli(["verify", file, "--pin", pin, "--domain", "a.com"], {
+      preload: FAKESITE,
+      siteJson: '{"keys": 1}',
+    });
+    expect(bad.code).toBe(1);
+    expect(bad.stdout).toContain("domain: FAIL");
+    const steered = await cli(["verify", file, "--domain", "evil.com/x?"], {
+      preload: FAKESITE,
+    });
+    expect(steered.code).toBe(1);
+    expect(steered.stdout).toContain("domain: FAIL (bad host)");
+    expect(steered.stderr).not.toContain("fetch:");
+  });
+
+  it("--domain under killnet fails closed, not open", async () => {
+    const { file } = await receiptFile();
+    const result = await cli(["verify", file, "--domain", "example.com"]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("domain: FAIL");
+  });
+
+  it("needs some key source", async () => {
+    const { file } = await receiptFile();
+    expect((await cli(["verify", file])).code).toBe(64);
   });
 });
 

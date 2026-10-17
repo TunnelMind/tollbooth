@@ -9,6 +9,10 @@
 //     tampered one reports `invalid_signature` regardless of timestamps;
 //   - Ed25519 goes through keys.ts (noble) instead of WebCrypto key imports.
 //
+// Hardening: @authority must be covered (binds the signature to the host),
+// `created` and `expires` are required with a span of at most 300 s (else
+// malformed), and `created` may be at most 60 s in the future (else stale).
+//
 // Covered-component support is the minimal WBA set; anything else is rejected
 // naming the supported set. States are facts, not verdicts: "verified" means
 // "this signature cryptographically verifies against that directory".
@@ -23,6 +27,10 @@ const SUPPORTED_COMPONENTS = [
 ];
 const DIRECTORY_PATH = "/.well-known/http-message-signatures-directory";
 const DEFAULT_SKEW_S = 300;
+/** Longest accepted `expires - created` span, seconds. */
+const MAX_VALIDITY_S = 300;
+/** How far ahead of now `created` may be (clock drift), seconds. */
+const MAX_FUTURE_CREATED_S = 60;
 
 export interface ParsedSignatureInput {
   label: string;
@@ -245,6 +253,37 @@ export async function verifyWebBotAuth(
     )
   )
     return result("malformed", base);
+  // @authority binds the signature to the host it was made for; without it a
+  // captured signature replays against any other host.
+  if (
+    !push(
+      "covers_authority",
+      parsed.components.includes("@authority"),
+      "WBA requires @authority in the covered components",
+    )
+  )
+    return result("malformed", base);
+  // A signature with no expiry (or no creation time) never stops replaying,
+  // and a long-lived one is nearly as bad. These are shape facts that need no
+  // crypto, so they are refused as malformed before any directory fetch.
+  if (
+    !push(
+      "expires_present",
+      typeof p.expires === "number" && typeof p.created === "number",
+      `created=${p.created ?? "(absent)"} expires=${p.expires ?? "(absent)"}`,
+    )
+  )
+    return result("malformed", base);
+  const created = p.created as number;
+  const expires = p.expires as number;
+  if (
+    !push(
+      "validity_window",
+      expires - created <= MAX_VALIDITY_S,
+      `expires - created = ${expires - created}s (max ${MAX_VALIDITY_S}s; longer is malformed)`,
+    )
+  )
+    return result("malformed", base);
 
   let jwks: unknown;
   try {
@@ -313,20 +352,19 @@ export async function verifyWebBotAuth(
   const nowS = options.nowS ?? Math.floor(Date.now() / 1000);
   const skewS = options.skewToleranceS ?? DEFAULT_SKEW_S;
   if (
-    typeof p.expires === "number" &&
     !push(
       "not_expired",
-      nowS <= p.expires + skewS,
-      `expires=${p.expires} now=${nowS}`,
+      nowS <= expires + skewS,
+      `expires=${expires} now=${nowS}`,
     )
   )
     return result("stale", base);
+  // Fixed future bound, independent of the (configurable) expiry skew.
   if (
-    typeof p.created === "number" &&
     !push(
       "created_sane",
-      p.created <= nowS + skewS,
-      `created=${p.created} now=${nowS}`,
+      created <= nowS + MAX_FUTURE_CREATED_S,
+      `created=${created} now=${nowS} (max ${MAX_FUTURE_CREATED_S}s ahead)`,
     )
   )
     return result("stale", base);

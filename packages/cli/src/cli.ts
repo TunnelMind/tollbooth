@@ -16,7 +16,7 @@ import { corpusHash, generateCorpus } from "./corpus.js";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]
-  tollbooth verify <receipt.json> --pubkey <site-pub-b64url>
+  tollbooth verify <receipt.json> --pubkey <site-pub-b64url> | --pin <file> | --domain <host>
   tollbooth voucher inspect <voucher>
   tollbooth voucher mint --agent <pubkey>|--bearer [--key path] [--credits n] [--ttl-days n]`;
 
@@ -51,13 +51,73 @@ async function corpus(args: string[]): Promise<number> {
   return 0;
 }
 
-/** AC-6.1: offline verification, printing each check. No network anywhere. */
+const SITE_JSON_MAX_BYTES = 65536;
+
+/**
+ * Keys a domain vouches for via https://<host>/.well-known/tollbooth-site.json
+ * ({ "v": 1, "keys": [b64url...] }). The only network call in this CLI, and
+ * only behind an explicit --domain. https only, no redirects (one could land
+ * on http or an internal host), 5 s timeout, 64 KB cap enforced while reading.
+ */
+async function domainKeys(host: string): Promise<string[]> {
+  // A bare host[:port] only, so the argument cannot steer the path or scheme.
+  if (!/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(host)) throw new Error("bad host");
+  const resp = await fetch(`https://${host}/.well-known/tollbooth-site.json`, {
+    redirect: "error",
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const reader = resp.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  for (;;) {
+    const chunk = await reader?.read();
+    if (!chunk || chunk.done) break;
+    bytes += chunk.value.byteLength;
+    if (bytes > SITE_JSON_MAX_BYTES) {
+      await reader?.cancel();
+      throw new Error("tollbooth-site.json exceeds 64KB");
+    }
+    chunks.push(chunk.value);
+  }
+  const doc = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+    v?: unknown;
+    keys?: unknown;
+  };
+  if (
+    doc?.v !== 1 ||
+    !Array.isArray(doc.keys) ||
+    !doc.keys.every((k) => typeof k === "string")
+  )
+    throw new Error("tollbooth-site.json is not { v: 1, keys: [...] }");
+  return doc.keys;
+}
+
+/**
+ * AC-6.1: verification, printing each check. No network unless --domain is
+ * given; --pubkey/--pin verify offline but say the key is not domain-bound.
+ */
 async function verifyCmd(args: string[]): Promise<number> {
-  const file = args.find((a) => !a.startsWith("--"));
-  const pubkey = flag(args, "pubkey");
-  if (file === undefined || pubkey === undefined) {
+  const file = args.find(
+    (a, i) => !a.startsWith("--") && !args[i - 1]?.startsWith("--"),
+  );
+  const pin = flag(args, "pin");
+  const domain = flag(args, "domain");
+  let pubkey = flag(args, "pubkey");
+  if (
+    file === undefined ||
+    (pubkey === undefined && pin === undefined && domain === undefined)
+  ) {
     console.error(USAGE);
     return 64;
+  }
+  if (pubkey === undefined && pin !== undefined) {
+    try {
+      pubkey = (await readFile(pin, "utf8")).trim();
+    } catch {
+      console.error(`verify: cannot read pin file ${pin}`);
+      return 64;
+    }
   }
   let value: unknown;
   try {
@@ -67,15 +127,40 @@ async function verifyCmd(args: string[]): Promise<number> {
     console.log("FAIL");
     return 1;
   }
-  const result = await verifyReceipt(value, fromBase64Url(pubkey));
+  // --domain alone: verify against the receipt's own site key, then require
+  // the domain to vouch for it below. A non-string falls to the schema check.
+  const site = (value as { site?: unknown } | null)?.site;
+  const key = pubkey ?? (typeof site === "string" ? site : "");
+  let keyBytes: Uint8Array = new Uint8Array();
+  try {
+    keyBytes = fromBase64Url(key);
+  } catch {
+    // not base64url: left empty, so verifyReceipt reports site-mismatch
+  }
+  const result = await verifyReceipt(value, keyBytes);
   const schemaOk = result.ok || result.reason === "signature";
   console.log(`schema: ${schemaOk ? "PASS" : `FAIL (${result.reason})`}`);
   console.log(`canonical form: ${schemaOk ? "PASS" : "SKIPPED"}`);
   console.log(
     `signature: ${result.ok ? "PASS" : schemaOk ? "FAIL" : "SKIPPED"}`,
   );
-  console.log(result.ok ? "PASS" : "FAIL");
-  return result.ok ? 0 : 1;
+  let ok = result.ok;
+  if (domain === undefined) {
+    console.log("key not bound to a domain");
+  } else {
+    try {
+      const listed = (await domainKeys(domain)).includes(key);
+      console.log(
+        `domain: ${listed ? "PASS" : `FAIL (key not listed by ${domain})`}`,
+      );
+      ok &&= listed;
+    } catch (error) {
+      console.log(`domain: FAIL (${(error as Error).message})`);
+      ok = false;
+    }
+  }
+  console.log(ok ? "PASS" : "FAIL");
+  return ok ? 0 : 1;
 }
 
 async function voucherCmd(args: string[]): Promise<number> {

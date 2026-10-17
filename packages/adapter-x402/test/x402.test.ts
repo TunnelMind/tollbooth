@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { parseConfig } from "@tollbooth/core";
 import { describe, expect, it } from "vitest";
-import { buildOffer, usdToAtomic, verifyProof } from "../src/index.js";
+import {
+  buildOffer,
+  MAX_TIMEOUT_SECONDS,
+  usdToAtomic,
+  verifyProof,
+} from "../src/index.js";
 import {
   makeAuth,
   NOW,
@@ -19,14 +24,22 @@ pay_to = "${PAY_TO}"
 
 describe("AC-2.1 - buildOffer emits payment-required headers from config", () => {
   it("names price (atomic), pay-to, network and asset", () => {
-    const { headers, requirement } = buildOffer(CFG, "/article");
+    const { headers, requirement } = buildOffer(
+      CFG,
+      "http://example.com/article",
+    );
     const parsed = JSON.parse(headers["x-payment-required"] ?? "");
     expect(parsed).toEqual(requirement);
     expect(requirement.network).toBe("base-sepolia");
     expect(requirement.payTo).toBe(PAY_TO);
     expect(requirement.maxAmountRequired).toBe("1000"); // 0.001 USD in 6-decimal USDC
-    expect(requirement.resource).toBe("/article");
+    expect(requirement.resource).toBe("http://example.com/article");
     expect(requirement.asset).toMatch(/^0x/);
+    // x402 v1 PaymentRequirements keys the 402 body's accepts[] needs.
+    expect(typeof requirement.description).toBe("string");
+    expect(requirement.mimeType).toBe("application/json");
+    expect(requirement.outputSchema).toBeNull();
+    expect(requirement.maxTimeoutSeconds).toBe(300);
   });
 
   it("throws on an unknown network, naming the supported set", () => {
@@ -108,6 +121,34 @@ describe("AC-2.2 - verifyProof verifies locally", () => {
     );
     expect(verifyProof(btoa("{}"), CFG, { nowS: NOW }).reason).toBe(
       "malformed",
+    );
+  });
+  it("rejects a non-string to/from as malformed, never throws (B008)", () => {
+    for (const bad of [{ to: 5 }, { from: 5 }]) {
+      const auth = { ...makeAuth(), ...bad } as unknown as ReturnType<
+        typeof makeAuth
+      >;
+      expect(verifyProof(payment(auth, "0x00"), CFG, { nowS: NOW })).toEqual({
+        ok: false,
+        payer: null,
+        reason: "malformed",
+      });
+    }
+  });
+
+  it("rejects a validity window longer than the advertised maxTimeoutSeconds", () => {
+    const ok = makeAuth({ validBefore: String(NOW + MAX_TIMEOUT_SECONDS) });
+    expect(verifyProof(payment(ok, signAuth(ok)), CFG, { nowS: NOW }).ok).toBe(
+      true,
+    );
+    const long = makeAuth({
+      validBefore: String(NOW + MAX_TIMEOUT_SECONDS + 1),
+    });
+    expect(
+      verifyProof(payment(long, signAuth(long)), CFG, { nowS: NOW }).reason,
+    ).toBe("window-too-long");
+    expect(buildOffer(CFG, "/x").requirement.maxTimeoutSeconds).toBe(
+      MAX_TIMEOUT_SECONDS,
     );
   });
 });

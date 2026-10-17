@@ -47,6 +47,7 @@ async function setup() {
     }) as typeof fetch,
   });
   const agent = await makeAgent();
+  const clock = { now: NOW };
   const app = new Hono();
   app.use(
     tollbooth({
@@ -55,27 +56,37 @@ async function setup() {
       reporter,
       x402: { buildOffer, verifyProof },
       fetchDirectory: dirWith(agent.jwk),
-      nowS: () => NOW,
+      nowS: () => clock.now,
     }),
   );
   app.get("*", (c) => c.text("content"));
-  return { app, site, agent, reporter, batches };
+  return { app, site, agent, reporter, batches, clock };
 }
 
 describe("receipt emission wiring", () => {
   it("a spoofed request emits a SPOOF receipt that verifies offline", async () => {
-    const { app, site, agent, reporter, batches } = await setup();
-    const wba = await signedRequest(agent);
-    await app.request("http://evil.example/article", {
-      headers: {
-        "user-agent": "curl/8.7.1",
-        accept: "*/*",
-        signature: wba.signature,
-        "signature-input": wba.signatureInput,
-        "signature-agent": wba.signatureAgent,
-        host: "evil.example",
-      },
-    });
+    const { app, site, agent, reporter, batches, clock } = await setup();
+    const spoof = async (created: number) => {
+      const wba = await signedRequest(agent, {
+        created,
+        expires: created + 60,
+      });
+      await app.request("http://evil.example/article", {
+        headers: {
+          "user-agent": "curl/8.7.1",
+          accept: "*/*",
+          signature: wba.signature,
+          "signature-input": wba.signatureInput,
+          "signature-agent": wba.signatureAgent,
+          host: "evil.example",
+        },
+      });
+    };
+    await spoof(NOW);
+    // SPOOF receipts are aggregated per claimed key per 60 s window (B007):
+    // the next spoof after the window emits the pending one.
+    clock.now = NOW + 61;
+    await spoof(NOW + 61);
     await vi.waitFor(() => expect(reporter.queued).toBe(1));
     await reporter.flush();
 

@@ -63,6 +63,22 @@ describe("US-1 AC-1.1 - the report endpoint", () => {
     ).toBe(401);
   });
 
+  it("accepts only the exact bearer token (prefix, suffix, bare token all 401)", async () => {
+    const app = appWith(`report_token = "sekrit"`);
+    const status = async (authorization: string) =>
+      (
+        await app.request("http://example.com/_tollbooth/report", {
+          headers: { authorization },
+        })
+      ).status;
+    expect(await status("Bearer sekrit")).toBe(200);
+    expect(await status("Bearer sek")).toBe(401);
+    expect(await status("Bearer ")).toBe(401);
+    expect(await status("Bearer")).toBe(401);
+    expect(await status("Bearer sekrit2")).toBe(401);
+    expect(await status("sekrit")).toBe(401);
+  });
+
   it("serves the per-agent summary: counts, paths, robots compliance, estimate", async () => {
     const app = appWith(`report_token = "sekrit"`);
     // curl obeys robots, then crawls twice; a human browses once
@@ -127,6 +143,51 @@ describe("US-1 AC-1.1 - the report endpoint", () => {
     expect(report.agents).toEqual([
       expect.objectContaining({ key: agent.jwk.x, kind: "agent" }),
     ]);
+  });
+
+  it("hands the pipeline the raw %-encoded path, so an @path signature verifies", async () => {
+    const agent = await makeAgent();
+    const app = appWith(`report_token = "t"`, {
+      fetchDirectory: dirWith(agent.jwk),
+    });
+    const wba = await signedRequest(agent, {
+      components: ["@authority", "@path", "signature-agent"],
+      path: "/foo%20bar",
+    });
+    await app.request("http://example.com/foo%20bar", {
+      headers: {
+        ...curlHeaders,
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      },
+    });
+    const report = (await (
+      await app.request("http://example.com/_tollbooth/report", {
+        headers: { authorization: "Bearer t" },
+      })
+    ).json()) as {
+      agents: Array<{ key: string; kind: string; paths: string[] }>;
+    };
+    expect(report.agents).toEqual([
+      expect.objectContaining({
+        key: agent.jwk.x,
+        kind: "agent",
+        paths: ["/foo%20bar"],
+      }),
+    ]);
+  });
+
+  it("matches a %-encoded free_paths entry against the raw path", async () => {
+    const app = appWith(`mode = "toll"
+free_paths = ["/foo%20bar"]
+[toll.x402]
+pay_to = "0xabc"
+`);
+    const resp = await app.request("http://example.com/foo%20bar", {
+      headers: curlHeaders,
+    });
+    expect(resp.status).toBe(200);
   });
 });
 

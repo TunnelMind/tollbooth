@@ -119,11 +119,11 @@ describe("verifyWebBotAuth", () => {
     expect(res.agentKey).toBe(agent.jwk.x);
   });
 
-  it("stale: created beyond skew tolerance in the future", async () => {
+  it("stale: created more than 60 s in the future", async () => {
     const agent = await makeAgent();
     const req = await signedRequest(agent, {
-      created: NOW + 400,
-      expires: NOW + 800,
+      created: NOW + 61,
+      expires: NOW + 300,
     });
     const res = await verifyWebBotAuth(
       req,
@@ -133,11 +133,11 @@ describe("verifyWebBotAuth", () => {
     expect(res.state).toBe("stale");
   });
 
-  it("verified: created in the future but within skew tolerance", async () => {
+  it("verified: created in the future but within 60 s", async () => {
     const agent = await makeAgent();
     const req = await signedRequest(agent, {
-      created: NOW + 100,
-      expires: NOW + 800,
+      created: NOW + 60,
+      expires: NOW + 300,
     });
     const res = await verifyWebBotAuth(
       req,
@@ -228,6 +228,67 @@ describe("verifyWebBotAuth", () => {
         )
       ).state,
     ).toBe("malformed");
+  });
+
+  it("invalid_signature: signed for example.com, presented to evil.example", async () => {
+    const agent = await makeAgent();
+    const req = await signedRequest(agent, { authority: "example.com" });
+    const res = await verifyWebBotAuth(
+      { ...req, authority: "evil.example" },
+      { fetchDirectory: dirWith(agent.jwk) },
+      at(NOW),
+    );
+    expect(res.state).toBe("invalid_signature");
+  });
+
+  it("malformed: @authority not covered (would replay across hosts)", async () => {
+    const agent = await makeAgent();
+    const req = await signedRequest(agent, { components: ["signature-agent"] });
+    const res = await verifyWebBotAuth(
+      req,
+      { fetchDirectory: dirWith(agent.jwk) },
+      at(NOW),
+    );
+    expect(res.state).toBe("malformed");
+    expect(res.checks.at(-1)?.name).toBe("covers_authority");
+  });
+
+  it("malformed: no expires", async () => {
+    const agent = await makeAgent();
+    const req = await signedRequest(agent, { expires: null });
+    const res = await verifyWebBotAuth(
+      req,
+      { fetchDirectory: dirWith(agent.jwk) },
+      at(NOW),
+    );
+    expect(res.state).toBe("malformed");
+    expect(res.checks.at(-1)?.name).toBe("expires_present");
+  });
+
+  it("malformed: expires - created over 300 s, refused before the directory fetch", async () => {
+    const agent = await makeAgent();
+    const req = await signedRequest(agent, { expires: NOW + 301 });
+    const res = await verifyWebBotAuth(
+      req,
+      {
+        fetchDirectory: async () => {
+          throw new Error("must not fetch");
+        },
+      },
+      at(NOW),
+    );
+    expect(res.state).toBe("malformed");
+    expect(res.checks.at(-1)?.name).toBe("validity_window");
+    const ok = await signedRequest(agent, { expires: NOW + 300 });
+    expect(
+      (
+        await verifyWebBotAuth(
+          ok,
+          { fetchDirectory: dirWith(agent.jwk) },
+          at(NOW),
+        )
+      ).state,
+    ).toBe("verified");
   });
 
   it("malformed: garbage headers", async () => {

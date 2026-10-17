@@ -117,6 +117,11 @@ export class ReceiptReporter {
     }
   }
 
+  /** Count a receipt lost before it reached the queue (sign failure, no waitUntil). */
+  noteDropped(): void {
+    this.droppedCount += 1;
+  }
+
   stop(): void {
     this.running = false;
   }

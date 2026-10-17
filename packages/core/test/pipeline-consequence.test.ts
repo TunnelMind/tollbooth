@@ -33,10 +33,12 @@ const crawler = {
 };
 
 async function agentReq(agent: TestAgent) {
-  // long expiry so advancing the clock tests the WINDOW, not signature staleness
+  // longest valid signature (created 60 s ahead, 300 s span, plus the 300 s
+  // expiry skew) so advancing the clock to NOW+601 tests the WINDOW, not
+  // signature staleness
   return {
     ...crawler,
-    ...(await signedRequest(agent, { expires: NOW + 7200 })),
+    ...(await signedRequest(agent, { created: NOW + 60, expires: NOW + 360 })),
   };
 }
 

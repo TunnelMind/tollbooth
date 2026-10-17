@@ -48,7 +48,7 @@ function makeApp(...directoryAgents: TestAgent[]) {
 }
 
 async function wbaHeaders(agent: TestAgent) {
-  const wba = await signedRequest(agent, { expires: NOW + 7200 });
+  const wba = await signedRequest(agent, { expires: NOW + 300 });
   return {
     "user-agent": "curl/8.7.1",
     accept: "*/*",

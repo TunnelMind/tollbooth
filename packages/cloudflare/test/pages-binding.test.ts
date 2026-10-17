@@ -208,10 +208,10 @@ describe("a service binding is called with itself as `this`", () => {
   });
 
   it("the receipt report reaches the binding", async () => {
-    // The reporter batches on a 5 s setTimeout loop; fake only setTimeout so
-    // the test advances it instead of waiting, while signing stays real.
-    vi.useFakeTimers({ toFake: ["setTimeout"] });
+    // On Workers the reporter has no sleep loop (B006): the receipt POST
+    // rides the request's waitUntil, so collect and await those promises.
     const b = strictBinding();
+    const pending: Promise<unknown>[] = [];
     const mw = createPagesMiddleware({
       config: toml("report-token-7"),
       settle: { url: SETTLE_URL },
@@ -220,19 +220,19 @@ describe("a service binding is called with itself as `this`", () => {
     // An unsigned agent's offer emits no receipt; a paid pass emits
     // PASS_PAID, so this rides a settled payment (settle is covered below).
     await mw(
-      ctx("/research", agent({ "x-payment": freshPayment() }), {
-        ...seedEnv(),
-        TOLLBOOTH_SETTLE_TOKEN: "settle-secret",
-        DATA_API: b,
-      }),
+      ctx(
+        "/research",
+        agent({ "x-payment": freshPayment() }),
+        {
+          ...seedEnv(),
+          TOLLBOOTH_SETTLE_TOKEN: "settle-secret",
+          DATA_API: b,
+        },
+        (p) => pending.push(p),
+      ),
     );
-    await vi.waitFor(
-      async () => {
-        await vi.advanceTimersByTimeAsync(6000);
-        expect(b.calls).toContain("https://collector.example/v1/receipts");
-      },
-      { timeout: 2000, interval: 20 },
-    );
+    await Promise.all(pending);
+    expect(b.calls).toContain("https://collector.example/v1/receipts");
   });
 
   it("the x402 settle call reaches the binding", async () => {

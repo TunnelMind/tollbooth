@@ -91,6 +91,10 @@ const configSchema = z.strictObject({
   mode: z.enum(["observe", "toll"]).prefault("observe"),
   site_key_path: z.string().min(1).prefault("./tollbooth.key"),
   free_paths: z.array(absolutePath).prefault(["/robots.txt", "/favicon.ico"]),
+  /** B009 opt-in pass for verified crawlers; empty (the default) is OFF.
+   *  "search": Googlebot/bingbot from the vendored operator IP ranges.
+   *  "preview": link-preview bots, by UA, on HTML page requests only. */
+  pass_verified: z.array(z.enum(["search", "preview"])).prefault([]),
   report: z.boolean().prefault(false),
   report_url: z
     .string()
