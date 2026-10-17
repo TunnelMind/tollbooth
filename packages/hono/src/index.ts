@@ -105,30 +105,130 @@ interface Stats {
 const PATH_SAMPLE_MAX = 20;
 const ROBOTS_UA_MAX = 1000;
 
-/** In-memory, LRU-capped 1h cache over the WBA key-directory fetch. */
-function makeDirectoryFetcher(
-  ttlMs = 3_600_000,
-  maxEntries = 256,
+const DIRECTORY_MAX_BYTES = 65536;
+
+export interface DirectoryFetcherOptions {
+  /** Positive cache lifetime (default 1h). */
+  ttlMs?: number;
+  /** LRU cap for each of the positive and negative caches (default 256). */
+  maxEntries?: number;
+  /** How long a failed fetch is remembered per URL (default 5 min). */
+  negativeTtlMs?: number;
+  /** New origins this isolate may fetch from per minute (default 20). */
+  originsPerMin?: number;
+  fetchImpl?: typeof fetch;
+  now?: () => number;
+}
+
+/**
+ * In-memory, LRU-capped cache over the WBA key-directory fetch. The URL comes
+ * from the attacker-controlled Signature-Agent header, so every request could
+ * otherwise make us fetch anywhere: https only, no redirects (a redirect
+ * could land on http or an internal host), a byte cap enforced while
+ * streaming, failures remembered for negativeTtlMs, and a per-minute budget
+ * of origins we have never fetched from. Cache hits cost nothing.
+ */
+export function makeDirectoryFetcher(
+  opts: DirectoryFetcherOptions = {},
 ): FetchDirectory {
+  const {
+    ttlMs = 3_600_000,
+    maxEntries = 256,
+    negativeTtlMs = 300_000,
+    originsPerMin = 20,
+    fetchImpl = fetch,
+    now = Date.now,
+  } = opts;
   const cache = new Map<string, { at: number; jwks: unknown }>();
-  return async (url) => {
-    const hit = cache.get(url);
-    if (hit && Date.now() - hit.at < ttlMs) return hit.jwks;
-    const resp = await fetch(url, {
-      signal: AbortSignal.timeout(5000),
-      headers: { "user-agent": "tollbooth-wba-verifier/0.0" },
-    });
-    if (!resp.ok) throw new Error(`directory fetch ${resp.status}`);
-    const text = await resp.text();
-    if (text.length > 65536) throw new Error("directory exceeds 64KB cap");
-    const jwks: unknown = JSON.parse(text);
-    if (cache.size >= maxEntries) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+  const failures = new Map<string, { at: number; err: unknown }>();
+  let windowStart = now();
+  const windowOrigins = new Set<string>();
+  const put = <V>(m: Map<string, V>, k: string, v: V) => {
+    m.delete(k);
+    if (m.size >= maxEntries) {
+      const oldest = m.keys().next().value;
+      if (oldest !== undefined) m.delete(oldest);
     }
-    cache.set(url, { at: Date.now(), jwks });
-    return jwks;
+    m.set(k, v);
   };
+  // ponytail: linear scan of both caches (<= 2 x maxEntries keys); keep an
+  // origin index if maxEntries ever grows large.
+  const knownOrigin = (origin: string) => {
+    for (const k of cache.keys()) if (new URL(k).origin === origin) return true;
+    for (const k of failures.keys())
+      if (new URL(k).origin === origin) return true;
+    return false;
+  };
+
+  return async (url) => {
+    const t = now();
+    const hit = cache.get(url);
+    if (hit && t - hit.at < ttlMs) return hit.jwks;
+    const failed = failures.get(url);
+    if (failed && t - failed.at < negativeTtlMs) throw failed.err;
+
+    let parsed: URL;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("directory URL invalid");
+    }
+    if (parsed.protocol !== "https:") {
+      throw new Error("directory URL must be https");
+    }
+    if (t - windowStart >= 60_000) {
+      windowStart = t;
+      windowOrigins.clear();
+    }
+    const origin = parsed.origin;
+    if (!windowOrigins.has(origin) && !knownOrigin(origin)) {
+      // Not negative-cached: a spent budget says nothing about this URL.
+      if (windowOrigins.size >= originsPerMin) {
+        throw new Error("directory new-origin budget exhausted");
+      }
+      windowOrigins.add(origin);
+    }
+
+    try {
+      const resp = await fetchImpl(url, {
+        redirect: "error",
+        signal: AbortSignal.timeout(5000),
+        headers: { "user-agent": "tollbooth-wba-verifier/0.0" },
+      });
+      if (!resp.ok) throw new Error(`directory fetch ${resp.status}`);
+      if (Number(resp.headers.get("content-length")) > DIRECTORY_MAX_BYTES) {
+        await resp.body?.cancel();
+        throw new Error("directory exceeds 64KB cap");
+      }
+      const jwks: unknown = JSON.parse(await readCapped(resp));
+      put(cache, url, { at: now(), jwks });
+      failures.delete(url);
+      return jwks;
+    } catch (err) {
+      put(failures, url, { at: now(), err });
+      throw err;
+    }
+  };
+}
+
+/** Reads the body as text, cancelling the stream once it passes the cap. */
+async function readCapped(resp: Response): Promise<string> {
+  if (!resp.body) return "";
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let bytes = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > DIRECTORY_MAX_BYTES) {
+      await reader.cancel();
+      throw new Error("directory exceeds 64KB cap");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 function requestFromContext(c: Context): PipelineRequest {
