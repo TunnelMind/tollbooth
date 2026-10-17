@@ -272,8 +272,13 @@ npx @tollbooth/cli verify receipt.json --pubkey <site-public-key>
 # schema: PASS
 # canonical form: PASS
 # signature: PASS
+# key not bound to a domain
 # PASS
 ```
+
+`--pin <file>` reads the key from a file instead. `--domain <host>` is the one
+networked option: it fetches `https://<host>/.well-known/tollbooth-site.json`
+(below) and FAILs unless that file lists the receipt's key.
 
 ## Reporting to the Conduct Log Commons (optional, off by default)
 

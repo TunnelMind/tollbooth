@@ -400,6 +400,28 @@ function reportJson(
   };
 }
 
+/**
+ * Constant-time bearer check. Hashing both sides first gives two 32-byte
+ * digests, so neither the length nor a matching prefix of the secret leaks
+ * through response timing; the XOR loop then never exits early. WebCrypto
+ * only, so this stays runtime-neutral (Node, Bun, Workers).
+ */
+async function bearerMatches(
+  got: string | undefined,
+  want: string,
+): Promise<boolean> {
+  const enc = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", enc.encode(got ?? "")),
+    crypto.subtle.digest("SHA-256", enc.encode(want)),
+  ]);
+  const x = new Uint8Array(a);
+  const y = new Uint8Array(b);
+  let diff = 0;
+  for (let i = 0; i < x.length; i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return got !== undefined && diff === 0;
+}
+
 export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const cfg =
     typeof options.config === "string"
@@ -475,7 +497,12 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   const handler = async (c: Context, next: () => Promise<void>) => {
     if (c.req.path === REPORT_PATH && c.req.method === "GET") {
       if (cfg.report_token === "") return c.text("Not Found", 404);
-      if (c.req.header("authorization") !== `Bearer ${cfg.report_token}`)
+      if (
+        !(await bearerMatches(
+          c.req.header("authorization"),
+          `Bearer ${cfg.report_token}`,
+        ))
+      )
         return c.text("Unauthorized", 401);
       return c.json(reportJson(stats, cfg, reporter));
     }

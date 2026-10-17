@@ -63,6 +63,22 @@ describe("US-1 AC-1.1 - the report endpoint", () => {
     ).toBe(401);
   });
 
+  it("accepts only the exact bearer token (prefix, suffix, bare token all 401)", async () => {
+    const app = appWith(`report_token = "sekrit"`);
+    const status = async (authorization: string) =>
+      (
+        await app.request("http://example.com/_tollbooth/report", {
+          headers: { authorization },
+        })
+      ).status;
+    expect(await status("Bearer sekrit")).toBe(200);
+    expect(await status("Bearer sek")).toBe(401);
+    expect(await status("Bearer ")).toBe(401);
+    expect(await status("Bearer")).toBe(401);
+    expect(await status("Bearer sekrit2")).toBe(401);
+    expect(await status("sekrit")).toBe(401);
+  });
+
   it("serves the per-agent summary: counts, paths, robots compliance, estimate", async () => {
     const app = appWith(`report_token = "sekrit"`);
     // curl obeys robots, then crawls twice; a human browses once

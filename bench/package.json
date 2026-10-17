@@ -6,6 +6,6 @@
     "@tollbooth/adapter-x402": "workspace:*",
     "@tollbooth/core": "workspace:*",
     "@tollbooth/hono": "workspace:*",
-    "hono": "^4.13.3"
+    "hono": "^4.13.7"
   }
 }
