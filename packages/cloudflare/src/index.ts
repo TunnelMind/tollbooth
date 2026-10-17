@@ -383,6 +383,8 @@ export function createPagesMiddleware(
     app.use(
       tollbooth({
         config: cfg,
+        // Cloudflare's edge sets this header; clients cannot forge it on Workers.
+        clientIp: (c) => c.req.header("cf-connecting-ip"),
         ...(opts.settle && routedFetch
           ? {
               x402: {

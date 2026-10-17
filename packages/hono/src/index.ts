@@ -89,9 +89,10 @@ export interface TollboothOptions {
   /** Injectable clock, epoch seconds. */
   nowS?: () => number;
   /**
-   * Trusted client IP for `pass_verified = ["search"]`. Defaults to the
-   * cf-connecting-ip header, which is only trustworthy behind Cloudflare;
-   * on Node or Bun supply your own (e.g. the socket address).
+   * Trusted client IP for `pass_verified = ["search"]`. No default: without
+   * it the search pass fails closed. Supply a source you trust (e.g. the
+   * socket address on Node or Bun); @tollbooth/cloudflare wires
+   * cf-connecting-ip itself.
    */
   clientIp?: (c: Context) => string | undefined;
 }
@@ -267,13 +268,11 @@ function requestFromContext(
   c: Context,
   clientIpOf?: (c: Context) => string | undefined,
 ): PipelineRequest {
-  // cf-connecting-ip is set by Cloudflare's edge and cannot be forged on
-  // Workers; anywhere else any client can send it, so non-Workers
-  // deployments must pass options.clientIp. x-forwarded-for is never read
-  // by default: it is client-supplied unless a known proxy rewrites it.
-  const clientIp = clientIpOf
-    ? clientIpOf(c)
-    : c.req.header("cf-connecting-ip");
+  // No default source: headers like cf-connecting-ip or x-forwarded-for are
+  // client-forgeable unless a known edge sets them, so only the caller can
+  // say which is trustworthy. Without options.clientIp the search pass fails
+  // closed; @tollbooth/cloudflare passes cf-connecting-ip explicitly.
+  const clientIp = clientIpOf?.(c);
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);
   return {

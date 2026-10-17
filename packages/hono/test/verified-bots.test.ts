@@ -17,6 +17,11 @@ const GOOGLE_V4 = (
 const GOOGLEBOT =
   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
+// The Workers-style trusted source, as @tollbooth/cloudflare wires it.
+const CF_IP: Partial<TollboothOptions> = {
+  clientIp: (c) => c.req.header("cf-connecting-ip"),
+};
+
 function appWith(config: string, extra: Partial<TollboothOptions> = {}) {
   const app = new Hono();
   app.use(
@@ -39,8 +44,20 @@ async function report(app: Hono) {
 }
 
 describe("B009 hono binding", () => {
-  it("passes a Googlebot from cf-connecting-ip in range; a spoofed IP gets the 402", async () => {
+  it("with no clientIp the search pass fails closed: cf-connecting-ip is ignored", async () => {
     const app = appWith(CFG);
+    const forged = await app.request("http://example.com/a", {
+      headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": GOOGLE_V4 },
+    });
+    expect(forged.status).toBe(402);
+    const xff = await app.request("http://example.com/a", {
+      headers: { "user-agent": GOOGLEBOT, "x-forwarded-for": GOOGLE_V4 },
+    });
+    expect(xff.status).toBe(402);
+  });
+
+  it("passes a Googlebot from a trusted in-range IP; a spoofed IP gets the 402", async () => {
+    const app = appWith(CFG, CF_IP);
     const ok = await app.request("http://example.com/a", {
       headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": GOOGLE_V4 },
     });
@@ -49,7 +66,7 @@ describe("B009 hono binding", () => {
       headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": "203.0.113.9" },
     });
     expect(spoof.status).toBe(402);
-    // x-forwarded-for is never trusted by default
+    // x-forwarded-for is not the configured source
     const xff = await app.request("http://example.com/a", {
       headers: { "user-agent": GOOGLEBOT, "x-forwarded-for": GOOGLE_V4 },
     });
@@ -65,7 +82,7 @@ describe("B009 hono binding", () => {
   });
 
   it("counts verified passes in their own stats class", async () => {
-    const app = appWith(CFG);
+    const app = appWith(CFG, CF_IP);
     await app.request("http://example.com/a", {
       headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": GOOGLE_V4 },
     });
@@ -83,7 +100,7 @@ describe("B009 hono binding", () => {
   });
 
   it("observe mode still passes everything and counts the class", async () => {
-    const app = appWith(CFG.replace(`"toll"`, `"observe"`));
+    const app = appWith(CFG.replace(`"toll"`, `"observe"`), CF_IP);
     const resp = await app.request("http://example.com/a", {
       headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": "203.0.113.9" },
     });

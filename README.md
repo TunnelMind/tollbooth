@@ -128,9 +128,11 @@ any other IP, or a request with no trusted IP, gets the normal 402.
 `"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
 Discordbot by UA, for HTML page GET/HEAD requests only. A request carrying
 Web Bot Auth headers is never shortcut. Each pass is counted in the report as
-its own class (`verified_search_passed`, `verified_preview_passed`). The
-client IP comes from `cf-connecting-ip`, which only Cloudflare guarantees;
-elsewhere pass `tollbooth({ clientIp: (c) => ... })` with a source you trust.
+its own class (`verified_search_passed`, `verified_preview_passed`). 
+`@tollbooth/hono` has no default client IP, so the search pass fails closed
+until you pass `tollbooth({ clientIp: (c) => ... })` with a source you trust;
+`@tollbooth/cloudflare` wires `cf-connecting-ip` itself, since Cloudflare's
+edge sets it.
 
 ```toml
 pass_verified = ["search", "preview"]
