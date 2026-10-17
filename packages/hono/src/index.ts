@@ -38,6 +38,11 @@ export interface X402Adapter {
     cfg: TollboothConfig,
     opts?: { nowS?: number },
   ): X402VerifyResult | Promise<X402VerifyResult>;
+  /**
+   * True when a pass means the payment settled on-chain, not just that its
+   * signature checked out. Required on mainnet (anything but base-sepolia).
+   */
+  settles?: boolean;
 }
 
 export interface X402VerifyResult {
@@ -370,6 +375,18 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     typeof options.config === "string"
       ? parseConfig(options.config)
       : options.config;
+  // A verify-only adapter accepts a signed authorization that may never be
+  // collected (replayed, or the payer's balance moved): fine on a testnet,
+  // real lost money on mainnet. Refuse at startup, not per request.
+  if (
+    options.x402 &&
+    cfg.toll.x402.enabled &&
+    cfg.toll.x402.network !== "base-sepolia" &&
+    !options.x402.settles
+  )
+    throw new Error(
+      `verify-only x402 adapter refused on mainnet (network "${cfg.toll.x402.network}"): use a settling verifier or base-sepolia`,
+    );
   const stats: Stats = {
     agents: new Map(),
     humansPassed: 0,
@@ -423,7 +440,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     return c.json({ ...body, ...x402Body }, 402);
   };
 
-  return async (c, next) => {
+  const handler = async (c: Context, next: () => Promise<void>) => {
     if (c.req.path === REPORT_PATH && c.req.method === "GET") {
       if (cfg.report_token === "") return c.text("Not Found", 404);
       if (c.req.header("authorization") !== `Bearer ${cfg.report_token}`)
@@ -625,5 +642,23 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       return c.redirect(`${cfg.maze.prefix}/`, 302);
     }
     return offerResponse(c, buildOfferBody(cfg));
+  };
+
+  // Fail open (Constitution II: never block on our own fault). A throw from
+  // tollbooth's own logic (decide, verify, record, receipts, offers) hands
+  // the request to the origin instead of a 500. Errors from the origin, i.e.
+  // after next() was called, propagate as before - and next() runs once.
+  return async (c, next) => {
+    let passed = false;
+    const once = () => {
+      passed = true;
+      return next();
+    };
+    try {
+      return await handler(c, once);
+    } catch (err) {
+      if (passed) throw err;
+      return next();
+    }
   };
 }

@@ -383,6 +383,9 @@ export function createPagesMiddleware(
                   opts.settle.url,
                   settleToken,
                 ),
+                // Passes only on a settled payment (an empty token fails
+                // closed), so mainnet is allowed.
+                settles: true,
               },
             }
           : {}),

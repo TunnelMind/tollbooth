@@ -53,7 +53,7 @@ export function makeAuth(
     to: PAY_TO,
     value: "1000",
     validAfter: "0",
-    validBefore: String(NOW + 600),
+    validBefore: String(NOW + 300),
     nonce: `0x${"11".repeat(32)}`,
     ...overrides,
   };

@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { parseConfig } from "@tollbooth/core";
 import { describe, expect, it } from "vitest";
-import { buildOffer, usdToAtomic, verifyProof } from "../src/index.js";
+import {
+  buildOffer,
+  MAX_TIMEOUT_SECONDS,
+  usdToAtomic,
+  verifyProof,
+} from "../src/index.js";
 import {
   makeAuth,
   NOW,
@@ -116,6 +121,34 @@ describe("AC-2.2 - verifyProof verifies locally", () => {
     );
     expect(verifyProof(btoa("{}"), CFG, { nowS: NOW }).reason).toBe(
       "malformed",
+    );
+  });
+  it("rejects a non-string to/from as malformed, never throws (B008)", () => {
+    for (const bad of [{ to: 5 }, { from: 5 }]) {
+      const auth = { ...makeAuth(), ...bad } as unknown as ReturnType<
+        typeof makeAuth
+      >;
+      expect(verifyProof(payment(auth, "0x00"), CFG, { nowS: NOW })).toEqual({
+        ok: false,
+        payer: null,
+        reason: "malformed",
+      });
+    }
+  });
+
+  it("rejects a validity window longer than the advertised maxTimeoutSeconds", () => {
+    const ok = makeAuth({ validBefore: String(NOW + MAX_TIMEOUT_SECONDS) });
+    expect(verifyProof(payment(ok, signAuth(ok)), CFG, { nowS: NOW }).ok).toBe(
+      true,
+    );
+    const long = makeAuth({
+      validBefore: String(NOW + MAX_TIMEOUT_SECONDS + 1),
+    });
+    expect(
+      verifyProof(payment(long, signAuth(long)), CFG, { nowS: NOW }).reason,
+    ).toBe("window-too-long");
+    expect(buildOffer(CFG, "/x").requirement.maxTimeoutSeconds).toBe(
+      MAX_TIMEOUT_SECONDS,
     );
   });
 });

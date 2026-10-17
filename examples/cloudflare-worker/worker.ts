@@ -12,6 +12,7 @@ pay_to = "0x1111111111111111111111111111111111111111"
 `;
 
 const app = new Hono();
+// Verify-only is testnet-only: mainnet requires a settling verifier (settles: true).
 app.use(tollbooth({ config, x402: { buildOffer, verifyProof } }));
 app.get("/", (c) => c.text("welcome, human"));
 app.get("/article", (c) => c.text("the article"));

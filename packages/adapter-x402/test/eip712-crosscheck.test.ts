@@ -30,7 +30,7 @@ const AUTH: TransferAuthorization = {
   to: "0x1111111111111111111111111111111111111111",
   value: "1000",
   validAfter: "0",
-  validBefore: String(NOW + 600),
+  validBefore: String(NOW + 300),
   nonce: `0x${"ab".repeat(32)}`,
 };
 

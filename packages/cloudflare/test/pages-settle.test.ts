@@ -313,3 +313,20 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     expect(r.headers.get("x-tollbooth-settling")).toBe("true");
   });
 });
+
+describe("createPagesMiddleware — mainnet (B008)", () => {
+  it("the settling adapter declares settles:true, so base mainnet starts", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
+    const mw = createPagesMiddleware({
+      config: toml().replace('network = "base-sepolia"', 'network = "base"'),
+      settle: { url: SETTLE_URL },
+      binding: "DATA_API",
+    });
+    // Unpaid agent: the offer is built, not a startup refusal.
+    const r = await mw(ctx("/research", agent(), envOf(b)));
+    expect(r.status).toBe(402);
+    expect(await r.json()).toMatchObject({
+      accepts: [{ network: "base" }],
+    });
+  });
+});

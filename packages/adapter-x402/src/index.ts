@@ -168,6 +168,9 @@ export function encodePayment(payload: PaymentPayload): string {
   return btoa(JSON.stringify(payload));
 }
 
+/** Advertised in every offer and enforced on every proof: one value. */
+export const MAX_TIMEOUT_SECONDS = 300;
+
 /**
  * AC-2.1: payment-required headers + requirement from config, price in atomics.
  * `resource` should be the absolute request URL: x402 v1 clients sign for it.
@@ -189,7 +192,7 @@ export function buildOffer(
     mimeType: "application/json",
     payTo: cfg.toll.x402.pay_to,
     asset: net.asset,
-    maxTimeoutSeconds: 300,
+    maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
     outputSchema: null,
     extra: { name: net.assetName, version: net.assetVersion },
   };
@@ -223,7 +226,10 @@ export function verifyProof(
     payload?.x402Version !== 1 ||
     payload.scheme !== "exact" ||
     !auth ||
-    typeof signature !== "string"
+    typeof signature !== "string" ||
+    // Untrusted JSON: a non-string to/from would throw on toLowerCase.
+    typeof auth.to !== "string" ||
+    typeof auth.from !== "string"
   )
     return fail("malformed");
   if (payload.network !== cfg.toll.x402.network)
@@ -246,6 +252,10 @@ export function verifyProof(
   const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
   if (validAfter > nowS) return fail("not-yet-valid");
   if (validBefore < nowS) return fail("expired");
+  // A long-lived authorization is a replayable bearer token; hold the payer
+  // to the window the offer advertised.
+  if (validBefore - nowS > BigInt(MAX_TIMEOUT_SECONDS))
+    return fail("window-too-long");
 
   let payer: string;
   try {
