@@ -208,6 +208,10 @@ function makeSettlingVerify(
         return {
           ok: true,
           payer: typeof data.payer === "string" ? data.payer : payer,
+          // Surfaced to the payer in X-PAYMENT-RESPONSE.
+          ...(typeof data.transaction === "string"
+            ? { transaction: data.transaction }
+            : {}),
         };
       }
       const reason =

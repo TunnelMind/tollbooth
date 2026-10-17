@@ -68,6 +68,26 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     expect(b.settles[0]?.body.price_usd).toBe("0.002");
   });
 
+  it("the settle transaction surfaces in X-PAYMENT-RESPONSE", async () => {
+    const b = settleBinding({
+      settled: true,
+      payer: "0xabc",
+      transaction: "0xTXHASH",
+    });
+    const r = await settlingMw()(
+      ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(200);
+    expect(JSON.parse(atob(r.headers.get("x-payment-response") ?? ""))).toEqual(
+      {
+        success: true,
+        transaction: "0xTXHASH",
+        network: "base-sepolia",
+        payer: "0xabc",
+      },
+    );
+  });
+
   it("a valid payment that FAILS to settle stays 402 — no free content", async () => {
     const b = settleBinding({ settled: false, reason: "insufficient_funds" });
     const mw = settlingMw();

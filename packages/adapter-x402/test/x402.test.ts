@@ -19,14 +19,22 @@ pay_to = "${PAY_TO}"
 
 describe("AC-2.1 - buildOffer emits payment-required headers from config", () => {
   it("names price (atomic), pay-to, network and asset", () => {
-    const { headers, requirement } = buildOffer(CFG, "/article");
+    const { headers, requirement } = buildOffer(
+      CFG,
+      "http://example.com/article",
+    );
     const parsed = JSON.parse(headers["x-payment-required"] ?? "");
     expect(parsed).toEqual(requirement);
     expect(requirement.network).toBe("base-sepolia");
     expect(requirement.payTo).toBe(PAY_TO);
     expect(requirement.maxAmountRequired).toBe("1000"); // 0.001 USD in 6-decimal USDC
-    expect(requirement.resource).toBe("/article");
+    expect(requirement.resource).toBe("http://example.com/article");
     expect(requirement.asset).toMatch(/^0x/);
+    // x402 v1 PaymentRequirements keys the 402 body's accepts[] needs.
+    expect(typeof requirement.description).toBe("string");
+    expect(requirement.mimeType).toBe("application/json");
+    expect(requirement.outputSchema).toBeNull();
+    expect(requirement.maxTimeoutSeconds).toBe(300);
   });
 
   it("throws on an unknown network, naming the supported set", () => {

@@ -68,9 +68,13 @@ export interface X402Requirement {
   network: string;
   maxAmountRequired: string;
   resource: string;
+  description: string;
+  mimeType: string;
   payTo: string;
   asset: string;
   maxTimeoutSeconds: number;
+  /** x402 v1 requires the key; tollbooth publishes no output schema. */
+  outputSchema: null;
   extra: { name: string; version: string };
 }
 
@@ -164,7 +168,12 @@ export function encodePayment(payload: PaymentPayload): string {
   return btoa(JSON.stringify(payload));
 }
 
-/** AC-2.1: payment-required headers + requirement from config, price in atomics. */
+/**
+ * AC-2.1: payment-required headers + requirement from config, price in atomics.
+ * `resource` should be the absolute request URL: x402 v1 clients sign for it.
+ * The `x-payment-required` header predates the x402 v1 body (`accepts[]`) and
+ * is deprecated - kept for one cycle, removed in the next minor.
+ */
 export function buildOffer(
   cfg: TollboothConfig,
   resource: string,
@@ -175,9 +184,13 @@ export function buildOffer(
     network: cfg.toll.x402.network,
     maxAmountRequired: usdToAtomic(cfg.toll.price_usd).toString(),
     resource,
+    // ponytail: fixed text; the toll does not know what the page holds.
+    description: "Paid access to this resource (tollbooth toll)",
+    mimeType: "application/json",
     payTo: cfg.toll.x402.pay_to,
     asset: net.asset,
     maxTimeoutSeconds: 300,
+    outputSchema: null,
     extra: { name: net.assetName, version: net.assetVersion },
   };
   return {

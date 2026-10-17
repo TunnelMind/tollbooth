@@ -191,6 +191,20 @@ enabled payment option with enough data to complete each:
 }
 ```
 
+With x402 enabled the same body also speaks [x402 v1](https://www.x402.org/):
+`x402Version: 1`, `error`, and `accepts[]` holding one `PaymentRequirements`
+(`scheme`, `network`, `maxAmountRequired`, `resource` — the absolute request
+URL — `description`, `mimeType`, `payTo`, `maxTimeoutSeconds`, `asset`,
+`outputSchema`, `extra`). No key is shared, so an x402 client and an older
+tollbooth client each read their own fields. Every `402` is
+`cache-control: no-store`. A paid response carries `X-PAYMENT-RESPONSE`:
+base64 JSON `{success, transaction, network, payer}` (`transaction` is `""`
+when only local verification ran, with no settle step).
+
+**Deprecated:** the `x-payment-required` response header (the same
+requirement as `accepts[0]`, as JSON) is kept for one release cycle and will
+be removed in the next minor. Read `accepts[0]` from the body instead.
+
 [examples/agent-client.ts](examples/agent-client.ts) is a complete paying
 client in under 80 lines: request, read the offer, pay by voucher or by
 signing an x402 authorization, retry.

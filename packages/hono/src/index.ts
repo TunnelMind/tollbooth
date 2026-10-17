@@ -4,11 +4,13 @@
 // Observe mode computes the decision and records it but always passes -
 // and gets no spending deps, so it can never mutate voucher state.
 import {
+  buildOfferBody,
   buildReceipt,
   type Decision,
   decide,
   type FetchDirectory,
   JtiCache,
+  type OfferBody,
   OfferLedger,
   type PipelineDeps,
   type PipelineRequest,
@@ -29,14 +31,20 @@ export interface X402Adapter {
   buildOffer(
     cfg: TollboothConfig,
     resource: string,
-  ): { headers: Record<string, string> };
+  ): { headers: Record<string, string>; requirement?: object };
   verifyProof(
     xPayment: string,
     cfg: TollboothConfig,
     opts?: { nowS?: number },
-  ):
-    | { ok: boolean; payer: string | null; reason?: string }
-    | Promise<{ ok: boolean; payer: string | null; reason?: string }>;
+  ): X402VerifyResult | Promise<X402VerifyResult>;
+}
+
+export interface X402VerifyResult {
+  ok: boolean;
+  payer: string | null;
+  reason?: string;
+  /** On-chain transaction hash, when a settling verifier has one. */
+  transaction?: string;
 }
 
 /** @tollbooth/maze's makeMazeHandler satisfies this structurally. */
@@ -242,24 +250,37 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       ? new ReceiptReporter({ url: cfg.report_url, domain: cfg.report_domain })
       : undefined);
 
-  const offerResponse = (
-    c: Context,
-    decision: Decision & { action: "offer" },
-  ) => {
+  const offerResponse = (c: Context, body: OfferBody) => {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
-    // option (AC-2.1).
+    // option (AC-2.1). The body carries both dialects: x402 v1 clients read
+    // x402Version/error/accepts, older tollbooth clients read v/price_usd/
+    // options - no key is shared, so each ignores the other's fields.
+    let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
-      const { headers } = x402.buildOffer(cfg, c.req.path);
+      // Absolute, without the fragment: x402 v1 clients sign for this URL.
+      const url = new URL(c.req.url);
+      const { headers, requirement } = x402.buildOffer(
+        cfg,
+        `${url.origin}${url.pathname}${url.search}`,
+      );
       for (const [name, value] of Object.entries(headers))
         c.header(name, value);
+      if (requirement)
+        x402Body = {
+          x402Version: 1,
+          error: "X-PAYMENT header is required",
+          accepts: [requirement],
+        };
     }
     if (cfg.toll.stripe.enabled)
       c.header(
         "link",
         `<${cfg.toll.stripe.payment_link}>; rel="payment"; title="stripe-voucher"`,
       );
-    return c.json(decision.body, 402);
+    // An offer is per-request (price, payment state): never cache a 402.
+    c.header("cache-control", "no-store");
+    return c.json({ ...body, ...x402Body }, 402);
   };
 
   return async (c, next) => {
@@ -305,6 +326,8 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
 
     const req = requestFromContext(c);
     const nowS = options.nowS?.();
+    // The verify result for this request, kept for X-PAYMENT-RESPONSE.
+    let payment: X402VerifyResult | undefined;
     // Spending deps only in toll mode: observe must never mutate voucher
     // state or burn replay counts.
     const spendDeps: Partial<PipelineDeps> =
@@ -315,12 +338,14 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
             ...(siteKeys ? { siteKeys } : {}),
             ...(x402
               ? {
-                  verifyPayment: (p: string) =>
-                    x402.verifyProof(
+                  verifyPayment: async (p: string) => {
+                    payment = await x402.verifyProof(
                       p,
                       cfg,
                       nowS !== undefined ? { nowS } : {},
-                    ),
+                    );
+                    return payment;
+                  },
                 }
               : {}),
           }
@@ -357,9 +382,24 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     if (decision.action === "pass") {
       if (decision.voucher !== undefined)
         c.header("tollbooth-voucher", decision.voucher);
-      return next();
+      await next();
+      // x402 v1 settlement receipt. A local-only verifier has no on-chain
+      // transaction, so `transaction` is "" there.
+      if (decision.reason === "paid" && payment?.ok)
+        c.header(
+          "x-payment-response",
+          btoa(
+            JSON.stringify({
+              success: true,
+              transaction: payment.transaction ?? "",
+              network: cfg.toll.x402.network,
+              payer: payment.payer,
+            }),
+          ),
+        );
+      return;
     }
-    if (decision.action === "offer") return offerResponse(c, decision);
+    if (decision.action === "offer") return offerResponse(c, decision.body);
     if (decision.action === "reject")
       return c.json(
         { v: 1 as const, error: `voucher ${decision.reason}` },
@@ -373,6 +413,6 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       c.header("cache-control", "no-store");
       return c.redirect(`${cfg.maze.prefix}/`, 302);
     }
-    return c.json({ v: 1 as const, error: "payment required" }, 402);
+    return offerResponse(c, buildOfferBody(cfg));
   };
 }
