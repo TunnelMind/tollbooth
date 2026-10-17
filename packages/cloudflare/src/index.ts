@@ -344,6 +344,9 @@ export function createPagesMiddleware(
             url: reportUrl,
             domain: cfg.report_domain,
             fetchFn: routedFetch as typeof fetch,
+            // No sleep loop on Workers: the isolate may be frozen between
+            // requests, so each request flushes inside its own waitUntil.
+            autoFlush: false,
           })
         : undefined;
 
@@ -363,7 +366,10 @@ export function createPagesMiddleware(
 
     const settling = Boolean(opts.settle && settleToken !== "");
     const app = new Hono<{
-      Bindings: { NEXT: () => Response | Promise<Response> };
+      Bindings: {
+        NEXT: () => Response | Promise<Response>;
+        WAIT_UNTIL?: ((p: Promise<unknown>) => void) | null;
+      };
     }>();
     app.use(
       tollbooth({
@@ -460,6 +466,12 @@ export function createPagesMiddleware(
       const s = state;
       const resp = await s.app.fetch(context.request, {
         NEXT: () => context.next(),
+        // null (not undefined) tells the hono layer a receipt here would be
+        // lost, so it counts the drop instead of queuing into a frozen isolate.
+        WAIT_UNTIL:
+          typeof context.waitUntil === "function"
+            ? (p: Promise<unknown>) => context.waitUntil?.(p)
+            : null,
       });
 
       const path = new URL(context.request.url).pathname;

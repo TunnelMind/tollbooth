@@ -506,10 +506,29 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         { userAgent: req.userAgent, path: req.path.slice(0, PATH_MAX) },
         window,
       );
-      if (facts)
-        void buildReceipt(facts, siteKeys)
+      // A runtime that kills background work after the response (Workers)
+      // hands us WAIT_UNTIL on c.env: the chain then flushes inside it. null
+      // means "Workers, but no waitUntil" - the receipt cannot survive, so it
+      // is counted as dropped. Absent (node/bun) keeps the fire-and-forget
+      // path and the reporter's own flush loop.
+      const waitUntil = (
+        c.env as
+          | { WAIT_UNTIL?: ((p: Promise<unknown>) => void) | null }
+          | undefined
+      )?.WAIT_UNTIL;
+      if (facts && waitUntil === null) reporter.noteDropped();
+      else if (facts) {
+        const work = buildReceipt(facts, siteKeys)
           .then((receipt) => reporter.enqueue(receipt))
-          .catch(() => {});
+          .catch(() => reporter.noteDropped());
+        if (typeof waitUntil === "function") {
+          try {
+            waitUntil(work.then(() => reporter.flush()));
+          } catch {
+            reporter.noteDropped();
+          }
+        } else void work;
+      }
     }
 
     if (cfg.mode === "observe") return next();
