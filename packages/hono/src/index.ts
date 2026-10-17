@@ -160,6 +160,8 @@ export interface DirectoryFetcherOptions {
  * could land on http or an internal host), a byte cap enforced while
  * streaming, failures remembered for negativeTtlMs, and a per-minute budget
  * of origins we have never fetched from. Cache hits cost nothing.
+ * redirect is "manual", not "error": workerd throws on "error", and the !ok
+ * check refuses the 3xx (or status-0 opaqueredirect) without following it.
  */
 export function makeDirectoryFetcher(
   opts: DirectoryFetcherOptions = {},
@@ -224,11 +226,14 @@ export function makeDirectoryFetcher(
 
     try {
       const resp = await fetchImpl(url, {
-        redirect: "error",
+        redirect: "manual",
         signal: AbortSignal.timeout(5000),
         headers: { "user-agent": "tollbooth-wba-verifier/0.0" },
       });
-      if (!resp.ok) throw new Error(`directory fetch ${resp.status}`);
+      if (!resp.ok) {
+        await resp.body?.cancel();
+        throw new Error(`directory fetch ${resp.status}`);
+      }
       if (Number(resp.headers.get("content-length")) > DIRECTORY_MAX_BYTES) {
         await resp.body?.cancel();
         throw new Error("directory exceeds 64KB cap");

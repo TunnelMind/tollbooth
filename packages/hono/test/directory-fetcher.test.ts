@@ -20,12 +20,25 @@ describe("makeDirectoryFetcher", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("fetches with redirect: error and caches the result", async () => {
+  it("fetches with redirect: manual and caches the result", async () => {
     const fetchImpl = okFetch();
     const fd = makeDirectoryFetcher({ fetchImpl });
     expect(await fd("https://agent.example/keys")).toEqual(JWKS);
-    expect(fetchImpl.mock.calls[0]?.[1]?.redirect).toBe("error");
+    expect(fetchImpl.mock.calls[0]?.[1]?.redirect).toBe("manual");
     await fd("https://agent.example/keys");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a 3xx instead of following it", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://evil.example/keys" },
+        }),
+    );
+    const fd = makeDirectoryFetcher({ fetchImpl });
+    await expect(fd("https://agent.example/keys")).rejects.toThrow(/302/);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
