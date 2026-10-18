@@ -107,3 +107,78 @@ describe("makeDirectoryFetcher", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 });
+
+// T101: SSRF host vetting, ahead of the origin budget.
+describe("makeDirectoryFetcher host vetting", () => {
+  it.each([
+    "https://10.0.0.1:8443/x",
+    "https://169.254.169.254/x",
+    "https://0x7f.1/x",
+    "https://localhost:9200/x",
+    "https://LocalHost./x",
+    "https://[::1]/x",
+    "https://foo.local/x",
+    "https://a.b.localhost/x",
+    "https://svc.internal/x",
+    "https://example.com:8443/x",
+  ])("refuses %s without fetching", async (url) => {
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({ fetchImpl });
+    await expect(fd(url)).rejects.toThrow(/not allowed/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("allows an explicit :443", async () => {
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({ fetchImpl });
+    expect(await fd("https://example.com:443/x")).toEqual(JWKS);
+  });
+
+  it("refused URLs do not spend the new-origin budget", async () => {
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({ fetchImpl, originsPerMin: 1 });
+    for (const u of ["https://10.0.0.1/x", "https://svc.internal/x"])
+      await expect(fd(u)).rejects.toThrow(/not allowed/);
+    expect(await fd("https://example.com/x")).toEqual(JWKS);
+  });
+
+  it.each([
+    ["10.1.2.3"],
+    ["93.184.216.34", "127.0.0.1"],
+    ["172.31.0.1"],
+    ["192.168.1.1"],
+    ["100.64.0.1"],
+    ["0.0.0.0"],
+    ["::1"],
+    ["::"],
+    ["fd00::1"],
+    ["fe80::1%eth0"],
+    ["::ffff:10.0.0.1"],
+    ["::ffff:7f00:1"],
+    ["not-an-ip"],
+    [],
+  ])("resolveHost %j refuses before fetching", async (...addrs) => {
+    const fetchImpl = okFetch();
+    const resolveHost = vi.fn(async () => addrs);
+    const fd = makeDirectoryFetcher({ fetchImpl, resolveHost });
+    await expect(fd("https://public-looking.example/keys")).rejects.toThrow(
+      /not allowed/,
+    );
+    expect(resolveHost).toHaveBeenCalledWith("public-looking.example");
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["93.184.216.34"],
+    ["2606:2800:220:1:248:1893:25c8:1946"],
+    ["::ffff:93.184.216.34"],
+  ])("resolveHost %j lets the fetch proceed", async (...addrs) => {
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({
+      fetchImpl,
+      resolveHost: async () => addrs,
+    });
+    expect(await fd("https://public-looking.example/keys")).toEqual(JWKS);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});

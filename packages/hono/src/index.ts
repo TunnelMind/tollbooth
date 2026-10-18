@@ -151,6 +151,17 @@ export interface DirectoryFetcherOptions {
   originsPerMin?: number;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  /**
+   * Resolve-then-connect: when supplied, the directory host is resolved
+   * first and refused if ANY address is private, loopback, link-local,
+   * CGNAT, ULA or unspecified. No default, so this package carries no
+   * node:dns import and still runs on Workers, where the platform's egress
+   * already cannot reach private ranges. Node callers should pass e.g.
+   * `async (h) => (await dns.promises.lookup(h, { all: true })).map((a) => a.address)`.
+   * fetch resolves again on its own, so this narrows but does not close a
+   * DNS-rebinding window.
+   */
+  resolveHost?: (host: string) => Promise<string[]>;
 }
 
 /**
@@ -160,6 +171,9 @@ export interface DirectoryFetcherOptions {
  * could land on http or an internal host), a byte cap enforced while
  * streaming, failures remembered for negativeTtlMs, and a per-minute budget
  * of origins we have never fetched from. Cache hits cost nothing.
+ * Before any budget is spent the host itself is vetted: port 443 only, no
+ * IP literals, no localhost / .localhost / .local / .internal names; with
+ * opts.resolveHost, any private resolved address refuses the fetch too.
  * redirect is "manual", not "error": workerd throws on "error", and the !ok
  * check refuses the 3xx (or status-0 opaqueredirect) without following it.
  */
@@ -173,6 +187,7 @@ export function makeDirectoryFetcher(
     originsPerMin = 20,
     fetchImpl = fetch,
     now = Date.now,
+    resolveHost,
   } = opts;
   const cache = new Map<string, { at: number; jwks: unknown }>();
   const failures = new Map<string, { at: number; err: unknown }>();
@@ -211,6 +226,19 @@ export function makeDirectoryFetcher(
     if (parsed.protocol !== "https:") {
       throw new Error("directory URL must be https");
     }
+    // Static refusals sit before the budget so they cost it nothing. WHATWG
+    // URL already canonicalises 0x7f.1 / 2130706433 to dotted IPv4, and
+    // keeps IPv6 literals bracketed.
+    const host = parsed.hostname.toLowerCase().replace(/\.$/, "");
+    if (
+      (parsed.port !== "" && parsed.port !== "443") ||
+      host.startsWith("[") ||
+      /^\d+\.\d+\.\d+\.\d+$/.test(host) ||
+      host === "localhost" ||
+      /\.(localhost|local|internal)$/.test(host)
+    ) {
+      throw new Error("directory host not allowed");
+    }
     if (t - windowStart >= 60_000) {
       windowStart = t;
       windowOrigins.clear();
@@ -225,6 +253,14 @@ export function makeDirectoryFetcher(
     }
 
     try {
+      // Inside the try (after the budget) so a slow or private-resolving
+      // name is negative-cached and cannot buy unlimited lookups.
+      if (resolveHost) {
+        const addrs = await resolveHost(host);
+        if (addrs.length === 0 || addrs.some(isPrivateAddress)) {
+          throw new Error("directory host not allowed");
+        }
+      }
       const resp = await fetchImpl(url, {
         redirect: "manual",
         signal: AbortSignal.timeout(5000),
@@ -247,6 +283,62 @@ export function makeDirectoryFetcher(
       throw err;
     }
   };
+}
+
+/**
+ * True for addresses a directory fetch must never reach: 0/8, 10/8,
+ * 100.64/10, 127/8, 169.254/16, 172.16/12, 192.168/16, ::, ::1, fc00::/7,
+ * fe80::/10, and IPv4-mapped/compatible forms of those. Anything it cannot
+ * parse counts as private (fail closed).
+ */
+function isPrivateAddress(addr: string): boolean {
+  type Quad = [number, number, number, number];
+  const v4 = (s: string): Quad | null => {
+    const p = s.split(".").map(Number);
+    return p.length === 4 &&
+      p.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)
+      ? (p as Quad)
+      : null;
+  };
+  const privV4 = ([a, b]: Quad) =>
+    a === 0 ||
+    a === 10 ||
+    a === 127 ||
+    (a === 100 && b >= 64 && b < 128) ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b < 32) ||
+    (a === 192 && b === 168);
+  if (!addr.includes(":")) {
+    const p = /^[\d.]+$/.test(addr) ? v4(addr) : null;
+    return p ? privV4(p) : true;
+  }
+  // Expand IPv6 (optional zone and trailing dotted quad) to 8 groups.
+  let s = addr.toLowerCase().split("%")[0] ?? "";
+  const quad = /:(\d+\.\d+\.\d+\.\d+)$/.exec(s);
+  if (quad) {
+    const p = v4(quad[1] ?? "");
+    if (!p) return true;
+    s = `${s.slice(0, quad.index)}:${((p[0] << 8) | p[1]).toString(16)}:${((p[2] << 8) | p[3]).toString(16)}`;
+  }
+  const halves = s.split("::");
+  if (halves.length > 2) return true;
+  const part = (h: string | undefined) => (h ? h.split(":") : []);
+  const head = part(halves[0]);
+  const tail = part(halves[1]);
+  const fill = halves.length === 2 ? 8 - head.length - tail.length : 0;
+  if (fill < 0) return true;
+  const g = [...head, ...Array(fill).fill("0"), ...tail].map((x) =>
+    /^[0-9a-f]{1,4}$/.test(x) ? Number.parseInt(x, 16) : Number.NaN,
+  );
+  if (g.length !== 8 || g.some(Number.isNaN)) return true;
+  const g0 = g[0] ?? 0;
+  if ((g0 & 0xfe00) === 0xfc00 || (g0 & 0xffc0) === 0xfe80) return true;
+  // ::/96 (covers :: and ::1 via 0/8) and ::ffff:0:0/96 embed an IPv4.
+  if (g.slice(0, 5).every((x) => x === 0) && (g[5] === 0 || g[5] === 0xffff)) {
+    const [hi = 0, lo = 0] = g.slice(6);
+    return privV4([hi >> 8, hi & 255, lo >> 8, lo & 255]);
+  }
+  return false;
 }
 
 /** Reads the body as text, cancelling the stream once it passes the cap. */
