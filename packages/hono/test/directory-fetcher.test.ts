@@ -1,9 +1,21 @@
 // B003: the Signature-Agent directory fetcher's network hardening. A fake
 // fetchImpl and clock stand in for the network; nothing here leaves the box.
-import { describe, expect, it, vi } from "vitest";
+// R101: the Node default resolver is on, so dns.promises.lookup is stubbed to
+// a public address for every test; no real DNS query is made.
+import dns from "node:dns";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { makeDirectoryFetcher } from "../src/index.js";
 
 const JWKS = { keys: [] };
+
+type Lookup = (h: string, o: object) => Promise<dns.LookupAddress[]>;
+const lookup = vi.spyOn(dns.promises, "lookup") as unknown as ReturnType<
+  typeof vi.fn<Lookup>
+>;
+beforeEach(() => {
+  lookup.mockReset();
+  lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+});
 
 function okFetch() {
   return vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
@@ -180,5 +192,43 @@ describe("makeDirectoryFetcher host vetting", () => {
     });
     expect(await fd("https://public-looking.example/keys")).toEqual(JWKS);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+// R101: resolve-then-connect is default-on under Node.
+describe("makeDirectoryFetcher default resolver (Node)", () => {
+  it.each(["127.0.0.1", "10.0.0.5"])(
+    "refuses a name resolving to %s with no resolveHost",
+    async (address) => {
+      lookup.mockResolvedValue([{ address, family: 4 }]);
+      const fetchImpl = okFetch();
+      const fd = makeDirectoryFetcher({ fetchImpl });
+      await expect(fd("https://public-looking.example/keys")).rejects.toThrow(
+        "directory host not allowed",
+      );
+      expect(lookup).toHaveBeenCalledWith("public-looking.example", {
+        all: true,
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fetches when the lookup is public", async () => {
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({ fetchImpl });
+    expect(await fd("https://public-looking.example/keys")).toEqual(JWKS);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("an explicit resolveHost overrides the default", async () => {
+    lookup.mockResolvedValue([{ address: "127.0.0.1", family: 4 }]);
+    const fetchImpl = okFetch();
+    const fd = makeDirectoryFetcher({
+      fetchImpl,
+      resolveHost: async () => ["93.184.216.34"],
+    });
+    expect(await fd("https://public-looking.example/keys")).toEqual(JWKS);
+    expect(lookup).not.toHaveBeenCalled();
   });
 });

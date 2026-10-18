@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // @tollbooth/hono: thin binding of core's decide() to Hono. One package
-// covers Node, Bun and Workers, so nothing here may import node builtins.
+// covers Node, Bun and Workers, so nothing here may import node builtins at
+// load time (the one node:dns use is a dynamic import behind a Node check).
 // Observe mode computes the decision and records it but always passes -
 // and gets no spending deps, so it can never mutate voucher state.
 import {
@@ -155,10 +156,10 @@ export interface DirectoryFetcherOptions {
   /**
    * Resolve-then-connect: when supplied, the directory host is resolved
    * first and refused if ANY address is private, loopback, link-local,
-   * CGNAT, ULA or unspecified. No default, so this package carries no
-   * node:dns import and still runs on Workers, where the platform's egress
-   * already cannot reach private ranges. Node callers should pass e.g.
-   * `async (h) => (await dns.promises.lookup(h, { all: true })).map((a) => a.address)`.
+   * CGNAT, ULA or unspecified. Defaults on Node to
+   * `dns.promises.lookup(h, { all: true })` via a lazy `import("node:dns")`,
+   * so nothing is imported at load and Workers (whose egress already cannot
+   * reach private ranges) keep no resolver. Pass your own to override.
    * fetch resolves again on its own, so this narrows but does not close a
    * DNS-rebinding window.
    */
@@ -174,7 +175,8 @@ export interface DirectoryFetcherOptions {
  * of origins we have never fetched from. Cache hits cost nothing.
  * Before any budget is spent the host itself is vetted: port 443 only, no
  * IP literals, no localhost / .localhost / .local / .internal names; with
- * opts.resolveHost, any private resolved address refuses the fetch too.
+ * opts.resolveHost (default on Node), any private resolved address refuses
+ * the fetch too.
  * redirect is "manual", not "error": workerd throws on "error", and the !ok
  * check refuses the 3xx (or status-0 opaqueredirect) without following it.
  */
@@ -188,7 +190,7 @@ export function makeDirectoryFetcher(
     originsPerMin = 20,
     fetchImpl = fetch,
     now = Date.now,
-    resolveHost,
+    resolveHost = defaultResolveHost(),
   } = opts;
   const cache = new Map<string, { at: number; jwks: unknown }>();
   const failures = new Map<string, { at: number; err: unknown }>();
@@ -283,6 +285,35 @@ export function makeDirectoryFetcher(
       put(failures, url, { at: now(), err });
       throw err;
     }
+  };
+}
+
+/**
+ * Node's resolver for resolve-then-connect, or undefined elsewhere. Workers
+ * with nodejs_compat expose process.versions.node too, hence the UA check.
+ * The specifier sits in a variable so bundlers targeting Workers do not try
+ * to resolve node:dns.
+ */
+function defaultResolveHost():
+  | ((host: string) => Promise<string[]>)
+  | undefined {
+  const g = globalThis as {
+    process?: { versions?: { node?: string } };
+    navigator?: { userAgent?: string };
+  };
+  if (!g.process?.versions?.node) return undefined;
+  if (g.navigator?.userAgent === "Cloudflare-Workers") return undefined;
+  const mod = "node:dns";
+  return async (host) => {
+    // Typed by hand: this package builds without @types/node.
+    const dns: {
+      promises: {
+        lookup(h: string, o: { all: true }): Promise<{ address: string }[]>;
+      };
+    } = await import(mod);
+    return (await dns.promises.lookup(host, { all: true })).map(
+      (a) => a.address,
+    );
   };
 }
 

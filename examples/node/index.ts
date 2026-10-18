@@ -14,6 +14,8 @@ pay_to = "0x1111111111111111111111111111111111111111"
 
 export const app = new Hono();
 // Verify-only is testnet-only: mainnet requires a settling verifier (settles: true).
+// On Node the default directory fetcher resolves Signature-Agent hosts and
+// refuses private addresses; nothing to wire.
 app.use(tollbooth({ config, x402: { buildOffer, verifyProof } }));
 app.get("/", (c) => c.text("welcome, human"));
 app.get("/article", (c) => c.text("the article"));

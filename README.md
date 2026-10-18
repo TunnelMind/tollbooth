@@ -327,6 +327,14 @@ https://tunnelmind.ai/conduct/join
   as anonymous, never as a spoofer). Same stance as vouchers: per instance, a
   bounded LRU sized by `limits.jti_lru_max`, eviction is amnesty. Signatures
   without a `nonce` can replay until they expire.
+- **Signature-Agent directory fetches are vetted, not sandboxed.** The key
+  directory URL comes from the agent, so the fetcher takes https on port 443
+  only, refuses IP literals and localhost / `.local` / `.internal` names, and
+  on Node resolves the host first (`dns.promises.lookup`, loaded lazily) and
+  refuses it if any address is private, loopback, link-local or CGNAT. Pass
+  `makeDirectoryFetcher({ resolveHost })` as `fetchDirectory` to supply your
+  own resolver; Workers get none, since their egress cannot reach private
+  ranges. `fetch` resolves again, so a DNS-rebinding window remains.
 - **Stealth agents pass free.** An agent driving a full browser with
   human-shaped headers is indistinguishable from a human and passes untolled.
   That is the price of failing open: any mechanism that could catch it would
