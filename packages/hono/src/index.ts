@@ -444,10 +444,14 @@ function record(
   decision: Decision,
   cap: number,
 ): void {
+  // R103: the report echoes the UA back to whoever reads it; strip control
+  // characters once here (as the SPOOF line does) so robotsUAs, the anon key,
+  // the stored ua, byte accounting and eviction all see the same value.
+  const ua = req.userAgent.replace(/\p{Cc}/gu, "");
   if (decision.action === "pass" && decision.reason === "free-path") {
     stats.freePathHits += 1;
     if (req.path === "/robots.txt" && stats.robotsUAs.size < ROBOTS_UA_MAX)
-      stats.robotsUAs.add(req.userAgent);
+      stats.robotsUAs.add(ua);
     return;
   }
   if (decision.action === "pass" && decision.reason === "verified-search") {
@@ -469,12 +473,12 @@ function record(
       ? identity.agentKey
       : identity.kind === "spoofer"
         ? `spoof:${identity.claimedKeyId ?? "unknown"}`
-        : `anon:${req.userAgent}`;
+        : `anon:${ua}`;
   let entry = stats.agents.get(key);
   if (!entry) {
     // Bounded map; eviction is amnesty (D-3 spirit), never an error.
     if (stats.agents.size >= cap) evictOldest(stats);
-    entry = { kind: identity.kind, ua: req.userAgent, requests: 0, paths: [] };
+    entry = { kind: identity.kind, ua, requests: 0, paths: [] };
     stats.agents.set(key, entry);
     stats.bytes += key.length + entry.ua.length;
   }
