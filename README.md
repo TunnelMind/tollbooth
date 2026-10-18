@@ -46,6 +46,10 @@ pnpm install && pnpm build
 cloning (and `pnpm test` runs it for you). The runnable [examples/](examples/)
 are the fastest way to see the snippets below working end to end.
 
+Run the tests from the repo root with `pnpm test` (`pretest` is `tsc -b`, then
+`vitest run`). Don't use `pnpm -r test`: the workspace packages define no
+`test` script, so it runs nothing.
+
 ## Quickstart: observe first
 
 Watch who is knocking before charging anyone. Observe mode, every request
