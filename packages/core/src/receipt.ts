@@ -145,7 +145,12 @@ export function receiptFactsFor(
   req: { userAgent: string; path: string },
   window: { count: number; windowStartS: number; windowEndS: number },
 ): ReceiptFacts | null {
-  const base = { ua: req.userAgent, path: req.path, ...window };
+  // The UA is attacker-controlled and lands in signed, published receipts.
+  const base = {
+    ua: req.userAgent.replace(/\p{Cc}/gu, ""),
+    path: req.path,
+    ...window,
+  };
   switch (decision.action) {
     case "consequence":
       if (decision.identity.kind === "spoofer")

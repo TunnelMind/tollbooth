@@ -121,6 +121,25 @@ describe("US-1 AC-1.1 - the report endpoint", () => {
     expect(curl.would_have_paid_usd).toBe("0.0020");
   });
 
+  it("R103: strips control characters from the report's ua, robots still match", async () => {
+    const app = appWith(`report_token = "t"`);
+    // Fetch headers cannot carry CR/LF; tab and DEL are the \p{Cc} that get in.
+    const headers = { "user-agent": "evil\tbot\x7f/1.0", accept: "*/*" };
+    await app.request("http://example.com/robots.txt", { headers });
+    await app.request("http://example.com/a", { headers });
+    const resp = await app.request("http://example.com/_tollbooth/report", {
+      headers: { authorization: "Bearer t" },
+    });
+    const report = (await resp.json()) as {
+      agents: Array<{ key: string; ua: string; robots_txt_fetched: boolean }>;
+    };
+    expect(report.agents).toHaveLength(1);
+    const a = report.agents[0];
+    expect(a?.ua).toBe("evilbot/1.0");
+    expect(a?.key).toBe("anon:evilbot/1.0");
+    expect(a?.robots_txt_fetched).toBe(true);
+  });
+
   it("keys verified agents by their WBA public key", async () => {
     const agent = await makeAgent();
     const app = appWith(`report_token = "t"`, {

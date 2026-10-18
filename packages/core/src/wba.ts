@@ -12,11 +12,14 @@
 // Hardening: @authority must be covered (binds the signature to the host),
 // `created` and `expires` are required with a span of at most 300 s (else
 // malformed), and `created` may be at most 60 s in the future (else stale).
+// A signature carrying `nonce` is refused (stale) on replay when the caller
+// supplies a NonceCache.
 //
 // Covered-component support is the minimal WBA set; anything else is rejected
 // naming the supported set. States are facts, not verdicts: "verified" means
 // "this signature cryptographically verifies against that directory".
 import { fromBase64Url, toBase64Url, verify } from "./keys.js";
+import type { NonceCache } from "./nonce.js";
 
 const SUPPORTED_COMPONENTS = [
   "@authority",
@@ -26,7 +29,7 @@ const SUPPORTED_COMPONENTS = [
   "signature-agent",
 ];
 const DIRECTORY_PATH = "/.well-known/http-message-signatures-directory";
-const DEFAULT_SKEW_S = 300;
+const DEFAULT_SKEW_S = 60;
 /** Longest accepted `expires - created` span, seconds. */
 const MAX_VALIDITY_S = 300;
 /** How far ahead of now `created` may be (clock drift), seconds. */
@@ -183,7 +186,7 @@ export interface WbaInput {
 export type FetchDirectory = (url: string) => Promise<unknown>;
 
 export interface WbaOptions {
-  /** Temporal slack in seconds before a valid signature counts as stale (default 300). */
+  /** Temporal slack in seconds before a valid signature counts as stale (default 60). */
   skewToleranceS?: number;
   /** Epoch seconds "now" — injectable for deterministic tests. */
   nowS?: number;
@@ -191,7 +194,7 @@ export interface WbaOptions {
 
 export async function verifyWebBotAuth(
   input: WbaInput,
-  deps: { fetchDirectory: FetchDirectory },
+  deps: { fetchDirectory: FetchDirectory; nonceCache?: NonceCache },
   options: WbaOptions = {},
 ): Promise<WbaResult> {
   const checks: WbaCheck[] = [];
@@ -368,6 +371,23 @@ export async function verifyWebBotAuth(
     )
   )
     return result("stale", base);
+
+  // Only a signature that verified and is in-window reaches the cache, so
+  // forged or expired traffic cannot poison it. A replay is stale, not spoof:
+  // an honest client may retry a request (IV.13).
+  // ponytail: per-instance bounded LRU; eviction or a second instance lets a
+  // replay through within the signature's window. Shared store if that matters.
+  if (typeof p.nonce === "string" && deps.nonceCache) {
+    const key = `${input.authority.toLowerCase()}\n${keyId}\n${p.nonce}`;
+    if (
+      !push(
+        "nonce_unseen",
+        !deps.nonceCache.seenBefore(key),
+        `nonce=${p.nonce}`,
+      )
+    )
+      return result("stale", base);
+  }
 
   return result("verified", base);
 }

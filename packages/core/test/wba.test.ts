@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NonceCache } from "../src/nonce.js";
 import {
   buildSignatureBase,
   ed25519Thumbprint,
@@ -303,5 +304,87 @@ describe("verifyWebBotAuth", () => {
       at(NOW),
     );
     expect(res.state).toBe("malformed");
+  });
+});
+
+// ── nonce replay refusal ────────────────────────────────────────────────────
+
+describe("verifyWebBotAuth nonce replay", () => {
+  it("same nonce-bearing signature twice: verified, then stale (nonce_unseen fails)", async () => {
+    const agent = await makeAgent();
+    const req = await signedRequest(agent, { nonce: "n-1" });
+    const deps = {
+      fetchDirectory: dirWith(agent.jwk),
+      nonceCache: new NonceCache(10),
+    };
+    expect((await verifyWebBotAuth(req, deps, at(NOW))).state).toBe("verified");
+    const again = await verifyWebBotAuth(req, deps, at(NOW));
+    expect(again.state).toBe("stale");
+    expect(again.checks.at(-1)).toMatchObject({
+      name: "nonce_unseen",
+      pass: false,
+    });
+  });
+
+  it("no nonce param, or no cache: repeat verification stays verified", async () => {
+    const agent = await makeAgent();
+    const plain = await signedRequest(agent);
+    const withCache = {
+      fetchDirectory: dirWith(agent.jwk),
+      nonceCache: new NonceCache(10),
+    };
+    for (let i = 0; i < 2; i++)
+      expect((await verifyWebBotAuth(plain, withCache, at(NOW))).state).toBe(
+        "verified",
+      );
+    expect(withCache.nonceCache.size).toBe(0);
+    const nonced = await signedRequest(agent, { nonce: "n-2" });
+    for (let i = 0; i < 2; i++)
+      expect(
+        (
+          await verifyWebBotAuth(
+            nonced,
+            { fetchDirectory: dirWith(agent.jwk) },
+            at(NOW),
+          )
+        ).state,
+      ).toBe("verified");
+  });
+
+  it("invalid or stale signatures never populate the cache", async () => {
+    const agent = await makeAgent();
+    const nonceCache = new NonceCache(10);
+    const deps = { fetchDirectory: dirWith(agent.jwk), nonceCache };
+    const forged = {
+      ...(await signedRequest(agent, { nonce: "n-3" })),
+      authority: "evil.example",
+    };
+    expect((await verifyWebBotAuth(forged, deps, at(NOW))).state).toBe(
+      "invalid_signature",
+    );
+    const expired = await signedRequest(agent, {
+      nonce: "n-3",
+      expires: NOW - 400,
+    });
+    expect((await verifyWebBotAuth(expired, deps, at(NOW))).state).toBe(
+      "stale",
+    );
+    expect(nonceCache.size).toBe(0);
+    const real = await signedRequest(agent, { nonce: "n-3" });
+    expect((await verifyWebBotAuth(real, deps, at(NOW))).state).toBe(
+      "verified",
+    );
+  });
+
+  it("NonceCache is a bounded LRU: oldest evicted at cap, size never exceeds it", () => {
+    const c = new NonceCache(2);
+    expect(c.seenBefore("a")).toBe(false);
+    expect(c.seenBefore("b")).toBe(false);
+    expect(c.seenBefore("a")).toBe(true); // refreshes a; b is now oldest
+    expect(c.seenBefore("c")).toBe(false); // evicts b
+    expect(c.size).toBe(2);
+    expect(c.seenBefore("a")).toBe(true);
+    expect(c.seenBefore("b")).toBe(false); // amnesty after eviction
+    expect(c.size).toBe(2);
   });
 });

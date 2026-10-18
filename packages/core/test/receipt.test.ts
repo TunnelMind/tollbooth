@@ -247,4 +247,19 @@ describe("receiptFactsFor - decisions map to receipt facts", () => {
     expect(facts).toMatchObject({ type: "SPOOF", claimedKey: "c" });
     expect(facts?.agentKey ?? null).toBeNull();
   });
+
+  it("strips control characters from the UA on every receipt type", () => {
+    const dirty = { userAgent: "Bo\u0000t\r\n/1.0\u0007", path: "/a/b" };
+    const decisions: Decision[] = [
+      { action: "pass", reason: "paid", identity: agentIdentity },
+      {
+        action: "consequence",
+        reason: "toll-ignored",
+        identity: agentIdentity,
+      },
+    ];
+    for (const decision of decisions) {
+      expect(receiptFactsFor(decision, dirty, window)?.ua).toBe("Bot/1.0");
+    }
+  });
 });

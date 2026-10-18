@@ -46,6 +46,10 @@ pnpm install && pnpm build
 cloning (and `pnpm test` runs it for you). The runnable [examples/](examples/)
 are the fastest way to see the snippets below working end to end.
 
+Run the tests from the repo root with `pnpm test` (`pretest` is `tsc -b`, then
+`vitest run`). Don't use `pnpm -r test`: the workspace packages define no
+`test` script, so it runs nothing.
+
 ## Quickstart: observe first
 
 Watch who is knocking before charging anyone. Observe mode, every request
@@ -126,7 +130,11 @@ the client IP is inside the ranges Google and Bing publish (a dated snapshot
 vendored in `@tollbooth/core`, never fetched at runtime); a spoofed UA from
 any other IP, or a request with no trusted IP, gets the normal 402.
 `"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
-Discordbot by UA, for HTML page GET/HEAD requests only. A request carrying
+Discordbot by UA, for HTML page GET/HEAD requests only.
+**Warning: "preview" is UA-only.** Unlike `"search"` there is no IP check,
+and the User-Agent header is trivially spoofable: any client can send
+`User-Agent: Slackbot` and read your HTML pages (GET/HEAD) for free. Enable it
+only if you accept that; don't use it on content you want paid. A request carrying
 Web Bot Auth headers is never shortcut. Each pass is counted in the report as
 its own class (`verified_search_passed`, `verified_preview_passed`). 
 `@tollbooth/hono` has no default client IP, so the search pass fails closed
@@ -135,7 +143,7 @@ until you pass `tollbooth({ clientIp: (c) => ... })` with a source you trust;
 edge sets it.
 
 ```toml
-pass_verified = ["search", "preview"]
+pass_verified = ["search", "preview"]  # "preview" is UA-only, spoofable
 ```
 
 ```ts
@@ -316,6 +324,21 @@ https://tunnelmind.ai/conduct/join
   every cache and ledger is a bounded LRU whose eviction is amnesty. This is
   economically sufficient at micro-prices; it is not a hard ledger, and no
   database will be added to change that.
+- **Web Bot Auth replay is bounded, not closed.** A signature counts as
+  valid until `expires` plus `wba_skew_tolerance` (default `"60s"`; signed
+  spans are capped at 300 s). In toll mode a signature carrying the optional
+  RFC 9421 `nonce` parameter is refused on replay within that window (treated
+  as anonymous, never as a spoofer). Same stance as vouchers: per instance, a
+  bounded LRU sized by `limits.jti_lru_max`, eviction is amnesty. Signatures
+  without a `nonce` can replay until they expire.
+- **Signature-Agent directory fetches are vetted, not sandboxed.** The key
+  directory URL comes from the agent, so the fetcher takes https on port 443
+  only, refuses IP literals and localhost / `.local` / `.internal` names, and
+  on Node resolves the host first (`dns.promises.lookup`, loaded lazily) and
+  refuses it if any address is private, loopback, link-local or CGNAT. Pass
+  `makeDirectoryFetcher({ resolveHost })` as `fetchDirectory` to supply your
+  own resolver; Workers get none, since their egress cannot reach private
+  ranges. `fetch` resolves again, so a DNS-rebinding window remains.
 - **Stealth agents pass free.** An agent driving a full browser with
   human-shaped headers is indistinguishable from a human and passes untolled.
   That is the price of failing open: any mechanism that could catch it would

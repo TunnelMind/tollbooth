@@ -9,6 +9,7 @@ import type { TollboothConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
 import type { JtiCache } from "./jti.js";
 import type { OfferLedger } from "./ledger.js";
+import type { NonceCache } from "./nonce.js";
 import { decodeVoucher, type SiteKeyPair, spendVoucher } from "./voucher.js";
 import { type FetchDirectory, verifyWebBotAuth } from "./wba.js";
 
@@ -104,6 +105,8 @@ export interface PipelineDeps {
   siteKeys?: SiteKeyPair;
   /** AC-3.3 replay damper. */
   jtiCache?: JtiCache;
+  /** Refuses replayed WBA signatures that carry a `nonce`. */
+  nonceCache?: NonceCache;
 }
 
 /** Entries ending in "/" match as prefixes; everything else matches exactly. */
@@ -173,7 +176,10 @@ async function identify(
         path: req.path,
         ...(req.scheme !== undefined ? { scheme: req.scheme } : {}),
       },
-      { fetchDirectory: deps.fetchDirectory },
+      {
+        fetchDirectory: deps.fetchDirectory,
+        ...(deps.nonceCache ? { nonceCache: deps.nonceCache } : {}),
+      },
       {
         skewToleranceS: Math.floor(cfg.wba_skew_tolerance / 1000),
         ...(deps.nowS !== undefined ? { nowS: deps.nowS } : {}),

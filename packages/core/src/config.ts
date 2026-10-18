@@ -104,7 +104,7 @@ const configSchema = z.strictObject({
   /** The domain that vouches for this site key via /.well-known/tollbooth-site.json.
    *  Sent as a CLAIM with every report; a commons only believes it after fetching the file. */
   report_domain: z.string().prefault(""),
-  wba_skew_tolerance: duration("300s"),
+  wba_skew_tolerance: duration("60s"),
   toll: tollSchema,
   maze: mazeSchema,
   limits: limitsSchema,

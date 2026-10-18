@@ -57,7 +57,7 @@ describe("FR-10 — documented defaults for every key (plan §5)", () => {
     expect(c.report).toBe(false);
     expect(c.report_url).toBeUndefined();
     expect(c.report_token).toBe("");
-    expect(c.wba_skew_tolerance).toBe(300_000);
+    expect(c.wba_skew_tolerance).toBe(60_000);
 
     expect(c.toll.price_usd).toBe("0.001");
     expect(c.toll.offer_grace).toBe(3);
