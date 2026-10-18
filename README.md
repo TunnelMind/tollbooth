@@ -126,7 +126,11 @@ the client IP is inside the ranges Google and Bing publish (a dated snapshot
 vendored in `@tollbooth/core`, never fetched at runtime); a spoofed UA from
 any other IP, or a request with no trusted IP, gets the normal 402.
 `"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
-Discordbot by UA, for HTML page GET/HEAD requests only. A request carrying
+Discordbot by UA, for HTML page GET/HEAD requests only.
+**Warning: "preview" is UA-only.** Unlike `"search"` there is no IP check,
+and the User-Agent header is trivially spoofable: any client can send
+`User-Agent: Slackbot` and read your HTML pages (GET/HEAD) for free. Enable it
+only if you accept that; don't use it on content you want paid. A request carrying
 Web Bot Auth headers is never shortcut. Each pass is counted in the report as
 its own class (`verified_search_passed`, `verified_preview_passed`). 
 `@tollbooth/hono` has no default client IP, so the search pass fails closed
@@ -135,7 +139,7 @@ until you pass `tollbooth({ clientIp: (c) => ... })` with a source you trust;
 edge sets it.
 
 ```toml
-pass_verified = ["search", "preview"]
+pass_verified = ["search", "preview"]  # "preview" is UA-only, spoofable
 ```
 
 ```ts
