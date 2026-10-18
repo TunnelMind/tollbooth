@@ -10,6 +10,7 @@ import {
   decide,
   type FetchDirectory,
   JtiCache,
+  NonceCache,
   type OfferBody,
   OfferLedger,
   type PipelineDeps,
@@ -546,6 +547,8 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   };
   const ledger = new OfferLedger(cfg.limits.agent_ledger_max);
   const jtiCache = new JtiCache(cfg.limits.jti_lru_max);
+  // WBA nonce replay refusal; shares the jti cap rather than a new knob.
+  const nonceCache = new NonceCache(cfg.limits.jti_lru_max);
   const fetchDirectory = options.fetchDirectory ?? makeDirectoryFetcher();
   const { x402, stripe, siteKeys, maze } = options;
   const reporter =
@@ -647,6 +650,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         ? {
             ledger,
             jtiCache,
+            nonceCache,
             ...(siteKeys ? { siteKeys } : {}),
             ...(x402
               ? {

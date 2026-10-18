@@ -16,6 +16,7 @@ export {
 } from "./keys.js";
 export type { OfferState } from "./ledger.js";
 export { OfferLedger } from "./ledger.js";
+export { NonceCache } from "./nonce.js";
 export type {
   Decision,
   Identity,

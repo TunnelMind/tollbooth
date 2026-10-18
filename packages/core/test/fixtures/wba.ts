@@ -39,6 +39,7 @@ export async function signedRequest(
     components = ["@authority", "signature-agent"],
     authority = "example.com",
     path,
+    nonce,
   }: {
     created?: number;
     /** `null` omits the expires parameter entirely. */
@@ -47,12 +48,14 @@ export async function signedRequest(
     authority?: string;
     /** Signed over when components include "@path"; echoed in the result. */
     path?: string;
+    /** Adds the optional RFC 9421 `nonce` parameter. */
+    nonce?: string;
   } = {},
 ) {
   const signatureAgent = '"https://signature-agent.test"';
   const list = components.map((c) => `"${c}"`).join(" ");
   const exp = expires === null ? "" : `;expires=${expires}`;
-  const inner = `(${list});created=${created}${exp};keyid="${agent.keyid}";alg="ed25519";tag="web-bot-auth"`;
+  const inner = `(${list});created=${created}${exp};keyid="${agent.keyid}";alg="ed25519"${nonce === undefined ? "" : `;nonce="${nonce}"`};tag="web-bot-auth"`;
   const signatureInput = `sig2=${inner}`;
   const base = buildSignatureBase(parseSignatureInput(signatureInput), {
     authority,

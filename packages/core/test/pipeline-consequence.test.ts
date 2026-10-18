@@ -12,9 +12,10 @@ import {
 
 const TOLL_CFG = parseConfig(`
 mode = "toll"
+wba_skew_tolerance = "300s"
 [toll.x402]
 pay_to = "0xabc"
-`); // offer_grace 3, window 10m, maze enabled - all defaults
+`); // offer_grace 3, window 10m, maze enabled - defaults; skew pinned (agentReq)
 
 const NO_MAZE_CFG = parseConfig(`
 mode = "toll"
@@ -33,8 +34,8 @@ const crawler = {
 };
 
 async function agentReq(agent: TestAgent) {
-  // longest valid signature (created 60 s ahead, 300 s span, plus the 300 s
-  // expiry skew) so advancing the clock to NOW+601 tests the WINDOW, not
+  // longest valid signature (created 60 s ahead, 300 s span, plus TOLL_CFG's pinned
+  // 300 s expiry skew) so advancing the clock to NOW+601 tests the WINDOW, not
   // signature staleness
   return {
     ...crawler,

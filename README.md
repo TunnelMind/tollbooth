@@ -316,6 +316,13 @@ https://tunnelmind.ai/conduct/join
   every cache and ledger is a bounded LRU whose eviction is amnesty. This is
   economically sufficient at micro-prices; it is not a hard ledger, and no
   database will be added to change that.
+- **Web Bot Auth replay is bounded, not closed.** A signature counts as
+  valid until `expires` plus `wba_skew_tolerance` (default `"60s"`; signed
+  spans are capped at 300 s). In toll mode a signature carrying the optional
+  RFC 9421 `nonce` parameter is refused on replay within that window (treated
+  as anonymous, never as a spoofer). Same stance as vouchers: per instance, a
+  bounded LRU sized by `limits.jti_lru_max`, eviction is amnesty. Signatures
+  without a `nonce` can replay until they expire.
 - **Stealth agents pass free.** An agent driving a full browser with
   human-shaped headers is indistinguishable from a human and passes untolled.
   That is the price of failing open: any mechanism that could catch it would
