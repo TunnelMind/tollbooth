@@ -3,14 +3,25 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "references": [
-    { "path": "../adapter-x402" },
-    { "path": "../cli" },
-    { "path": "../core" },
-    { "path": "../hono" },
-    { "path": "../maze" }
+    {
+      "path": "../adapter-x402"
+    },
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../hono"
+    },
+    {
+      "path": "../maze"
+    }
   ]
 }

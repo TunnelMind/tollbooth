@@ -1,7 +1,7 @@
 {
   "name": "@tollbooth/hono",
   "version": "2.0.0",
-  "description": "Hono middleware binding of @tollbooth/core — one package covers Node, Bun, and Cloudflare Workers.",
+  "description": "Hono middleware binding of @tollbooth/core \u2014 one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -21,7 +21,6 @@
   "devDependencies": {
     "@tollbooth/adapter-stripe": "workspace:*",
     "@tollbooth/adapter-x402": "workspace:*",
-    "@tollbooth/cli": "workspace:*",
     "@tollbooth/maze": "workspace:*",
     "hono": "^4.13.7"
   },

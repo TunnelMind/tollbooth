@@ -32,7 +32,7 @@
  * tokens, prices) — its output is part of the cache key.
  */
 import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { generateCorpus } from "@tollbooth/cli";
+import { generateCorpus } from "@tollbooth/maze";
 import {
   canonicalize,
   fromBase64Url,
