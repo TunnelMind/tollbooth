@@ -1,6 +1,6 @@
 // The frozen JCS wire vectors (test/vectors/jcs.json), byte-identical to
-// receipt-verify's test/vectors/jcs.json (sha256 0798d3b0ba7af654f1c5e88a
-// bb9b91dc3aca0692a9f716ae7bf5bd17b6f64d19); atap carries the same copy.
+// receipt-verify's test/vectors/jcs.json (sha256 81a79410874c5ed24ea0468a
+// 3d684e3a03111dc0a2fd2e8317ed3e3dfb978cdd); atap carries the same copy.
 // A change starts there and is mirrored here; biome leaves the file unformatted.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
