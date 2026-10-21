@@ -23,6 +23,12 @@
       "quoteStyle": "double"
     }
   },
+  "overrides": [
+    {
+      "includes": ["packages/core/test/vectors/jcs.json"],
+      "formatter": { "enabled": false }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {

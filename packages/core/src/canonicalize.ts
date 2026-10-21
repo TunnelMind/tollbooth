@@ -17,12 +17,17 @@ const ESC: Record<string, string> = {
 
 function encodeString(s: string): string {
   let out = '"';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s.charAt(i);
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) as number;
+    // The iterator yields a valid pair as one code point > 0xFFFF, so a cp in
+    // this range is a lone surrogate. TextEncoder would map it to U+FFFD and
+    // two different strings would sign to the same bytes; refused, as
+    // receipt-verify's jcs.ts does (the shared vectors pin it), 2026-10-20.
+    if (cp >= 0xd800 && cp <= 0xdfff)
+      throw new Error("JCS: lone surrogate in string");
     const esc = ESC[ch];
     if (esc !== undefined) out += esc;
-    else if (s.charCodeAt(i) < 0x20)
-      out += `\\u${s.charCodeAt(i).toString(16).padStart(4, "0")}`;
+    else if (cp < 0x20) out += `\\u${cp.toString(16).padStart(4, "0")}`;
     else out += ch;
   }
   return `${out}"`;
