@@ -2,8 +2,7 @@
 // Decision pipeline, plan §1. This module is pure policy: it decides, the
 // HTTP binding acts (and in observe mode records instead of acting). The
 // only state it touches is injected: the offer ledger (D-3) and the jti
-// replay cache (AC-3.3). Step 7 (offer exhaustion) lands with T-017; the
-// ladder below already classifies for it.
+// replay cache (AC-3.3).
 import { botRanges, ipInRanges } from "./botranges.js";
 import type { TollboothConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
@@ -80,7 +79,7 @@ export type Decision =
       reason: "mismatch" | "bearer-disabled";
       identity: Identity;
     }
-  /** Spoof consequence — served by the maze once T-017 wires it. */
+  /** Spoof consequence — the binding serves it from the maze. */
   | {
       action: "consequence";
       reason: "spoof" | "toll-ignored";
@@ -253,7 +252,7 @@ export async function decide(
   if (identity.kind === "human")
     return { action: "pass", reason: "human", identity };
 
-  // Step 4: spoofers meet the consequence (maze serving wired at T-017).
+  // Step 4: spoofers meet the consequence (the binding redirects into the maze).
   if (identity.kind === "spoofer")
     return { action: "consequence", reason: "spoof", identity };
 

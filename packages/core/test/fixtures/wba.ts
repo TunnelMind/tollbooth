@@ -1,5 +1,5 @@
 // Shared WBA test fixtures: real Ed25519 keypairs signing real RFC 9421
-// requests. Used by wba.test.ts and pipeline.test.ts.
+// requests. Used by the core, hono and cloudflare suites.
 import {
   generateSecretKey,
   publicKeyOf,

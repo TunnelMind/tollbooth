@@ -73,7 +73,7 @@ describe("B009 hono binding", () => {
     expect(xff.status).toBe(402);
   });
 
-  it("options.clientIp overrides the trusted source", async () => {
+  it("options.clientIp is the only trusted client-IP source", async () => {
     const app = appWith(CFG, { clientIp: () => GOOGLE_V4 });
     const resp = await app.request("http://example.com/a", {
       headers: { "user-agent": GOOGLEBOT, "cf-connecting-ip": "203.0.113.9" },

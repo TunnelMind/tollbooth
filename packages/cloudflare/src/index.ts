@@ -343,10 +343,8 @@ export function createPagesMiddleware(
     const reporting = Boolean(siteKeys && reportUrl);
 
     // Anything that would POST needs a route; resolve (or throw) BEFORE wiring it.
-    const needsFetch =
-      reporting ||
-      opts.settle !== undefined ||
-      (opts.snapshots !== undefined && reporting);
+    // Snapshots post only when reporting does, so they add no case here.
+    const needsFetch = reporting || opts.settle !== undefined;
     const raw = resolveRoutedFetch(opts, env, needsFetch);
     const routedFetch = raw === null ? null : tagged(raw, envMarker);
 

@@ -30,7 +30,7 @@ have.
 
 ## Install
 
-> **v1.0.0 is tagged but not yet on npm.** Until the packages publish, install
+> **The packages are not yet on npm** (v2.0.0 in the tree). Until they publish, install
 > from source — everything below works from a clone, and the `@tollbooth/*`
 > imports resolve through the workspace unchanged. They become
 > `npm install @tollbooth/core @tollbooth/hono …` the day the packages land on
@@ -378,8 +378,9 @@ NFR-1 (pass-path added latency <= 1 ms p50, <= 5 ms p99): **PASS** (added p50 0.
 | `@tollbooth/hono` | the middleware: one binding for Node, Bun, Workers | core (+ your hono) |
 | `@tollbooth/adapter-x402` | x402 offers and local proof verification | @noble/curves, @noble/hashes |
 | `@tollbooth/adapter-stripe` | webhook + render-once voucher redemption, no Stripe SDK | core |
-| `@tollbooth/maze` | decoy corpus loading and serving | none |
-| `@tollbooth/cli` | `corpus`, `verify`, `voucher inspect`/`mint` | core |
+| `@tollbooth/maze` | decoy corpus generation, loading and serving | none |
+| `@tollbooth/cli` | `corpus`, `verify`, `voucher inspect`/`mint` | core, maze |
+| `@tollbooth/cloudflare` | Cloudflare Pages middleware: settle-then-serve x402, snapshots | core, hono, maze, adapter-x402 |
 
 ## Development
 

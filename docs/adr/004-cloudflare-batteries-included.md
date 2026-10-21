@@ -11,7 +11,7 @@ deployment carried ~200 lines of this plumbing (state caching, corpus
 generation, binding-routed reporting, settle-then-serve, damping) around
 ~40 lines of actual site policy.
 
-**Decision:** @tollbooth/cloudflare imports core, hono, maze, cli, and
+**Decision:** @tollbooth/cloudflare imports core, hono, maze, and
 adapter-x402, and wires them behind `createPagesMiddleware(options)`.
 One import, config in, tolling out.
 

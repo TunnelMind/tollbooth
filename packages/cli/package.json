@@ -1,7 +1,7 @@
 {
   "name": "@tollbooth/cli",
   "version": "2.0.0",
-  "description": "tollbooth CLI: keygen, verify, corpus, voucher inspect/mint.",
+  "description": "tollbooth CLI: corpus, verify, voucher inspect/mint.",
   "license": "MIT",
   "type": "module",
   "exports": {
