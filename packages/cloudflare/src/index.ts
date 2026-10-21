@@ -32,7 +32,6 @@
  * tokens, prices) — its output is part of the cache key.
  */
 import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { generateCorpus } from "@tollbooth/maze";
 import {
   canonicalize,
   fromBase64Url,
@@ -49,7 +48,11 @@ import {
   type X402Adapter,
   type X402VerifyResult,
 } from "@tollbooth/hono";
-import { corpusFromMap, makeMazeHandler } from "@tollbooth/maze";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tollbooth/maze";
 import { Hono } from "hono";
 import { TollboothBindingMissingError } from "./errors.js";
 
