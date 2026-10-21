@@ -20,7 +20,6 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@tollbooth/cli": "workspace:*",
     "@tollbooth/core": "workspace:*"
   },
   "repository": {

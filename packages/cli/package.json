@@ -19,7 +19,8 @@
     "tollbooth": "./dist/cli.js"
   },
   "dependencies": {
-    "@tollbooth/core": "workspace:*"
+    "@tollbooth/core": "workspace:*",
+    "@tollbooth/maze": "workspace:*"
   },
   "repository": {
     "type": "git",

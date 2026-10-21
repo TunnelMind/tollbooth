@@ -1,11 +1,11 @@
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateCorpus } from "@tollbooth/cli";
 import { parseConfig } from "@tollbooth/core";
 import { describe, expect, it } from "vitest";
 import {
   corpusFromMap,
+  generateCorpus,
   makeMazeHandler,
   robotsFragment,
 } from "../src/index.js";

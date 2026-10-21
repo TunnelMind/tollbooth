@@ -12,7 +12,7 @@ import {
   verifyReceipt,
 } from "@tollbooth/core";
 import { loadOrCreateSiteKey } from "@tollbooth/core/node";
-import { corpusHash, generateCorpus } from "./corpus.js";
+import { corpusHash, generateCorpus } from "@tollbooth/maze";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]

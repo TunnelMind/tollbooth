@@ -87,6 +87,9 @@ importers:
       '@tollbooth/core':
         specifier: workspace:*
         version: link:../core
+      '@tollbooth/maze':
+        specifier: workspace:*
+        version: link:../maze
 
   packages/cloudflare:
     dependencies:
@@ -145,9 +148,6 @@ importers:
 
   packages/maze:
     devDependencies:
-      '@tollbooth/cli':
-        specifier: workspace:*
-        version: link:../cli
       '@tollbooth/core':
         specifier: workspace:*
         version: link:../core
