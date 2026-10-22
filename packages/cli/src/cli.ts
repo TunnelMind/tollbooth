@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: MIT
 // tollbooth CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
 // mint is the re-mint fallback for expired-unredeemed purchases, spec 5.3).
+//
+// `verify` trust: the receipt file is hostile and only core's verifyReceipt
+// judges it. The key is the operator's --pubkey or --pin file; with --domain
+// alone it is the receipt's own `site` key, which passes only if
+// https://<host>/.well-known/tollbooth-site.json lists it (a bare host[:port],
+// no redirects, 5 s timeout, 64 KB cap). Exit 0 PASS, 1 FAIL, 64 usage.
+// `voucher mint` reads (or, if missing, creates) the site secret key file via
+// core/node and prints only the public key and the voucher, never the secret.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
