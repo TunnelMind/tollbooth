@@ -1,4 +1,12 @@
 // SPDX-License-Identifier: MIT
+// tollbooth.toml -> TollboothConfig, the one config every binding reads.
+// The operator writes the file, so it is trusted for intent but not for
+// shape: every table is a zod strictObject (an unknown or misspelled key is
+// an error, never ignored), durations and paths are validated, and
+// tollModeProblems checks the cross-field rules a schema cannot express.
+// Fails closed: parseConfig returns a complete config (absent optional keys
+// take the schema's defaults) or throws ConfigError naming every problem by
+// path, so a half-valid file can never start a binding.
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 
