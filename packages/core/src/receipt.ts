@@ -5,6 +5,15 @@
 // transmitted (III.9; the sentinel test holds this). RFC 8785 canonicalized,
 // Ed25519-signed by the site key, verifiable offline by anyone holding the
 // site public key (III.10).
+//
+// verifyReceipt's contract. Dialect: a flat v1 object whose `sig` is the
+// unpadded base64url Ed25519 signature over the JCS bytes of every other
+// field; nothing else is accepted (no envelope, no embedded key, no
+// attestation_strength, so no strength ceiling applies). Trust: only the site
+// public key the caller passes; the receipt's own `site` must equal it. The
+// receipt is hostile: shape and the III.9 key rules are checked first, a lone
+// surrogate fails the canonical-form step, a non-canonical sig spelling fails.
+// Fails closed and never throws: every failure is {ok:false, reason}.
 import { canonicalize } from "./canonicalize.js";
 import { fromBase64Url, sign, toBase64Url, verify } from "./keys.js";
 import type { Decision } from "./pipeline.js";

@@ -3,9 +3,9 @@
  *
  * The middleware fails open on runtime errors (ADR-004: a thrown error serves
  * the site untolled). A missing outbound route is different: it is a
- * deployment mistake, and on 2026-09-14/15 the old behaviour — silently
- * falling back to global fetch — posted five real signed snapshots from a
- * test suite into the production Conduct Log Commons. So when a binding is
+ * deployment mistake, and silently falling back to global fetch once posted
+ * real signed snapshots from a test suite into the production Conduct Log
+ * Commons. So when a binding is
  * named and absent, or outbound reporting is configured with no route at
  * all, construction throws this named error before any request is issued,
  * and the middleware rethrows it instead of serving the site untolled.
