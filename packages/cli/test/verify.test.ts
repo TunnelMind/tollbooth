@@ -83,6 +83,42 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
     expect(result.stdout.trim().endsWith("PASS")).toBe(true);
   });
 
+  // A receipt file can carry "\udc00" in any string: JSON.parse keeps the lone
+  // surrogate, canonicalize refuses it, and the report names that step.
+  it("FAILs a lone surrogate on the canonical-form check", async () => {
+    const site = await makeSite();
+    const receipt = await buildReceipt(
+      {
+        type: "PASS_PAID",
+        agentKey: "k",
+        ua: "u",
+        path: "/a",
+        count: 1,
+        windowStartS: NOW,
+        windowEndS: NOW,
+      },
+      site,
+    );
+    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const file = join(dir, "receipt.json");
+    await writeFile(
+      file,
+      JSON.stringify(receipt).replace('"ua":"u"', '"ua":"\\udc00"'),
+    );
+    const result = await cli([
+      "verify",
+      file,
+      "--pubkey",
+      toBase64Url(site.pub),
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("schema: PASS");
+    expect(result.stdout).toMatch(
+      /canonical form: FAIL \(canonical form: JCS: lone surrogate/,
+    );
+    expect(result.stdout).toContain("signature: SKIPPED");
+  });
+
   it("FAILs a tampered receipt on the signature check", async () => {
     const site = await makeSite();
     const receipt = await buildReceipt(

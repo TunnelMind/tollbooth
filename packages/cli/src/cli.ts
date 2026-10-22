@@ -138,11 +138,17 @@ async function verifyCmd(args: string[]): Promise<number> {
     // not base64url: left empty, so verifyReceipt reports site-mismatch
   }
   const result = await verifyReceipt(value, keyBytes);
-  const schemaOk = result.ok || result.reason === "signature";
+  // verifyReceipt checks schema, then canonical form, then signature, and
+  // reports the first failure: each line reads PASS up to it, FAIL at it,
+  // SKIPPED after it.
+  const canonFail = result.reason?.startsWith("canonical form") ?? false;
+  const schemaOk = result.ok || result.reason === "signature" || canonFail;
   console.log(`schema: ${schemaOk ? "PASS" : `FAIL (${result.reason})`}`);
-  console.log(`canonical form: ${schemaOk ? "PASS" : "SKIPPED"}`);
   console.log(
-    `signature: ${result.ok ? "PASS" : schemaOk ? "FAIL" : "SKIPPED"}`,
+    `canonical form: ${!schemaOk ? "SKIPPED" : canonFail ? `FAIL (${result.reason})` : "PASS"}`,
+  );
+  console.log(
+    `signature: ${result.ok ? "PASS" : schemaOk && !canonFail ? "FAIL" : "SKIPPED"}`,
   );
   let ok = result.ok;
   if (domain === undefined) {
