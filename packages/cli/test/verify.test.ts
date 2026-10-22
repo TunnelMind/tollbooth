@@ -119,6 +119,45 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
     expect(result.stdout).toContain("signature: SKIPPED");
   });
 
+  // Broken twice, in canonical form and in the signature's spelling: the
+  // report must name canonical form, the earlier step, not print it as PASS.
+  it("names canonical form first when the signature is also mis-spelled", async () => {
+    const site = await makeSite();
+    const receipt = await buildReceipt(
+      {
+        type: "PASS_PAID",
+        agentKey: "k",
+        ua: "u",
+        path: "/a",
+        count: 1,
+        windowStartS: NOW,
+        windowEndS: NOW,
+      },
+      site,
+    );
+    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const file = join(dir, "receipt.json");
+    await writeFile(
+      file,
+      JSON.stringify({ ...receipt, sig: `${receipt.sig}==` }).replace(
+        '"ua":"u"',
+        '"ua":"\\udc00"',
+      ),
+    );
+    const result = await cli([
+      "verify",
+      file,
+      "--pubkey",
+      toBase64Url(site.pub),
+    ]);
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("schema: PASS");
+    expect(result.stdout).toMatch(
+      /canonical form: FAIL \(canonical form: JCS: lone surrogate/,
+    );
+    expect(result.stdout).toContain("signature: SKIPPED");
+  });
+
   it("FAILs a tampered receipt on the signature check", async () => {
     const site = await makeSite();
     const receipt = await buildReceipt(

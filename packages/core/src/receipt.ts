@@ -140,6 +140,16 @@ export async function verifyReceipt(
   if (r.site !== toBase64Url(sitePub)) return fail("site-mismatch");
 
   const { sig, ...unsigned } = r as Receipt;
+  // Canonical form before the signature, the order the docstring gives and
+  // `tollbooth verify` reports in. canonicalize refuses a lone surrogate,
+  // which any string field of a hostile receipt can carry: a failed check,
+  // not a rejected promise.
+  let message: string;
+  try {
+    message = canonicalize(unsigned);
+  } catch (e) {
+    return fail(`canonical form: ${(e as Error).message}`);
+  }
   // Only the one canonical spelling of the signature: atob skips whitespace,
   // takes padding and "+/", and ignores trailing bits, so a looser decode
   // gives one signature many published forms (and throws on what it refuses).
@@ -151,14 +161,6 @@ export async function verifyReceipt(
   }
   if (!/^[A-Za-z0-9_-]*$/.test(sig) || toBase64Url(sigBytes) !== sig)
     return fail("signature");
-  // canonicalize refuses a lone surrogate, which any string field of a
-  // hostile receipt can carry: a failed check, not a rejected promise.
-  let message: string;
-  try {
-    message = canonicalize(unsigned);
-  } catch (e) {
-    return fail(`canonical form: ${(e as Error).message}`);
-  }
   const valid = await verify(sigBytes, message, sitePub);
   return valid ? { ok: true } : fail("signature");
 }
