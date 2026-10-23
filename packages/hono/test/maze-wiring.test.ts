@@ -1,9 +1,12 @@
 // US-4 through a real Hono app: grace offers, then the maze; spoofers
 // straight to the maze; payment redeems (AC-4.1/4.2/4.4).
 import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { generateCorpus } from "@tollbooth/cli";
 import { parseConfig } from "@tollbooth/core";
-import { corpusFromMap, makeMazeHandler } from "@tollbooth/maze";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tollbooth/maze";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

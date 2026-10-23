@@ -5,6 +5,8 @@
 // plausible but valueless, no real content, no real names (Constitution
 // VI.19), internal links only, each page within page_bytes_max. Generation
 // happens at build/CLI time, never at request time (VI.17).
+// Lives in @tollbooth/maze, not the CLI, so the serving handler and the
+// generator share one fnv1a/pageName; the CLI re-exports it.
 
 export interface CorpusOptions {
   seed: string;
@@ -12,7 +14,8 @@ export interface CorpusOptions {
   pageBytesMax?: number;
 }
 
-function fnv1a(text: string): number {
+/** FNV-1a 32-bit: seeds the corpus PRNG and maps unknown paths onto pages. */
+export function fnv1a(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);
@@ -30,6 +33,9 @@ function mulberry32(state: number): () => number {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+export const pageName = (i: number): string =>
+  `page-${String(i).padStart(4, "0")}.html`;
 
 // ASCII-only wordlists: string length == byte length everywhere below.
 const ADJECTIVES = [
@@ -122,8 +128,6 @@ export function generateCorpus(opts: CorpusOptions): Map<string, string> {
   const pageBytesMax = opts.pageBytesMax ?? 4096;
   const rand = mulberry32(fnv1a(opts.seed));
   const pick = <T>(list: T[]): T => list[Math.floor(rand() * list.length)] as T;
-  const pageName = (i: number): string =>
-    `page-${String(i).padStart(4, "0")}.html`;
 
   const sentence = () =>
     `The ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(VERBS)} the ${pick(ADJECTIVES)} ${pick(NOUNS)} ${pick(TAILS)}.`;

@@ -6,6 +6,10 @@
 // indexes or CDN caches (VI.18 - poisoning the operator's SEO is a
 // release-blocking bug).
 import type { TollboothConfig } from "@tollbooth/core";
+import { fnv1a, pageName } from "./corpus.js";
+
+export type { CorpusOptions } from "./corpus.js";
+export { corpusHash, generateCorpus } from "./corpus.js";
 
 export interface MazeCorpus {
   pageCount: number;
@@ -27,18 +31,6 @@ export interface MazeResponse {
 }
 
 export const PAGE_NAME_RE = /^page-\d{4}\.html$/;
-
-function fnv1a(text: string): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return hash >>> 0;
-}
-
-const pageName = (i: number): string =>
-  `page-${String(i).padStart(4, "0")}.html`;
 
 /** The robots.txt lines the operator appends: keep every crawler out (VI.18). */
 export function robotsFragment(prefix: string): string {

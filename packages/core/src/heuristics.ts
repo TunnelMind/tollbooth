@@ -6,19 +6,13 @@
 // test/fixtures/user-agents.ts.
 
 /** Substrings that mark a self-announcing agent UA, matched case-insensitively. */
-export const AGENT_UA_MARKERS = [
-  "bot",
-  "crawl",
-  "spider",
-  "scrape",
-  "headless",
-];
+const AGENT_UA_MARKERS = ["bot", "crawl", "spider", "scrape", "headless"];
 
 /** UAs containing these are NOT agents despite containing a marker (phone brands etc.). */
-export const AGENT_UA_MARKER_EXCEPTIONS = ["cubot"];
+const AGENT_UA_MARKER_EXCEPTIONS = ["cubot"];
 
 /** Known HTTP-client UA prefixes, matched case-insensitively. */
-export const AGENT_UA_PREFIXES = [
+const AGENT_UA_PREFIXES = [
   "curl/",
   "wget/",
   "python-requests/",

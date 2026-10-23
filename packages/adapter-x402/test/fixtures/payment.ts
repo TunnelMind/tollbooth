@@ -14,13 +14,13 @@ export const NOW = 1_800_000_000;
 export const PAY_TO = "0x1111111111111111111111111111111111111111";
 
 /** Fixed test key -> deterministic payer address. */
-export const PRIV = hexToBytes(
+const PRIV = hexToBytes(
   "2e0834786285daccd064ca17f1654f67b4aef298acbb82cef9ec422fb4975622",
 );
 const PUB = secp256k1.getPublicKey(PRIV, false);
 export const PAYER = `0x${bytesToHex(keccak_256(PUB.slice(1)).slice(-20))}`;
 
-export function ethAddressOf(point: Uint8Array): string {
+function ethAddressOf(point: Uint8Array): string {
   return `0x${bytesToHex(keccak_256(point.slice(1)).slice(-20))}`;
 }
 

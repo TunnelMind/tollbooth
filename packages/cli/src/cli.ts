@@ -2,6 +2,14 @@
 // SPDX-License-Identifier: MIT
 // tollbooth CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
 // mint is the re-mint fallback for expired-unredeemed purchases, spec 5.3).
+//
+// `verify` trust: the receipt file is hostile and only core's verifyReceipt
+// judges it. The key is the operator's --pubkey or --pin file; with --domain
+// alone it is the receipt's own `site` key, which passes only if
+// https://<host>/.well-known/tollbooth-site.json lists it (a bare host[:port],
+// no redirects, 5 s timeout, 64 KB cap). Exit 0 PASS, 1 FAIL, 64 usage.
+// `voucher mint` reads (or, if missing, creates) the site secret key file via
+// core/node and prints only the public key and the voucher, never the secret.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -12,7 +20,7 @@ import {
   verifyReceipt,
 } from "@tollbooth/core";
 import { loadOrCreateSiteKey } from "@tollbooth/core/node";
-import { corpusHash, generateCorpus } from "./corpus.js";
+import { corpusHash, generateCorpus } from "@tollbooth/maze";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]
@@ -138,11 +146,17 @@ async function verifyCmd(args: string[]): Promise<number> {
     // not base64url: left empty, so verifyReceipt reports site-mismatch
   }
   const result = await verifyReceipt(value, keyBytes);
-  const schemaOk = result.ok || result.reason === "signature";
+  // verifyReceipt checks schema, then canonical form, then signature, and
+  // reports the first failure: each line reads PASS up to it, FAIL at it,
+  // SKIPPED after it.
+  const canonFail = result.reason?.startsWith("canonical form") ?? false;
+  const schemaOk = result.ok || result.reason === "signature" || canonFail;
   console.log(`schema: ${schemaOk ? "PASS" : `FAIL (${result.reason})`}`);
-  console.log(`canonical form: ${schemaOk ? "PASS" : "SKIPPED"}`);
   console.log(
-    `signature: ${result.ok ? "PASS" : schemaOk ? "FAIL" : "SKIPPED"}`,
+    `canonical form: ${!schemaOk ? "SKIPPED" : canonFail ? `FAIL (${result.reason})` : "PASS"}`,
+  );
+  console.log(
+    `signature: ${result.ok ? "PASS" : schemaOk && !canonFail ? "FAIL" : "SKIPPED"}`,
   );
   let ok = result.ok;
   if (domain === undefined) {

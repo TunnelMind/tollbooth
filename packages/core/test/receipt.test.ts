@@ -263,3 +263,51 @@ describe("receiptFactsFor - decisions map to receipt facts", () => {
     }
   });
 });
+
+// verifyReceipt is the offline check anyone runs on a published receipt, so
+// every hostile field must come back as {ok:false}, never as a rejection.
+describe("verifyReceipt fails closed on hostile input, never throws", () => {
+  async function signedReceipt() {
+    const site = await makeSite();
+    const receipt = await buildReceipt(
+      { type: "PASS_PAID", agentKey: "k", ua: "u", path: "/a", ...WINDOW },
+      site,
+    );
+    return { site, receipt };
+  }
+
+  it("a sig that is not base64url is a failed signature", async () => {
+    const { site, receipt } = await signedReceipt();
+    for (const sig of ["!!!", "a", "", "ÿ"]) {
+      expect(await verifyReceipt({ ...receipt, sig }, site.pub)).toEqual({
+        ok: false,
+        reason: "signature",
+      });
+    }
+  });
+
+  // atob skips ASCII whitespace and accepts padding, so these decoded to the
+  // signed bytes: one signature, many published spellings.
+  it("a re-spelled sig (whitespace, padding) does not verify", async () => {
+    const { site, receipt } = await signedReceipt();
+    const s = receipt.sig;
+    for (const sig of [
+      ` ${s}`,
+      `${s.slice(0, 10)}\n${s.slice(10)}`,
+      `${s}==`,
+    ]) {
+      expect((await verifyReceipt({ ...receipt, sig }, site.pub)).ok).toBe(
+        false,
+      );
+    }
+  });
+
+  // canonicalize refuses a lone surrogate (the shared JCS vectors), and an
+  // attacker-supplied receipt can carry one in any string field.
+  it("a lone surrogate in a field is a failed check", async () => {
+    const { site, receipt } = await signedReceipt();
+    const r = await verifyReceipt({ ...receipt, ua: "a\udc00" }, site.pub);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/canonical/);
+  });
+});

@@ -102,7 +102,7 @@ describe("step 2 - the identification ladder (D-4)", () => {
     expect(decision.identity).toEqual({ kind: "agent", agentKey: agent.jwk.x });
   });
 
-  it("(b) cryptographically invalid signature -> spoofer (consequence, wired at T-017)", async () => {
+  it("(b) cryptographically invalid signature -> spoofer (consequence)", async () => {
     const agent = await makeAgent();
     const req = {
       ...crawler,

@@ -2,8 +2,12 @@
 // RFC 8785 (JCS) canonicalizer, ported from the estate's proven
 // implementation (tunnelmind-data-api api/utils/jcs.js, byte-for-byte via
 // oai-resolver src/rune.js, cross-checked there against Rust's
-// serde_json_canonicalizer). Receipts are signed over this form, so any
-// behavioral change is a signature break.
+// serde_json_canonicalizer). Receipts and vouchers are signed over this form,
+// so any behavioral change is a signature break; test/vectors/jcs.json (the
+// estate's shared frozen vectors, vendored byte-for-byte from receipt-verify)
+// pins the bytes. Input may be hostile (verifyReceipt canonicalizes what it
+// was handed): throws on a lone surrogate, a non-finite number or a non-JSON
+// type; verifyReceipt turns that throw into a failed check.
 
 const ESC: Record<string, string> = {
   '"': '\\"',
@@ -17,12 +21,17 @@ const ESC: Record<string, string> = {
 
 function encodeString(s: string): string {
   let out = '"';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s.charAt(i);
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) as number;
+    // The iterator yields a valid pair as one code point > 0xFFFF, so a cp in
+    // this range is a lone surrogate. TextEncoder would map it to U+FFFD and
+    // two different strings would sign to the same bytes; refused, as
+    // receipt-verify's jcs.ts does (the shared vectors pin it).
+    if (cp >= 0xd800 && cp <= 0xdfff)
+      throw new Error("JCS: lone surrogate in string");
     const esc = ESC[ch];
     if (esc !== undefined) out += esc;
-    else if (s.charCodeAt(i) < 0x20)
-      out += `\\u${s.charCodeAt(i).toString(16).padStart(4, "0")}`;
+    else if (cp < 0x20) out += `\\u${cp.toString(16).padStart(4, "0")}`;
     else out += ch;
   }
   return `${out}"`;

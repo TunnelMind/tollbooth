@@ -32,7 +32,6 @@
  * tokens, prices) — its output is part of the cache key.
  */
 import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { generateCorpus } from "@tollbooth/cli";
 import {
   canonicalize,
   fromBase64Url,
@@ -49,7 +48,11 @@ import {
   type X402Adapter,
   type X402VerifyResult,
 } from "@tollbooth/hono";
-import { corpusFromMap, makeMazeHandler } from "@tollbooth/maze";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tollbooth/maze";
 import { Hono } from "hono";
 import { TollboothBindingMissingError } from "./errors.js";
 
@@ -340,10 +343,8 @@ export function createPagesMiddleware(
     const reporting = Boolean(siteKeys && reportUrl);
 
     // Anything that would POST needs a route; resolve (or throw) BEFORE wiring it.
-    const needsFetch =
-      reporting ||
-      opts.settle !== undefined ||
-      (opts.snapshots !== undefined && reporting);
+    // Snapshots post only when reporting does, so they add no case here.
+    const needsFetch = reporting || opts.settle !== undefined;
     const raw = resolveRoutedFetch(opts, env, needsFetch);
     const routedFetch = raw === null ? null : tagged(raw, envMarker);
 

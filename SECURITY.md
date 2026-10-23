@@ -7,7 +7,7 @@ hear about vulnerabilities quickly and quietly.
 repository (Security → Report a vulnerability). Please do not open a public
 issue for anything exploitable.
 
-- Supported: the latest 1.x release.
+- Supported: the latest 2.x release.
 - We aim to acknowledge within 72 hours and to fix or publish a mitigation
   before any public disclosure.
 - No bounty program at this time; credit given gladly.
