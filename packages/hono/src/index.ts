@@ -10,6 +10,7 @@ import {
   type Decision,
   decide,
   type FetchDirectory,
+  isFreePath,
   JtiCache,
   NonceCache,
   type OfferBody,
@@ -38,7 +39,14 @@ export interface X402Adapter {
   verifyProof(
     xPayment: string,
     cfg: TollboothConfig,
-    opts?: { nowS?: number },
+    opts?: {
+      nowS?: number;
+      /**
+       * The absolute requested URL, the same string the offer was built
+       * with, so a settling verifier can pass it on.
+       */
+      resource?: string;
+    },
   ): X402VerifyResult | Promise<X402VerifyResult>;
   /**
    * True when a pass means the payment settled on-chain, not just that its
@@ -88,6 +96,13 @@ export interface TollboothOptions {
   reporter?: ReceiptReporter;
   /** Override the built-in fetching (tests; custom caching). */
   fetchDirectory?: FetchDirectory;
+  /**
+   * Does `path` exist on the origin? Toll mode only, never asked for free
+   * paths. False answers a plain 404 with no offer, settle, maze or receipt,
+   * so nobody is charged for a page that is not there. A throw or rejection
+   * counts as true (today's offer): it never serves content free or 500s.
+   */
+  exists?: (path: string) => Promise<boolean>;
   /** Injectable clock, epoch seconds. */
   nowS?: () => number;
   /**
@@ -117,6 +132,8 @@ interface Stats {
   verifiedSearchPassed: number;
   verifiedPreviewPassed: number;
   freePathHits: number;
+  /** Toll-mode requests answered 404 because `exists` said no. */
+  notFound: number;
   robotsUAs: Set<string>;
   /** Approximate retained size of `agents` (key + ua + paths, in chars). */
   bytes: number;
@@ -517,6 +534,7 @@ function reportJson(
     verified_search_passed: stats.verifiedSearchPassed,
     verified_preview_passed: stats.verifiedPreviewPassed,
     free_path_hits: stats.freePathHits,
+    not_found: stats.notFound,
     receipts_queued: reporter?.queued ?? 0,
     receipts_dropped: reporter?.dropped ?? 0,
     agents: [...stats.agents.entries()].map(([key, s]) => ({
@@ -577,6 +595,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     verifiedSearchPassed: 0,
     verifiedPreviewPassed: 0,
     freePathHits: 0,
+    notFound: 0,
     robotsUAs: new Set(),
     bytes: 0,
   };
@@ -595,6 +614,12 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   // "no key claimed" bucket. Insertion order is window-start order.
   const spoofBuckets = new Map<string | null, ReceiptFacts>();
 
+  // Absolute, without the fragment: x402 v1 clients sign for this URL.
+  const resourceOf = (c: Context) => {
+    const url = new URL(c.req.url);
+    return `${url.origin}${url.pathname}${url.search}`;
+  };
+
   const offerResponse = (c: Context, body: OfferBody) => {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
@@ -603,12 +628,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     // options - no key is shared, so each ignores the other's fields.
     let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
-      // Absolute, without the fragment: x402 v1 clients sign for this URL.
-      const url = new URL(c.req.url);
-      const { headers, requirement } = x402.buildOffer(
-        cfg,
-        `${url.origin}${url.pathname}${url.search}`,
-      );
+      const { headers, requirement } = x402.buildOffer(cfg, resourceOf(c));
       for (const [name, value] of Object.entries(headers))
         c.header(name, value);
       if (requirement)
@@ -675,6 +695,23 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     }
 
     const req = requestFromContext(c, options.clientIp);
+    // Missing pages are not sold. Observe charges nothing, so it skips this.
+    if (
+      options.exists &&
+      cfg.mode === "toll" &&
+      !isFreePath(req.path, cfg.free_paths)
+    ) {
+      let found = true;
+      try {
+        found = await options.exists(req.path);
+      } catch {
+        // A sync throw or a rejection: fall through to today's offer.
+      }
+      if (found === false) {
+        stats.notFound += 1;
+        return c.text("Not Found", 404);
+      }
+    }
     const nowS = options.nowS?.();
     // The verify result for this request, kept for X-PAYMENT-RESPONSE.
     let payment: X402VerifyResult | undefined;
@@ -690,11 +727,10 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
             ...(x402
               ? {
                   verifyPayment: async (p: string) => {
-                    payment = await x402.verifyProof(
-                      p,
-                      cfg,
-                      nowS !== undefined ? { nowS } : {},
-                    );
+                    payment = await x402.verifyProof(p, cfg, {
+                      ...(nowS !== undefined ? { nowS } : {}),
+                      resource: resourceOf(c),
+                    });
                     return payment;
                   },
                 }

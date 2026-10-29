@@ -3,13 +3,18 @@
 // on-chain failure, garbage, missing configuration — stays 402. Facilitator
 // damping: an exact payment already seen is never relayed twice, and a payer
 // with repeated fresh failures is cooled down locally (ADR-004).
+import { parseConfig } from "@tollbooth/core";
 import { describe, expect, it, vi } from "vitest";
 import {
   makeAuth,
   payment,
   signAuth,
 } from "../../adapter-x402/test/fixtures/payment.js";
-import { createPagesMiddleware, SETTLE_BUCKET_CAP } from "../src/index.js";
+import {
+  createPagesMiddleware,
+  makeSettlingVerify,
+  SETTLE_BUCKET_CAP,
+} from "../src/index.js";
 import { agent, ctx, toml } from "./helpers.js";
 
 const SETTLE_URL = "https://collector.example/v1/settle";
@@ -313,6 +318,46 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     );
     expect(r.status).toBe(200);
     expect(r.headers.get("x-tollbooth-settling")).toBe("true");
+  });
+});
+
+describe("createPagesMiddleware — settle carries the resource (E003)", () => {
+  it("the settle body carries origin+pathname+search, no fragment", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const r = await settlingMw()(
+      ctx("/a/b?x=1#frag", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(200);
+    expect(b.settles[0]?.body.resource).toBe("https://site.example/a/b?x=1");
+  });
+
+  it("a query string is kept in the resource", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    await settlingMw()(
+      ctx(
+        "/research?page=2&q=x",
+        agent({ "x-payment": freshPayment() }),
+        envOf(b),
+      ),
+    );
+    expect(b.settles[0]?.body.resource).toBe(
+      "https://site.example/research?page=2&q=x",
+    );
+  });
+
+  it("without a resource (direct adapter call) the body has no resource key", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const verify = makeSettlingVerify(
+      (url, init) => b.fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const r = await verify(freshPayment(), parseConfig(toml()));
+    expect(r.ok).toBe(true);
+    expect(Object.keys(b.settles[0]?.body ?? {}).sort()).toEqual([
+      "payment",
+      "price_usd",
+    ]);
   });
 });
 

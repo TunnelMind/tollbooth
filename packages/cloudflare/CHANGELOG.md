@@ -1,5 +1,22 @@
 # @tollbooth/cloudflare
 
+## 2.1.0 — Unreleased
+
+DRAFT (Josh rewrites public prose)
+
+- New option `exists: "assets"`: in toll mode, before an offer, HEAD the path
+  on `env.ASSETS`; a 404 there answers a plain 404 with no offer, settle,
+  maze or receipt. A throwing check falls through to the normal 402 offer and
+  is not cached. Answers are cached per isolate (bounded at 1024, oldest out).
+  With the option set and no `ASSETS.fetch`, construction throws
+  `TollboothBindingMissingError`.
+- Built on the new `exists?: (path) => Promise<boolean>` option in
+  `@tollbooth/hono` (toll mode only, never asked for `free_paths`; a throw
+  means "exists"; 404s counted as `not_found` in the report stats).
+  `@tollbooth/core` now exports `isFreePath`.
+- The settle POST body now carries `resource`, the requested URL (origin,
+  path and query): `{ payment, price_usd, resource }`.
+
 ## 2.0.1 — 2026-10-06
 
 DRAFT (Josh rewrites public prose)

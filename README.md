@@ -15,6 +15,7 @@ No hosted service. No database. No telemetry. MIT.
 | step | check | outcome |
 |---|---|---|
 | 1 | `free_paths` (robots.txt, favicon, yours) | pass, always, for everyone |
+| 1a | `exists` (opt-in, toll mode only) says the path is missing | plain `404` — no offer, settle, maze or receipt |
 | 1b | `pass_verified` (opt-in, default off) | verified search / preview bots pass |
 | 2 | identify: Web Bot Auth → heuristics → neither | — |
 | 3 | human or ambiguous | pass — no challenge pages, no CAPTCHA, ever |
@@ -123,6 +124,29 @@ enabled = true
 payment_link = "https://buy.stripe.com/..."
 webhook_secret = "whsec_..."
 ```
+
+### Don't charge for pages that aren't there
+
+Without help, the toll offers a price for any path, including ones your site
+would 404. Pass `exists` and tollbooth asks first:
+
+```ts
+app.use(tollbooth({
+  config,
+  exists: async (path) => routes.has(path), // your own lookup
+}));
+```
+
+- **404 before offer.** In toll mode, when `exists` answers false the request
+  gets a plain `404`: no offer, no settle, no maze, no receipt (counted as
+  `not_found` in the report stats). It is never asked for `free_paths`, and
+  observe mode skips it.
+- **Fail toward the offer.** If `exists` throws or rejects, the path counts as
+  present and gets today's `402` offer. A broken check never serves content
+  free and never turns into a 500.
+
+On Cloudflare Pages, `createPagesMiddleware({ exists: "assets" })` does this
+against the static asset binding — see [`@tollbooth/cloudflare`](packages/cloudflare).
 
 `pass_verified` is an opt-in pass for crawlers you want to let through,
 **off by default** (`[]`). `"search"` passes Googlebot and bingbot only when
@@ -331,6 +355,10 @@ https://tunnelmind.ai/conduct/join
   as anonymous, never as a spoofer). Same stance as vouchers: per instance, a
   bounded LRU sized by `limits.jti_lru_max`, eviction is amnesty. Signatures
   without a `nonce` can replay until they expire.
+- **`exists: "assets"` caches per isolate.** Answers are kept for the
+  isolate's lifetime (bounded at 1024 paths, oldest out; reset when the middleware
+  rebuilds its state). A path checked while missing keeps its 404 until that entry
+  is evicted or the isolate recycles.
 - **Signature-Agent directory fetches are vetted, not sandboxed.** The key
   directory URL comes from the agent, so the fetcher takes https on port 443
   only, refuses IP literals and localhost / `.local` / `.internal` names, and

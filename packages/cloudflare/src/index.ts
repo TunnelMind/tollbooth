@@ -72,6 +72,8 @@ const PAYER_COOLDOWN_MS = 600_000;
 // N isolates spend N × this; move to a Durable Object if that ever matters.
 export const SETTLE_BUCKET_CAP = 20;
 const SETTLE_REFILL_PER_S = 5;
+// Paths are attacker-chosen, so the per-isolate exists cache must be bounded.
+const EXISTS_CAP = 1024;
 
 export interface PagesContext {
   request: Request;
@@ -114,6 +116,15 @@ export interface CloudflareTollboothOptions {
    * when `binding` is set. Never defaulted to the global fetch.
    */
   fetch?: FetchLike;
+  /**
+   * `"assets"`: before a toll-mode offer, HEAD the path on the Pages static
+   * asset binding (`env.ASSETS`) and answer a plain 404 — no offer, no
+   * charge — when it returns 404. Answers are cached per isolate (bounded,
+   * oldest-out); a throwing check is not cached and falls through to the
+   * offer. When set, env.ASSETS MUST have a fetch(); otherwise construction
+   * throws TollboothBindingMissingError.
+   */
+  exists?: "assets";
 }
 
 interface State {
@@ -130,9 +141,9 @@ interface State {
 const str = (env: Record<string, unknown>, key: string): string =>
   typeof env[key] === "string" ? (env[key] as string).trim() : "";
 
-const remember = <K, V>(map: Map<K, V>, k: K, v: V): void => {
+const remember = <K, V>(map: Map<K, V>, k: K, v: V, cap = DAMP_CAP): void => {
   map.set(k, v);
-  if (map.size > DAMP_CAP) {
+  if (map.size > cap) {
     const oldest = map.keys().next();
     if (!oldest.done) map.delete(oldest.value);
   }
@@ -179,8 +190,9 @@ function tagged(fetchFn: FetchLike, marker: string): FetchLike {
  * Local verifyProof (fast, free reject), then settle over the routed fetch.
  * Passes ONLY on a successful settle; never throws into the pipeline.
  * Transport/config failures are the operator's own and never damp a payer.
+ * @internal Exported for tests only; not part of the supported API.
  */
-function makeSettlingVerify(
+export function makeSettlingVerify(
   routedFetch: FetchLike,
   settleUrl: string,
   settleToken: string,
@@ -245,6 +257,13 @@ function makeSettlingVerify(
           body: JSON.stringify({
             payment: xPayment,
             price_usd: cfg.toll.price_usd,
+            // The data-api settle route pins the resource today
+            // (tollbooth-settle.js:42); carried for the adr-x402v2 follow-up,
+            // because the Bazaar indexes by resource. Omitted when absent so
+            // older callers' bodies stay byte-identical.
+            ...(typeof opts.resource === "string"
+              ? { resource: opts.resource }
+              : {}),
           }),
         });
         const data =
@@ -312,6 +331,35 @@ function resolveRoutedFetch(
   return null; // nothing outbound is configured; nothing to route
 }
 
+/**
+ * The `exists: "assets"` check over the Pages static asset binding, or throw
+ * when the binding is missing. Built per state, so a rebuilt state gets a
+ * fresh binding and an empty cache. A rejected fetch is left to propagate:
+ * the hono layer treats it as "exists" (today's offer) and nothing is cached.
+ */
+function makeAssetsExists(
+  env: Record<string, unknown>,
+): (path: string) => Promise<boolean> {
+  const assets = env.ASSETS as
+    | { fetch: (req: Request) => Promise<Response> }
+    | undefined;
+  if (!assets || typeof assets.fetch !== "function")
+    throw new TollboothBindingMissingError("ASSETS", Object.keys(env));
+  const cache = new Map<string, boolean>();
+  return async (path) => {
+    const hit = cache.get(path);
+    if (hit !== undefined) return hit;
+    // Concatenate rather than resolve: `new URL("//x/y", base)` would treat a
+    // leading `//` as a host and check `/y` instead of the requested path.
+    const resp = await assets.fetch(
+      new Request(`https://assets.internal${path}`, { method: "HEAD" }),
+    );
+    const found = resp.status !== 404;
+    remember(cache, path, found, EXISTS_CAP);
+    return found;
+  };
+}
+
 /** The Pages middleware: `export const onRequest = createPagesMiddleware({...})`. */
 export function createPagesMiddleware(
   opts: CloudflareTollboothOptions,
@@ -347,6 +395,7 @@ export function createPagesMiddleware(
     const needsFetch = reporting || opts.settle !== undefined;
     const raw = resolveRoutedFetch(opts, env, needsFetch);
     const routedFetch = raw === null ? null : tagged(raw, envMarker);
+    const exists = opts.exists === "assets" ? makeAssetsExists(env) : null;
 
     const reporter =
       siteKeys && reportUrl && routedFetch
@@ -404,6 +453,7 @@ export function createPagesMiddleware(
         ...(maze ? { maze } : {}),
         ...(siteKeys ? { siteKeys } : {}),
         ...(reporter ? { reporter } : {}),
+        ...(exists ? { exists } : {}),
       }),
     );
     app.all("*", (c) => c.env.NEXT());

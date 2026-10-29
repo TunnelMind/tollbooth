@@ -109,7 +109,7 @@ export interface PipelineDeps {
 }
 
 /** Entries ending in "/" match as prefixes; everything else matches exactly. */
-const isFreePath = (path: string, free: string[]): boolean =>
+export const isFreePath = (path: string, free: string[]): boolean =>
   free.some((entry) =>
     entry.endsWith("/") ? path.startsWith(entry) : path === entry,
   );
