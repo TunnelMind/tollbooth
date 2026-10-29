@@ -39,7 +39,14 @@ export interface X402Adapter {
   verifyProof(
     xPayment: string,
     cfg: TollboothConfig,
-    opts?: { nowS?: number },
+    opts?: {
+      nowS?: number;
+      /**
+       * The absolute requested URL, the same string the offer was built
+       * with, so a settling verifier can pass it on.
+       */
+      resource?: string;
+    },
   ): X402VerifyResult | Promise<X402VerifyResult>;
   /**
    * True when a pass means the payment settled on-chain, not just that its
@@ -607,6 +614,12 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   // "no key claimed" bucket. Insertion order is window-start order.
   const spoofBuckets = new Map<string | null, ReceiptFacts>();
 
+  // Absolute, without the fragment: x402 v1 clients sign for this URL.
+  const resourceOf = (c: Context) => {
+    const url = new URL(c.req.url);
+    return `${url.origin}${url.pathname}${url.search}`;
+  };
+
   const offerResponse = (c: Context, body: OfferBody) => {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
@@ -615,12 +628,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     // options - no key is shared, so each ignores the other's fields.
     let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
-      // Absolute, without the fragment: x402 v1 clients sign for this URL.
-      const url = new URL(c.req.url);
-      const { headers, requirement } = x402.buildOffer(
-        cfg,
-        `${url.origin}${url.pathname}${url.search}`,
-      );
+      const { headers, requirement } = x402.buildOffer(cfg, resourceOf(c));
       for (const [name, value] of Object.entries(headers))
         c.header(name, value);
       if (requirement)
@@ -719,11 +727,10 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
             ...(x402
               ? {
                   verifyPayment: async (p: string) => {
-                    payment = await x402.verifyProof(
-                      p,
-                      cfg,
-                      nowS !== undefined ? { nowS } : {},
-                    );
+                    payment = await x402.verifyProof(p, cfg, {
+                      ...(nowS !== undefined ? { nowS } : {}),
+                      resource: resourceOf(c),
+                    });
                     return payment;
                   },
                 }

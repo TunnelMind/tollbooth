@@ -39,7 +39,10 @@ export const onRequest = createPagesMiddleware({
 Behavior, in one paragraph: humans and `free_paths` always pass. Agents get
 a genuine `402` offer; a payment passes **only after it settles** through
 your `settle.url` (bearer `TOLLBOOTH_SETTLE_TOKEN`; no settlement configured
-means payments fail closed). Agents that ignore the offer past the grace
+means payments fail closed). The settle POST body is
+`{ payment, price_usd, resource }`, where `resource` is the requested URL
+(origin, path and query); the data-api settle route ignores it and pins the
+resource until the adr-x402v2 follow-up. Agents that ignore the offer past the grace
 window meet the decoy maze. Receipts and snapshots are signed with
 `TOLLBOOTH_SITE_KEY` (base64url ed25519 seed) and reported through the
 service binding when one is named. The middleware itself fails **open**:

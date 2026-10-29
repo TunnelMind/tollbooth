@@ -190,8 +190,9 @@ function tagged(fetchFn: FetchLike, marker: string): FetchLike {
  * Local verifyProof (fast, free reject), then settle over the routed fetch.
  * Passes ONLY on a successful settle; never throws into the pipeline.
  * Transport/config failures are the operator's own and never damp a payer.
+ * @internal Exported for tests only; not part of the supported API.
  */
-function makeSettlingVerify(
+export function makeSettlingVerify(
   routedFetch: FetchLike,
   settleUrl: string,
   settleToken: string,
@@ -256,6 +257,13 @@ function makeSettlingVerify(
           body: JSON.stringify({
             payment: xPayment,
             price_usd: cfg.toll.price_usd,
+            // The data-api settle route pins the resource today
+            // (tollbooth-settle.js:42); carried for the adr-x402v2 follow-up,
+            // because the Bazaar indexes by resource. Omitted when absent so
+            // older callers' bodies stay byte-identical.
+            ...(typeof opts.resource === "string"
+              ? { resource: opts.resource }
+              : {}),
           }),
         });
         const data =
