@@ -10,6 +10,7 @@ import {
   type Decision,
   decide,
   type FetchDirectory,
+  isFreePath,
   JtiCache,
   NonceCache,
   type OfferBody,
@@ -88,6 +89,13 @@ export interface TollboothOptions {
   reporter?: ReceiptReporter;
   /** Override the built-in fetching (tests; custom caching). */
   fetchDirectory?: FetchDirectory;
+  /**
+   * Does `path` exist on the origin? Toll mode only, never asked for free
+   * paths. False answers a plain 404 with no offer, settle, maze or receipt,
+   * so nobody is charged for a page that is not there. A throw or rejection
+   * counts as true (today's offer): it never serves content free or 500s.
+   */
+  exists?: (path: string) => Promise<boolean>;
   /** Injectable clock, epoch seconds. */
   nowS?: () => number;
   /**
@@ -117,6 +125,8 @@ interface Stats {
   verifiedSearchPassed: number;
   verifiedPreviewPassed: number;
   freePathHits: number;
+  /** Toll-mode requests answered 404 because `exists` said no. */
+  notFound: number;
   robotsUAs: Set<string>;
   /** Approximate retained size of `agents` (key + ua + paths, in chars). */
   bytes: number;
@@ -517,6 +527,7 @@ function reportJson(
     verified_search_passed: stats.verifiedSearchPassed,
     verified_preview_passed: stats.verifiedPreviewPassed,
     free_path_hits: stats.freePathHits,
+    not_found: stats.notFound,
     receipts_queued: reporter?.queued ?? 0,
     receipts_dropped: reporter?.dropped ?? 0,
     agents: [...stats.agents.entries()].map(([key, s]) => ({
@@ -577,6 +588,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     verifiedSearchPassed: 0,
     verifiedPreviewPassed: 0,
     freePathHits: 0,
+    notFound: 0,
     robotsUAs: new Set(),
     bytes: 0,
   };
@@ -675,6 +687,23 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     }
 
     const req = requestFromContext(c, options.clientIp);
+    // Missing pages are not sold. Observe charges nothing, so it skips this.
+    if (
+      options.exists &&
+      cfg.mode === "toll" &&
+      !isFreePath(req.path, cfg.free_paths)
+    ) {
+      let found = true;
+      try {
+        found = await options.exists(req.path);
+      } catch {
+        // A sync throw or a rejection: fall through to today's offer.
+      }
+      if (found === false) {
+        stats.notFound += 1;
+        return c.text("Not Found", 404);
+      }
+    }
     const nowS = options.nowS?.();
     // The verify result for this request, kept for X-PAYMENT-RESPONSE.
     let payment: X402VerifyResult | undefined;
