@@ -41,7 +41,9 @@ report_token = "sekrit"
 pay_to = "0x0000000000000000000000000000000000000001"
 `;
 
-async function setup() {
+async function setup(
+  fetchDirectory: TollboothOptions["fetchDirectory"] = dirWith(),
+) {
   const secret = generateSecretKey();
   const batches: Receipt[][] = [];
   const reporter = new ReceiptReporter({
@@ -60,7 +62,7 @@ async function setup() {
       config: CFG,
       siteKeys: { secret, pub: await publicKeyOf(secret) },
       reporter,
-      fetchDirectory: dirWith(),
+      fetchDirectory,
       nowS: () => NOW,
     }),
   );
@@ -206,6 +208,63 @@ describe("A002 GET /_tollbooth/arrival", () => {
       (r: { name: string }) => r.name === "cookie",
     );
     expect(cookieRow).toMatchObject({ value: null, read: "presence only" });
+  });
+});
+
+// A006: a signed request is not verified on this route, so reading it never
+// makes the server fetch a key directory.
+describe("A006 signed arrival makes no directory fetch", () => {
+  // Sends `headers` with a counting fetchDirectory and checks the shared
+  // shape: no fetch, presence-only secrets, the unverified identity string.
+  async function readSigned(headers: Record<string, string>) {
+    let calls = 0;
+    const { app } = await setup(async () => {
+      calls++;
+      return { keys: [] };
+    });
+    const res = await app.request(URL_, {
+      headers: { "user-agent": "curl/8.7.1", ...headers },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("vary")).toBe("*");
+    expect(calls).toBe(0);
+    const text = await res.text();
+    const body = JSON.parse(text);
+    const row = (name: string) =>
+      body.rows.find((r: { name: string }) => r.name === name);
+    for (const name of ["signature", "signature-input"])
+      expect(row(name)).toMatchObject({ value: null, read: "presence only" });
+    expect(row("signature-agent")).toBeDefined();
+    expect(body.identity.kind).toBe("anonymous-agent");
+    expect(body.identity.matched).toContain(
+      "signature present; not verified on this route (no directory fetch)",
+    );
+    expect(body.decision).toEqual({ type: "pass", reason: "free-path" });
+    return { text, row };
+  }
+
+  it("a well-formed Web Bot Auth request fetches nothing", async () => {
+    // Well-formed, so the old identify() path would have fetched the
+    // directory (unknown key): calls === 0 is a real pin here.
+    const wba = await signedRequest(await makeAgent());
+    const { row } = await readSigned({
+      signature: wba.signature,
+      "signature-input": wba.signatureInput,
+      "signature-agent": wba.signatureAgent,
+    });
+    expect(row("signature-agent").value).toContain("signature-agent.test");
+  });
+
+  it("malformed signature headers: rows listed, secrets not echoed", async () => {
+    const { text, row } = await readSigned({
+      signature: "sig1=:SIGNATURE-SECRET-abc:",
+      "signature-input": "sig1=(INPUT-SECRET-def)",
+      "signature-agent": '"https://agent.example"',
+    });
+    expect(text).not.toContain("SIGNATURE-SECRET-abc");
+    expect(text).not.toContain("INPUT-SECRET-def");
+    expect(row("signature-agent").value).toContain("https://agent.example");
   });
 });
 

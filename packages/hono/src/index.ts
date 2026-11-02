@@ -11,6 +11,7 @@ import {
   type Decision,
   decide,
   type FetchDirectory,
+  type Identity,
   identify,
   isFreePath,
   JtiCache,
@@ -698,10 +699,25 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     if (c.req.method === "GET" && c.req.path === ARRIVAL_PATH) {
       const req = requestFromContext(c, options.clientIp);
       const nowS = options.nowS?.();
-      const identity = await identify(req, cfg, {
-        fetchDirectory,
-        ...(nowS !== undefined ? { nowS } : {}),
-      });
+      // A signed request is not verified here: verification fetches the
+      // signer's key directory, and an unauthenticated, uncounted GET must
+      // not be able to make this server do outbound fetches on demand. The
+      // signature rows still show (by presence); only identity is withheld.
+      const signed =
+        req.signature !== undefined ||
+        req.signatureInput !== undefined ||
+        req.signatureAgent !== undefined;
+      const identity: Identity = signed
+        ? {
+            kind: "anonymous-agent",
+            via: [
+              "signature present; not verified on this route (no directory fetch)",
+            ],
+          }
+        : await identify(req, cfg, {
+            fetchDirectory,
+            ...(nowS !== undefined ? { nowS } : {}),
+          });
       c.header("cache-control", "no-store");
       c.header("vary", "*");
       // `kept` describes an ordinary request like this one: the verified

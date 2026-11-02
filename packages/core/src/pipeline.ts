@@ -162,7 +162,9 @@ const hasWba = (req: PipelineRequest): boolean =>
 // Exported for one caller outside decide(): the bindings' /_tollbooth/arrival
 // route, which shows a requester their own identity. That route is a free
 // path, and decide() skips identify on free paths, so it calls this directly
-// with fetchDirectory only (no nonceCache: reading must not burn a replay).
+// with fetchDirectory only (no nonceCache: reading must not burn a replay),
+// and only for unsigned requests; a signed arrival request is not verified at
+// all (see the hono route), so no directory fetch and no replay burn.
 export async function identify(
   req: PipelineRequest,
   cfg: TollboothConfig,
