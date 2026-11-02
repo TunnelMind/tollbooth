@@ -14,6 +14,8 @@ import {
   identify,
   isFreePath,
   JtiCache,
+  keptFor,
+  LEDGER,
   NonceCache,
   type OfferBody,
   OfferLedger,
@@ -25,6 +27,7 @@ import {
   receiptFactsFor,
   type SiteKeyPair,
   type TollboothConfig,
+  verifiedPass,
 } from "@tollbooth/core";
 import type { Context, MiddlewareHandler } from "hono";
 
@@ -488,6 +491,9 @@ function record(
     stats.humansPassed += 1;
     return;
   }
+  // Whether this goes in the agent ledger is core's keptFor, the same rule
+  // the arrival reading shows, so the two cannot drift.
+  if (keptFor(decision) !== LEDGER) return;
   const key =
     identity.kind === "agent"
       ? identity.agentKey
@@ -698,8 +704,15 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       });
       c.header("cache-control", "no-store");
       c.header("vary", "*");
+      // `kept` describes an ordinary request like this one: the verified
+      // search/preview pass decide() would give it (pure, no counter), else
+      // its identity. The decision row stays this route's own free path.
       return c.json(
-        arrivalReading(req, { action: "pass", reason: "free-path", identity }),
+        arrivalReading(
+          req,
+          { action: "pass", reason: "free-path", identity },
+          verifiedPass(req, cfg) ?? { identity },
+        ),
       );
     }
 

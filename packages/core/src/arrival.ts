@@ -25,8 +25,9 @@ export const REQUEST_HEADERS_READ = [
   "tollbooth-voucher",
 ] as const;
 
-// "counter only" is reserved: a counter stores nothing of the request, so no
-// row is ever kept that way (humans and passes read "no").
+// "counter only": a verified search/preview pass bumps its own counter and
+// keeps nothing else. Humans and free paths read "no" (the humans counter is
+// shared and keeps nothing of the request).
 export type ArrivalKept =
   | "no"
   | "counter only"
@@ -51,23 +52,53 @@ export interface ArrivalReading {
   };
   decision: { type: Decision["action"]; reason: string | null };
   never_read: string[];
+  /** What every `kept` describes: always ARRIVAL_KEPT_SCOPE. */
+  kept_scope: typeof ARRIVAL_KEPT_SCOPE;
 }
 
-const LEDGER: ArrivalKept = "agent ledger (ua, count, paths)";
+export const LEDGER = "agent ledger (ua, count, paths)" satisfies ArrivalKept;
 
+export const ARRIVAL_KEPT_SCOPE =
+  "an ordinary request like this one; this arrival request itself is never recorded";
+
+/**
+ * What record() in @tollbooth/hono keeps for a request with this decision, in
+ * record()'s own branch order. record() gates its agent ledger on this, so the
+ * reading and the ledger cannot drift. Takes any Decision; the arrival route
+ * also passes `{ identity }` alone for "identified, not a verified pass".
+ */
+export function keptFor(decision: {
+  reason?: string;
+  identity: Identity | null;
+}): ArrivalKept {
+  // The free-path and verified-* reasons only ever occur on a pass.
+  // ponytail: free-path /robots.txt also adds the UA to a capped robots set;
+  // the kept vocabulary has no word for it, so it reads "no".
+  if (decision.reason === "free-path") return "no";
+  if (
+    decision.reason === "verified-search" ||
+    decision.reason === "verified-preview"
+  )
+    return "counter only";
+  if (decision.identity === null || decision.identity.kind === "human")
+    return "no";
+  return LEDGER;
+}
+
+/**
+ * `decision` is what the reading reports as this request's decision. `ordinary`
+ * is what an ordinary request like this one would get, and sets `kept` on the
+ * path and user-agent rows (the only fields a ledger entry stores); it
+ * defaults to `decision`. The arrival route passes both, because the arrival
+ * request itself is a free path and never recorded.
+ */
 export function arrivalReading(
   req: PipelineRequest,
   decision: Decision,
+  ordinary: Parameters<typeof keptFor>[0] = decision,
 ): ArrivalReading {
   const identity = decision.identity;
-  // Mirrors record() in @tollbooth/hono: only agent, anonymous-agent and
-  // spoofer identities get a ledger entry, and that entry stores the UA and
-  // the path (plus a count). Humans, free paths and verified-search/preview
-  // passes only bump a counter, which keeps nothing of the request itself.
-  // ponytail: free-path /robots.txt also adds the UA to a capped robots set;
-  // the kept vocabulary has no word for it, so it reads "no" here.
-  const ledgered = identity !== null && identity.kind !== "human";
-  const kept: ArrivalKept = ledgered ? LEDGER : "no";
+  const kept = keptFor(ordinary);
   const opt = (v: string | undefined) => v ?? null;
   // The signature pair, the x402 payment and the voucher carry proofs of
   // payment or possession: echoing them back would put a bearer-like secret in
@@ -157,6 +188,7 @@ export function arrivalReading(
       "asn",
       "request.cf",
     ],
+    kept_scope: ARRIVAL_KEPT_SCOPE,
   };
 }
 

@@ -219,6 +219,32 @@ export async function identify(
     : { kind: "human" };
 }
 
+/**
+ * decide() Step 1b as a pure check: the verified search / preview pass this
+ * request gets, or null. Exported so the bindings' arrival route reads the
+ * same outcome an ordinary request would get, without running decide().
+ */
+export function verifiedPass(
+  req: PipelineRequest,
+  cfg: TollboothConfig,
+): Decision | null {
+  if (cfg.pass_verified.length === 0 || hasWba(req)) return null;
+  if (
+    cfg.pass_verified.includes("search") &&
+    SEARCH_UA.test(req.userAgent) &&
+    req.clientIp !== undefined &&
+    ipInRanges(req.clientIp, SEARCH_RANGES)
+  )
+    return { action: "pass", reason: "verified-search", identity: null };
+  if (
+    cfg.pass_verified.includes("preview") &&
+    PREVIEW_UA.test(req.userAgent) &&
+    isHtmlPageRequest(req)
+  )
+    return { action: "pass", reason: "verified-preview", identity: null };
+  return null;
+}
+
 export async function decide(
   req: PipelineRequest,
   cfg: TollboothConfig,
@@ -235,21 +261,8 @@ export async function decide(
   // a Web Bot Auth request, which keeps its normal path. Search needs the
   // operator-published IP range, so a spoofed UA (or no trusted client IP)
   // falls through to the offer like any other agent.
-  if (cfg.pass_verified.length > 0 && !hasWba(req)) {
-    if (
-      cfg.pass_verified.includes("search") &&
-      SEARCH_UA.test(req.userAgent) &&
-      req.clientIp !== undefined &&
-      ipInRanges(req.clientIp, SEARCH_RANGES)
-    )
-      return { action: "pass", reason: "verified-search", identity: null };
-    if (
-      cfg.pass_verified.includes("preview") &&
-      PREVIEW_UA.test(req.userAgent) &&
-      isHtmlPageRequest(req)
-    )
-      return { action: "pass", reason: "verified-preview", identity: null };
-  }
+  const verified = verifiedPass(req, cfg);
+  if (verified) return verified;
 
   // Step 2: identify.
   const identity = await identify(req, cfg, deps);

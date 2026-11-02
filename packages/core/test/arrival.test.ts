@@ -1,7 +1,13 @@
 // A001: the arrival reading — every field tollbooth read for this request,
 // and whether any of it is kept.
 import { describe, expect, it } from "vitest";
-import { arrivalReading, REQUEST_HEADERS_READ } from "../src/arrival.js";
+import {
+  ARRIVAL_KEPT_SCOPE,
+  arrivalReading,
+  keptFor,
+  LEDGER,
+  REQUEST_HEADERS_READ,
+} from "../src/arrival.js";
 import type { Decision, PipelineRequest } from "../src/pipeline.js";
 
 const CHROME =
@@ -158,5 +164,65 @@ describe("arrivalReading", () => {
     ])
       expect(names.filter((n) => n === h)).toHaveLength(1);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  // A005: `kept` follows keptFor, record()'s own classification.
+  it("a verified search pass keeps a counter only, never the ledger", () => {
+    const googlebot: PipelineRequest = {
+      ...browser,
+      userAgent:
+        "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    };
+    for (const reason of ["verified-search", "verified-preview"] as const) {
+      const r = arrivalReading(googlebot, {
+        action: "pass",
+        reason,
+        identity: null,
+      });
+      expect(row(r, "path").kept).toBe("counter only");
+      expect(row(r, "user-agent").kept).toBe("counter only");
+      for (const x of r.rows) expect(["no", "counter only"]).toContain(x.kept);
+    }
+  });
+
+  it("an ordinary decision sets kept apart from the reported decision", () => {
+    const freePath: Decision = {
+      action: "pass",
+      reason: "free-path",
+      identity: anon.identity,
+    };
+    const r = arrivalReading(curl, freePath, { identity: anon.identity });
+    expect(row(r, "path").kept).toBe(LEDGER);
+    expect(r.decision).toEqual({ type: "pass", reason: "free-path" });
+    expect(
+      arrivalReading(browser, human, {
+        identity: { kind: "human" },
+      }).rows.every((x) => x.kept === "no"),
+    ).toBe(true);
+  });
+
+  it("keptFor follows record()'s branch order", () => {
+    const agent = { kind: "agent", agentKey: "k" } as const;
+    expect(keptFor({ reason: "free-path", identity: agent })).toBe("no");
+    expect(keptFor({ reason: "verified-search", identity: null })).toBe(
+      "counter only",
+    );
+    expect(keptFor({ identity: null })).toBe("no");
+    expect(keptFor(human)).toBe("no");
+    expect(keptFor(anon)).toBe(LEDGER);
+    expect(keptFor({ identity: agent })).toBe(LEDGER);
+    expect(
+      keptFor({
+        reason: "spoof",
+        identity: { kind: "spoofer", claimedKey: null, claimedKeyId: null },
+      }),
+    ).toBe(LEDGER);
+  });
+
+  it("says what every kept describes", () => {
+    expect(arrivalReading(curl, anon).kept_scope).toBe(
+      "an ordinary request like this one; this arrival request itself is never recorded",
+    );
+    expect(arrivalReading(browser, human).kept_scope).toBe(ARRIVAL_KEPT_SCOPE);
   });
 });
