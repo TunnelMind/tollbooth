@@ -31,7 +31,7 @@ have.
 
 ## Install
 
-> **The packages are not yet on npm** (v2.0.0 in the tree). Until they publish, install
+> **The packages are not yet on npm** (v2.1.0 in the tree). Until they publish, install
 > from source — everything below works from a clone, and the `@tollbooth/*`
 > imports resolve through the workspace unchanged. They become
 > `npm install @tollbooth/core @tollbooth/hono …` the day the packages land on
