@@ -58,6 +58,11 @@ export interface ArrivalReading {
 
 export const LEDGER = "agent ledger (ua, count, paths)" satisfies ArrivalKept;
 
+/** identity.via marker for a signed request read on the arrival route,
+ *  which never fetches the signer's directory (see the hono route). */
+export const SIGNATURE_UNVERIFIED =
+  "signature present; not verified on this route (no directory fetch)";
+
 export const ARRIVAL_KEPT_SCOPE =
   "an ordinary request like this one; this arrival request itself is never recorded";
 
@@ -203,9 +208,12 @@ function identityOf(identity: Identity | null): ArrivalReading["identity"] {
     case "anonymous-agent":
       return {
         kind: "anonymous-agent",
-        // identify() tags unevaluable WBA claims "wba-<state>"; anything else
-        // is a heuristics rule name.
-        via: identity.via.some((v) => v.startsWith("wba-"))
+        // identify() tags unevaluable WBA claims "wba-<state>", and the
+        // arrival route tags signed requests SIGNATURE_UNVERIFIED; anything
+        // else is a heuristics rule name.
+        via: identity.via.some(
+          (v) => v.startsWith("wba-") || v === SIGNATURE_UNVERIFIED,
+        )
           ? "web-bot-auth"
           : "heuristics",
         matched: [...identity.via],

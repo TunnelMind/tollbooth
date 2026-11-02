@@ -6,6 +6,7 @@ export {
   keptFor,
   LEDGER,
   REQUEST_HEADERS_READ,
+  SIGNATURE_UNVERIFIED,
 } from "./arrival.js";
 export { botRanges, ipInRanges } from "./botranges.js";
 export { canonicalize } from "./canonicalize.js";

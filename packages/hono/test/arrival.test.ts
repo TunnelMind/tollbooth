@@ -237,6 +237,7 @@ describe("A006 signed arrival makes no directory fetch", () => {
       expect(row(name)).toMatchObject({ value: null, read: "presence only" });
     expect(row("signature-agent")).toBeDefined();
     expect(body.identity.kind).toBe("anonymous-agent");
+    expect(body.identity.via).toBe("web-bot-auth");
     expect(body.identity.matched).toContain(
       "signature present; not verified on this route (no directory fetch)",
     );

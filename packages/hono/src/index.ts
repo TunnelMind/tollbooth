@@ -26,6 +26,7 @@ import {
   type ReceiptFacts,
   ReceiptReporter,
   receiptFactsFor,
+  SIGNATURE_UNVERIFIED,
   type SiteKeyPair,
   type TollboothConfig,
   verifiedPass,
@@ -710,9 +711,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
       const identity: Identity = signed
         ? {
             kind: "anonymous-agent",
-            via: [
-              "signature present; not verified on this route (no directory fetch)",
-            ],
+            via: [SIGNATURE_UNVERIFIED],
           }
         : await identify(req, cfg, {
             fetchDirectory,
