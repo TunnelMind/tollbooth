@@ -349,7 +349,7 @@ response is JSON with `cache-control: no-store` and `vary: *`. The reading is re
 requester and never stored.
 
 The body is `{ rows, identity: { kind, via, matched }, decision: { type, reason }, never_read, kept_scope }`.
-Each row has five fields:
+Each row has six fields:
 
 - `name` — the field (`method`, `path`, `host`, `scheme`, `user-agent`, `accept`, `cookie`,
   `sec-fetch-site`, `signature`, `signature-input`, `signature-agent`, `x-payment`,
@@ -358,9 +358,11 @@ Each row has five fields:
 - `read` — `"value"`, `"presence only"` or `"not read"`.
 - `used_for` — what tollbooth uses it for.
 - `kept` — whether anything of it would be kept (below).
+- `present` — whether the field was sent in this request (`true`/`false`).
 
 Secrets are read for presence only, value `null`: the cookie, `signature`, `signature-input`,
-`x-payment` and `tollbooth-voucher`. The body reads `"not read"`. `never_read` lists the cookie value,
+`x-payment` and `tollbooth-voucher`. These rows show `present`, but their value stays `null`. The body
+reads `"not read"` and `present: false`. `never_read` lists the cookie value,
 the request body, country, ASN and `request.cf`.
 
 `kept_scope` is always `"an ordinary request like this one; this arrival request itself is never

@@ -127,6 +127,7 @@ describe("arrivalReading", () => {
         read: "not read",
         used_for: "nothing",
         kept: "no",
+        present: false,
       },
     ]);
   });
@@ -224,5 +225,68 @@ describe("arrivalReading", () => {
       "an ordinary request like this one; this arrival request itself is never recorded",
     );
     expect(arrivalReading(browser, human).kept_scope).toBe(ARRIVAL_KEPT_SCOPE);
+  });
+});
+
+// A009: every row reports the presence tollbooth observed; presence-only rows
+// still never echo a value.
+describe("arrivalReading present", () => {
+  const PRESENCE_ONLY = [
+    "cookie",
+    "signature",
+    "signature-input",
+    "x-payment",
+    "tollbooth-voucher",
+  ];
+
+  it("every row has a boolean present", () => {
+    for (const r of [
+      arrivalReading(browser, human),
+      arrivalReading(curl, anon),
+    ])
+      for (const x of r.rows) expect(typeof x.present).toBe("boolean");
+  });
+
+  it("presence-only rows: present follows what was sent, value stays null", () => {
+    // curl sends the four proofs and no cookie; the browser the reverse.
+    const sent = { cookie: false, rest: true };
+    for (const [req, d, proofs] of [
+      [curl, anon, sent.rest],
+      [browser, human, !sent.rest],
+    ] as const) {
+      const r = arrivalReading(req, d);
+      for (const name of PRESENCE_ONLY)
+        expect(row(r, name)).toMatchObject({
+          value: null,
+          read: "presence only",
+          present: name === "cookie" ? req.hasCookies : proofs,
+        });
+      const json = JSON.stringify(r);
+      for (const s of ["secret-payment", "secret-voucher", "abc", "keyid"])
+        expect(json).not.toContain(s);
+    }
+  });
+
+  it("cookie present is the request's hasCookies (what the heuristics read)", () => {
+    for (const hasCookies of [true, false])
+      expect(
+        row(arrivalReading({ ...browser, hasCookies }, human), "cookie")
+          .present,
+      ).toBe(hasCookies);
+  });
+
+  it("value rows: present iff a value was read; empty user-agent is not sent", () => {
+    const r = arrivalReading(curl, anon);
+    for (const name of ["accept", "sec-fetch-site", "client_ip"])
+      expect(row(r, name).present).toBe(false);
+    for (const name of ["method", "path", "host", "scheme", "signature-agent"])
+      expect(row(r, name).present).toBe(true);
+    expect(row(r, "user-agent").present).toBe(true);
+    expect(
+      row(arrivalReading({ ...curl, userAgent: "" }, anon), "user-agent")
+        .present,
+    ).toBe(false);
+    expect(row(arrivalReading(browser, human), "accept").present).toBe(true);
+    expect(row(r, "body").present).toBe(false);
   });
 });

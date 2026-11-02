@@ -229,6 +229,24 @@ describe("A002 GET /_tollbooth/arrival", () => {
     );
     expect(cookieRow).toMatchObject({ value: null, read: "presence only" });
   });
+
+  it("A009: the cookie row reports whether a Cookie header was sent", async () => {
+    const { app } = await setup();
+    const cookiePresent = async (headers: Record<string, string>) =>
+      (
+        (await (
+          await app.request(URL_, {
+            headers: {
+              "user-agent": BROWSER_UA,
+              accept: BROWSER_ACCEPT,
+              ...headers,
+            },
+          })
+        ).json()) as { rows: { name: string; present: boolean }[] }
+      ).rows.find((r) => r.name === "cookie")?.present;
+    expect(await cookiePresent({ cookie: "session=1" })).toBe(true);
+    expect(await cookiePresent({})).toBe(false);
+  });
 });
 
 // A006: a signed request is not verified on this route, so reading it never

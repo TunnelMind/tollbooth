@@ -20,7 +20,9 @@ DRAFT (Josh rewrites public prose)
   through `createPagesMiddleware` unchanged): free, never tolled, returns the
   requester's own arrival reading as JSON with `cache-control: no-store` and
   `vary: *` — one row per field read (`name`, `value`, `read`, `used_for`,
-  `kept`), plus identity, decision and `never_read`. Returned only to the
+  `kept`, `present`), plus identity, decision and `never_read`. Presence-only
+  rows (cookie and the secret headers) report `present` while `value` stays
+  `null`. Returned only to the
   requester and never stored. New `@tollbooth/core` exports, each public for
   the bindings' arrival route or to keep it from drifting:
   - `arrivalReading` (types `ArrivalReading`, `ArrivalRow`, `ArrivalKept`):

@@ -39,6 +39,8 @@ export interface ArrivalRow {
   read: "value" | "presence only" | "not read";
   used_for: string;
   kept: ArrivalKept;
+  /** Whether this request sent the field — the presence tollbooth observed. */
+  present: boolean;
 }
 
 export interface ArrivalReading {
@@ -107,22 +109,36 @@ export function arrivalReading(
   const opt = (v: string | undefined) => v ?? null;
   // The signature pair, the x402 payment and the voucher carry proofs of
   // payment or possession: echoing them back would put a bearer-like secret in
-  // a response that proxies and logs may keep. Presence only, value null —
-  // whether or not this request sent one, like the cookie row ("not read" is
-  // kept for what is never read at all, the body).
-  const secret = (name: string, used_for: string): ArrivalRow => ({
+  // a response that proxies and logs may keep. Presence only: the value stays
+  // null whether or not this request sent one, like the cookie row, and
+  // `present` reports what was observed ("not read" is kept for what is never
+  // read at all, the body).
+  const secret = (
+    name: string,
+    used_for: string,
+    present: boolean,
+  ): ArrivalRow => ({
     name,
     value: null,
     read: "presence only",
     used_for,
     kept: "no",
+    present,
   });
   const valueRow = (
     name: string,
     value: string | null,
     used_for: string,
     rowKept: ArrivalKept = "no",
-  ): ArrivalRow => ({ name, value, read: "value", used_for, kept: rowKept });
+    present = value !== null,
+  ): ArrivalRow => ({
+    name,
+    value,
+    read: "value",
+    used_for,
+    kept: rowKept,
+    present,
+  });
 
   const rows: ArrivalRow[] = [
     valueRow("method", opt(req.method), "Web Bot Auth @method component"),
@@ -139,6 +155,8 @@ export function arrivalReading(
       req.userAgent,
       "agent heuristics, verified search/preview match (value truncated to 512 characters at intake)",
       kept,
+      // The parser fills an absent user-agent with "" (requestFromContext).
+      req.userAgent !== "",
     ),
     valueRow("accept", opt(req.accept), "agent heuristics (text/html?)"),
     // The cookie value is never read; only whether one was sent feeds the
@@ -149,22 +167,32 @@ export function arrivalReading(
       read: "presence only",
       used_for: "agent heuristics (any cookie sent?)",
       kept: "no",
+      // The same field the heuristics read, so the two cannot disagree.
+      present: req.hasCookies,
     },
     valueRow(
       "sec-fetch-site",
       opt(req.secFetchSite),
       "agent heuristics (browser fetch metadata)",
     ),
-    secret("signature", "Web Bot Auth verification"),
-    secret("signature-input", "Web Bot Auth verification"),
+    secret(
+      "signature",
+      "Web Bot Auth verification",
+      req.signature !== undefined,
+    ),
+    secret(
+      "signature-input",
+      "Web Bot Auth verification",
+      req.signatureInput !== undefined,
+    ),
     // signature-agent is a public directory URL, not a secret.
     valueRow(
       "signature-agent",
       opt(req.signatureAgent),
       "Web Bot Auth key directory lookup",
     ),
-    secret("x-payment", "x402 payment verification"),
-    secret("tollbooth-voucher", "voucher spend"),
+    secret("x-payment", "x402 payment verification", req.payment !== undefined),
+    secret("tollbooth-voucher", "voucher spend", req.voucher !== undefined),
     valueRow(
       "client_ip",
       opt(req.clientIp),
@@ -176,6 +204,8 @@ export function arrivalReading(
       read: "not read",
       used_for: "nothing",
       kept: "no",
+      // Never read, so nothing of it is observed — not even presence.
+      present: false,
     },
   ];
 
