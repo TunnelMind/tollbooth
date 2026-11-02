@@ -1,4 +1,13 @@
 // SPDX-License-Identifier: MIT
+export type { ArrivalKept, ArrivalReading, ArrivalRow } from "./arrival.js";
+export {
+  ARRIVAL_KEPT_SCOPE,
+  arrivalReading,
+  keptFor,
+  LEDGER,
+  REQUEST_HEADERS_READ,
+  SIGNATURE_UNVERIFIED,
+} from "./arrival.js";
 export { botRanges, ipInRanges } from "./botranges.js";
 export { canonicalize } from "./canonicalize.js";
 export type { TollboothConfig } from "./config.js";
@@ -26,7 +35,13 @@ export type {
   PipelineRequest,
   VerifyPayment,
 } from "./pipeline.js";
-export { buildOfferBody, decide, isFreePath } from "./pipeline.js";
+export {
+  buildOfferBody,
+  decide,
+  identify,
+  isFreePath,
+  verifiedPass,
+} from "./pipeline.js";
 export type { Receipt, ReceiptFacts, ReceiptType } from "./receipt.js";
 export { buildReceipt, receiptFactsFor, verifyReceipt } from "./receipt.js";
 export type { ReporterOptions } from "./reporter.js";

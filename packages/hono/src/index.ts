@@ -5,13 +5,18 @@
 // Observe mode computes the decision and records it but always passes -
 // and gets no spending deps, so it can never mutate voucher state.
 import {
+  arrivalReading,
   buildOfferBody,
   buildReceipt,
   type Decision,
   decide,
   type FetchDirectory,
+  type Identity,
+  identify,
   isFreePath,
   JtiCache,
+  keptFor,
+  LEDGER,
   NonceCache,
   type OfferBody,
   OfferLedger,
@@ -21,8 +26,10 @@ import {
   type ReceiptFacts,
   ReceiptReporter,
   receiptFactsFor,
+  SIGNATURE_UNVERIFIED,
   type SiteKeyPair,
   type TollboothConfig,
+  verifiedPass,
 } from "@tollbooth/core";
 import type { Context, MiddlewareHandler } from "hono";
 
@@ -117,6 +124,7 @@ export interface TollboothOptions {
 const REPORT_PATH = "/_tollbooth/report";
 const WEBHOOK_PATH = "/_tollbooth/stripe-webhook";
 const VOUCHER_PATH_PREFIX = "/_tollbooth/voucher/";
+const ARRIVAL_PATH = "/_tollbooth/arrival";
 
 interface AgentStat {
   kind: "agent" | "anonymous-agent" | "spoofer";
@@ -485,6 +493,9 @@ function record(
     stats.humansPassed += 1;
     return;
   }
+  // Whether this goes in the agent ledger is core's keptFor, the same rule
+  // the arrival reading shows, so the two cannot drift.
+  if (keptFor(decision) !== LEDGER) return;
   const key =
     identity.kind === "agent"
       ? identity.agentKey
@@ -680,6 +691,49 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         status: page.status,
         headers: { "content-type": page.contentType },
       });
+    }
+    // The requester's own reading: free, never tolled, no bearer. It returns
+    // before exists/decide/record and the receipt block, so it moves no
+    // counter and emits nothing. decide() skips identify on free paths, so
+    // this calls identify() directly, with fetchDirectory only: no ledger,
+    // jti or nonce cache, so no voucher is spent and no replay count burns.
+    // HEAD too: Hono routes HEAD to GET handlers but c.req.method stays
+    // "HEAD", so a GET-only test let HEAD fall through to record() (A008).
+    if (
+      (c.req.method === "GET" || c.req.method === "HEAD") &&
+      c.req.path === ARRIVAL_PATH
+    ) {
+      const req = requestFromContext(c, options.clientIp);
+      const nowS = options.nowS?.();
+      // A signed request is not verified here: verification fetches the
+      // signer's key directory, and an unauthenticated, uncounted GET must
+      // not be able to make this server do outbound fetches on demand. The
+      // signature rows still show (by presence); only identity is withheld.
+      const signed =
+        req.signature !== undefined ||
+        req.signatureInput !== undefined ||
+        req.signatureAgent !== undefined;
+      const identity: Identity = signed
+        ? {
+            kind: "anonymous-agent",
+            via: [SIGNATURE_UNVERIFIED],
+          }
+        : await identify(req, cfg, {
+            fetchDirectory,
+            ...(nowS !== undefined ? { nowS } : {}),
+          });
+      c.header("cache-control", "no-store");
+      c.header("vary", "*");
+      // `kept` describes an ordinary request like this one: the verified
+      // search/preview pass decide() would give it (pure, no counter), else
+      // its identity. The decision row stays this route's own free path.
+      return c.json(
+        arrivalReading(
+          req,
+          { action: "pass", reason: "free-path", identity },
+          verifiedPass(req, cfg) ?? { identity },
+        ),
+      );
     }
 
     if (

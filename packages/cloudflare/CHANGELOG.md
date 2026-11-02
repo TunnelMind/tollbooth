@@ -16,6 +16,35 @@ DRAFT (Josh rewrites public prose)
   `@tollbooth/core` now exports `isFreePath`.
 - The settle POST body now carries `resource`, the requested URL (origin,
   path and query): `{ payment, price_usd, resource }`.
+- New route `GET /_tollbooth/arrival` (from `@tollbooth/hono`, so it works
+  through `createPagesMiddleware` unchanged): free, never tolled, returns the
+  requester's own arrival reading as JSON with `cache-control: no-store` and
+  `vary: *` — one row per field read (`name`, `value`, `read`, `used_for`,
+  `kept`, `present`), plus identity, decision and `never_read`. Presence-only
+  rows (cookie and the secret headers) report `present` while `value` stays
+  `null`. Returned only to the
+  requester and never stored. New `@tollbooth/core` exports, each public for
+  the bindings' arrival route or to keep it from drifting:
+  - `arrivalReading` (types `ArrivalReading`, `ArrivalRow`, `ArrivalKept`):
+    builds the reading; pure, shared by the bindings.
+  - `REQUEST_HEADERS_READ`: every header the bindings' request parser reads,
+    so the parser and the reading cannot drift (a hono test checks it).
+  - `keptFor`: the one rule for what `record()` keeps for a decision, so the
+    reading's `kept` column and the agent ledger cannot drift.
+  - `LEDGER`: the `kept` value for the agent ledger; hono `record()` compares
+    `keptFor` against it.
+  - `ARRIVAL_KEPT_SCOPE`: the `kept_scope` of every reading (the arrival
+    request itself is never recorded).
+  - `SIGNATURE_UNVERIFIED`: the `identity.via` marker for a signed request on
+    the arrival route, which never fetches the signer's directory.
+  - `identify`: the arrival route is a free path, where `decide()` skips
+    identity, so the route calls it directly.
+  - `verifiedPass`: `decide()` Step 1b as a pure check, so the route reads the
+    same verified search/preview outcome without running `decide()`.
+- `@tollbooth/core`, `@tollbooth/hono` and `@tollbooth/cloudflare` move to
+  2.1.0 together. The site vendors the dist by hand ("built from bb68bbd",
+  tunnelmind-site/vendor/README.md:7), so the site run (connect-arrival-1b)
+  must re-vendor the 2.1.0 dist of core, hono and cloudflare.
 
 ## 2.0.1 — 2026-10-06
 

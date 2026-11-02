@@ -21,10 +21,16 @@ const human = await fetch(`${base}/`, {
 const agent = await fetch(`${base}/article`, {
   headers: { "user-agent": "curl/8.7.1", accept: "*/*" },
 });
+const arrival = await fetch(`${base}/_tollbooth/arrival`);
+const arrivalOk =
+  arrival.status === 200 &&
+  Array.isArray(((await arrival.json()) as { rows?: unknown }).rows);
 
 server.stop();
-if (human.status !== 200 || agent.status !== 402) {
-  console.error(`FAIL: human=${human.status} agent=${agent.status}`);
+if (human.status !== 200 || agent.status !== 402 || !arrivalOk) {
+  console.error(
+    `FAIL: human=${human.status} agent=${agent.status} arrival=${arrival.status}`,
+  );
   process.exit(1);
 }
-console.log("bun-hono example OK: human 200, agent 402");
+console.log("bun-hono example OK: human 200, agent 402, arrival 200");

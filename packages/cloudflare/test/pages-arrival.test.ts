@@ -1,0 +1,114 @@
+// Spec 123 A003: GET /_tollbooth/arrival through the Pages middleware. The
+// route lives in the hono layer (A002) that createPagesMiddleware wraps, so
+// cf-connecting-ip is the only edge-supplied input and request.cf is never read.
+import { describe, expect, it } from "vitest";
+import { createPagesMiddleware } from "../src/index.js";
+import { agent, ctx, human, toml } from "./helpers.js";
+
+type Row = { name: string; value: string | null };
+type Body = {
+  rows: Row[];
+  identity: { kind: string | null };
+  never_read: string[];
+};
+
+const PATH = "/_tollbooth/arrival";
+const ipRow = (b: Body) => b.rows.find((r) => r.name === "client_ip");
+
+describe("GET /_tollbooth/arrival on Pages", () => {
+  it("a human gets a 200 no-store JSON reading, and next() is never called", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    let nextCalled = false;
+    const c = {
+      ...ctx(PATH, human(), {}),
+      next: async () => {
+        nextCalled = true;
+        return new Response("site content");
+      },
+    };
+    const resp = await mw(c);
+    expect(resp.status).toBe(200);
+    expect(resp.headers.get("content-type")).toContain("application/json");
+    expect(resp.headers.get("cache-control")).toBe("no-store");
+    expect(resp.headers.get("vary")).toBe("*");
+    const text = await resp.text();
+    expect(text).not.toBe("site content");
+    expect(nextCalled).toBe(false);
+    expect((JSON.parse(text) as Body).identity.kind).toBe("human");
+  });
+
+  it("an agent's client_ip row carries cf-connecting-ip", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    const resp = await mw(
+      ctx(PATH, agent({ "cf-connecting-ip": "203.0.113.7" }), {}),
+    );
+    const body = (await resp.json()) as Body;
+    expect(body.identity.kind).toBe("anonymous-agent");
+    expect(ipRow(body)?.value).toBe("203.0.113.7");
+  });
+
+  it("without cf-connecting-ip the client_ip row is null", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    const body = (await (await mw(ctx(PATH, agent(), {}))).json()) as Body;
+    expect(ipRow(body)).toBeDefined();
+    expect(ipRow(body)?.value).toBeNull();
+  });
+
+  it("request.cf is never read: country and asn stay out of the reading", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    const c = ctx(PATH, agent(), {});
+    Object.defineProperty(c.request, "cf", {
+      value: { country: "US", asn: 64500 },
+    });
+    const body = (await (await mw(c)).json()) as Body;
+    expect(body.never_read).toEqual(
+      expect.arrayContaining(["country", "asn", "request.cf"]),
+    );
+    expect(JSON.stringify(body)).not.toContain("64500");
+    expect(body.rows.some((r) => r.value === "US")).toBe(false);
+  });
+
+  it("is never tolled: an agent past offer_grace still gets 200", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    for (let i = 0; i < 5; i++) {
+      const resp = await mw(
+        ctx(PATH, agent({ "cf-connecting-ip": "203.0.113.7" }), {}),
+      );
+      expect(resp.status).toBe(200);
+    }
+  });
+
+  it("A008: an agent's HEAD is answered here, not tolled, next() never called", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    let nextCalled = false;
+    const c = {
+      ...ctx(PATH, agent(), {}),
+      next: async () => {
+        nextCalled = true;
+        return new Response("site content");
+      },
+    };
+    c.request = new Request(c.request, { method: "HEAD" });
+    // Past offer_grace: a HEAD that fell through to the pipeline would 402.
+    for (let i = 0; i < 5; i++) {
+      const resp = await mw(c);
+      expect(resp.status).toBe(200);
+      expect(resp.headers.get("cache-control")).toBe("no-store");
+      expect(resp.headers.get("vary")).toBe("*");
+      expect(await resp.text()).toBe("");
+    }
+    expect(nextCalled).toBe(false);
+  });
+
+  it("carries none of the report-path x-tollbooth-* headers", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    const resp = await mw(ctx(PATH, agent(), {}));
+    for (const h of [
+      "x-tollbooth-mode",
+      "x-tollbooth-reporting",
+      "x-tollbooth-settling",
+      "x-tollbooth-env",
+    ])
+      expect(resp.headers.get(h)).toBeNull();
+  });
+});

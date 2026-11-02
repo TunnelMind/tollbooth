@@ -31,7 +31,7 @@ have.
 
 ## Install
 
-> **The packages are not yet on npm** (v2.0.0 in the tree). Until they publish, install
+> **The packages are not yet on npm** (v2.1.0 in the tree). Until they publish, install
 > from source — everything below works from a clone, and the `@tollbooth/*`
 > imports resolve through the workspace unchanged. They become
 > `npm install @tollbooth/core @tollbooth/hono …` the day the packages land on
@@ -339,6 +339,45 @@ authentication. Reads: `GET https://data.tunnelmind.ai/v1/tollbooth/stats` (live
 `GET https://data.tunnelmind.ai/v1/tollbooth/export?day=YYYY-MM-DD` (a UTC day of verbatim signed
 documents as JSON Lines, verifiable offline with `tollbooth verify`). How-to and stated limits:
 https://tunnelmind.ai/conduct/join
+
+## What the door reads
+
+`GET /_tollbooth/arrival` shows a requester what tollbooth read from their own request. It is free on
+every mode, never tolled or mazed, needs no voucher, moves no counter and emits no receipt. The route
+is the same on `@tollbooth/hono` and on the Cloudflare Pages middleware (`createPagesMiddleware`). The
+response is JSON with `cache-control: no-store` and `vary: *`. The reading is returned only to the
+requester and never stored.
+
+The body is `{ rows, identity: { kind, via, matched }, decision: { type, reason }, never_read, kept_scope }`.
+Each row has six fields:
+
+- `name` — the field (`method`, `path`, `host`, `scheme`, `user-agent`, `accept`, `cookie`,
+  `sec-fetch-site`, `signature`, `signature-input`, `signature-agent`, `x-payment`,
+  `tollbooth-voucher`, `client_ip`, `body`).
+- `value` — what was read, or `null`.
+- `read` — `"value"`, `"presence only"` or `"not read"`.
+- `used_for` — what tollbooth uses it for.
+- `kept` — whether anything of it would be kept (below).
+- `present` — whether the field was sent in this request (`true`/`false`).
+
+Secrets are read for presence only, value `null`: the cookie, `signature`, `signature-input`,
+`x-payment` and `tollbooth-voucher`. These rows show `present`, but their value stays `null`. The body
+reads `"not read"` and `present: false`. `never_read` lists the cookie value,
+the request body, country, ASN and `request.cf`.
+
+`kept_scope` is always `"an ordinary request like this one; this arrival request itself is never
+recorded"`: every `kept` says what tollbooth would keep for an ordinary request like this one, not for
+the arrival request itself. `kept` comes from the same rule the agent ledger uses (`keptFor` in
+`@tollbooth/core`) and has three values:
+
+- `"no"` — nothing of the field is kept. Humans and free paths read `"no"`: humans only bump a
+  counter, which keeps nothing of the request. Every row except `path` and `user-agent` always reads
+  `"no"`.
+- `"counter only"` — a verified search or preview bot (`pass_verified`) passes and bumps its own
+  counter; nothing of the request is stored. Its `path` and `user-agent` rows read this.
+- `"agent ledger (ua, count, paths)"` — only agent traffic (agent, anonymous-agent and spoofer
+  identities) is recorded to the in-memory agent ledger, which keeps the user-agent and the path plus
+  a count. Only the `path` and `user-agent` rows of such traffic read this.
 
 ## Honest limits — read before deploying
 
