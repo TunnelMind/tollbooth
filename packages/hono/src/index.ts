@@ -5,11 +5,13 @@
 // Observe mode computes the decision and records it but always passes -
 // and gets no spending deps, so it can never mutate voucher state.
 import {
+  arrivalReading,
   buildOfferBody,
   buildReceipt,
   type Decision,
   decide,
   type FetchDirectory,
+  identify,
   isFreePath,
   JtiCache,
   NonceCache,
@@ -117,6 +119,7 @@ export interface TollboothOptions {
 const REPORT_PATH = "/_tollbooth/report";
 const WEBHOOK_PATH = "/_tollbooth/stripe-webhook";
 const VOUCHER_PATH_PREFIX = "/_tollbooth/voucher/";
+const ARRIVAL_PATH = "/_tollbooth/arrival";
 
 interface AgentStat {
   kind: "agent" | "anonymous-agent" | "spoofer";
@@ -680,6 +683,24 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         status: page.status,
         headers: { "content-type": page.contentType },
       });
+    }
+    // The requester's own reading: free, never tolled, no bearer. It returns
+    // before exists/decide/record and the receipt block, so it moves no
+    // counter and emits nothing. decide() skips identify on free paths, so
+    // this calls identify() directly, with fetchDirectory only: no ledger,
+    // jti or nonce cache, so no voucher is spent and no replay count burns.
+    if (c.req.method === "GET" && c.req.path === ARRIVAL_PATH) {
+      const req = requestFromContext(c, options.clientIp);
+      const nowS = options.nowS?.();
+      const identity = await identify(req, cfg, {
+        fetchDirectory,
+        ...(nowS !== undefined ? { nowS } : {}),
+      });
+      c.header("cache-control", "no-store");
+      c.header("vary", "*");
+      return c.json(
+        arrivalReading(req, { action: "pass", reason: "free-path", identity }),
+      );
     }
 
     if (

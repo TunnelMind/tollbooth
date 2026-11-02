@@ -28,7 +28,7 @@ export type {
   PipelineRequest,
   VerifyPayment,
 } from "./pipeline.js";
-export { buildOfferBody, decide, isFreePath } from "./pipeline.js";
+export { buildOfferBody, decide, identify, isFreePath } from "./pipeline.js";
 export type { Receipt, ReceiptFacts, ReceiptType } from "./receipt.js";
 export { buildReceipt, receiptFactsFor, verifyReceipt } from "./receipt.js";
 export type { ReporterOptions } from "./reporter.js";
