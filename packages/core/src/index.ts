@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+export type { ArrivalKept, ArrivalReading, ArrivalRow } from "./arrival.js";
+export { arrivalReading, REQUEST_HEADERS_READ } from "./arrival.js";
 export { botRanges, ipInRanges } from "./botranges.js";
 export { canonicalize } from "./canonicalize.js";
 export type { TollboothConfig } from "./config.js";

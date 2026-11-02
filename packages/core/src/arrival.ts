@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: MIT
+// The arrival reading: for one request, every field tollbooth read, what it
+// read it for, and whether anything of it is kept. It is the requester's own
+// data shown back to them, so it is pure — no clock, no counters, no I/O —
+// and the same request always reads the same.
+import type { Decision, Identity, PipelineRequest } from "./pipeline.js";
+
+/**
+ * Every header name the bindings' request parser reads (`requestFromContext`
+ * in @tollbooth/hono). It lives here because hono and cloudflare both depend
+ * on core; hono's parser test checks its `header("…")` reads against this
+ * list, and the arrival test checks each name has exactly one row — so the
+ * reading cannot drift from what is actually parsed.
+ */
+export const REQUEST_HEADERS_READ = [
+  "host",
+  "user-agent",
+  "accept",
+  "cookie",
+  "sec-fetch-site",
+  "signature",
+  "signature-input",
+  "signature-agent",
+  "x-payment",
+  "tollbooth-voucher",
+] as const;
+
+// "counter only" is reserved: a counter stores nothing of the request, so no
+// row is ever kept that way (humans and passes read "no").
+export type ArrivalKept =
+  | "no"
+  | "counter only"
+  | "agent ledger (ua, count, paths)";
+
+export interface ArrivalRow {
+  name: string;
+  value: string | null;
+  read: "value" | "presence only" | "not read";
+  used_for: string;
+  kept: ArrivalKept;
+}
+
+export interface ArrivalReading {
+  rows: ArrivalRow[];
+  identity: {
+    kind: Identity["kind"] | null;
+    /** How the identity was reached; null when the decision skipped identify. */
+    via: "web-bot-auth" | "heuristics" | null;
+    /** The rule / verification strings behind it (identity.via); [] when none. */
+    matched: string[];
+  };
+  decision: { type: Decision["action"]; reason: string | null };
+  never_read: string[];
+}
+
+const LEDGER: ArrivalKept = "agent ledger (ua, count, paths)";
+
+export function arrivalReading(
+  req: PipelineRequest,
+  decision: Decision,
+): ArrivalReading {
+  const identity = decision.identity;
+  // Mirrors record() in @tollbooth/hono: only agent, anonymous-agent and
+  // spoofer identities get a ledger entry, and that entry stores the UA and
+  // the path (plus a count). Humans, free paths and verified-search/preview
+  // passes only bump a counter, which keeps nothing of the request itself.
+  // ponytail: free-path /robots.txt also adds the UA to a capped robots set;
+  // the kept vocabulary has no word for it, so it reads "no" here.
+  const ledgered = identity !== null && identity.kind !== "human";
+  const kept: ArrivalKept = ledgered ? LEDGER : "no";
+  const opt = (v: string | undefined) => v ?? null;
+  // The signature pair, the x402 payment and the voucher carry proofs of
+  // payment or possession: echoing them back would put a bearer-like secret in
+  // a response that proxies and logs may keep. Presence only, value null —
+  // whether or not this request sent one, like the cookie row ("not read" is
+  // kept for what is never read at all, the body).
+  const secret = (name: string, used_for: string): ArrivalRow => ({
+    name,
+    value: null,
+    read: "presence only",
+    used_for,
+    kept: "no",
+  });
+  const valueRow = (
+    name: string,
+    value: string | null,
+    used_for: string,
+    rowKept: ArrivalKept = "no",
+  ): ArrivalRow => ({ name, value, read: "value", used_for, kept: rowKept });
+
+  const rows: ArrivalRow[] = [
+    valueRow("method", opt(req.method), "Web Bot Auth @method component"),
+    valueRow(
+      "path",
+      req.path,
+      "free-path matching, Web Bot Auth @path component",
+      kept,
+    ),
+    valueRow("host", req.authority, "Web Bot Auth @authority component"),
+    valueRow("scheme", opt(req.scheme), "Web Bot Auth @scheme component"),
+    valueRow(
+      "user-agent",
+      req.userAgent,
+      "agent heuristics, verified search/preview match (value truncated to 512 characters at intake)",
+      kept,
+    ),
+    valueRow("accept", opt(req.accept), "agent heuristics (text/html?)"),
+    // The cookie value is never read; only whether one was sent feeds the
+    // heuristics.
+    {
+      name: "cookie",
+      value: null,
+      read: "presence only",
+      used_for: "agent heuristics (any cookie sent?)",
+      kept: "no",
+    },
+    valueRow(
+      "sec-fetch-site",
+      opt(req.secFetchSite),
+      "agent heuristics (browser fetch metadata)",
+    ),
+    secret("signature", "Web Bot Auth verification"),
+    secret("signature-input", "Web Bot Auth verification"),
+    // signature-agent is a public directory URL, not a secret.
+    valueRow(
+      "signature-agent",
+      opt(req.signatureAgent),
+      "Web Bot Auth key directory lookup",
+    ),
+    secret("x-payment", "x402 payment verification"),
+    secret("tollbooth-voucher", "voucher spend"),
+    valueRow(
+      "client_ip",
+      opt(req.clientIp),
+      "verified search bot IP-range check (as injected by the binding)",
+    ),
+    {
+      name: "body",
+      value: null,
+      read: "not read",
+      used_for: "nothing",
+      kept: "no",
+    },
+  ];
+
+  return {
+    rows,
+    identity: identityOf(identity),
+    decision: {
+      type: decision.action,
+      reason: "reason" in decision ? decision.reason : null,
+    },
+    never_read: [
+      "cookie value",
+      "request body",
+      "country",
+      "asn",
+      "request.cf",
+    ],
+  };
+}
+
+function identityOf(identity: Identity | null): ArrivalReading["identity"] {
+  if (identity === null) return { kind: null, via: null, matched: [] };
+  switch (identity.kind) {
+    case "human":
+      return { kind: "human", via: "heuristics", matched: [] };
+    case "agent":
+    case "spoofer":
+      return { kind: identity.kind, via: "web-bot-auth", matched: [] };
+    case "anonymous-agent":
+      return {
+        kind: "anonymous-agent",
+        // identify() tags unevaluable WBA claims "wba-<state>"; anything else
+        // is a heuristics rule name.
+        via: identity.via.some((v) => v.startsWith("wba-"))
+          ? "web-bot-auth"
+          : "heuristics",
+        matched: [...identity.via],
+      };
+  }
+}
