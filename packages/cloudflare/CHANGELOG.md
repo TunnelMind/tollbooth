@@ -16,6 +16,16 @@ DRAFT (Josh rewrites public prose)
   `@tollbooth/core` now exports `isFreePath`.
 - The settle POST body now carries `resource`, the requested URL (origin,
   path and query): `{ payment, price_usd, resource }`.
+- New route `GET /_tollbooth/arrival` (from `@tollbooth/hono`, so it works
+  through `createPagesMiddleware` unchanged): free, never tolled, returns the
+  requester's own arrival reading as JSON with `cache-control: no-store` and
+  `vary: *` — one row per field read (`name`, `value`, `read`, `used_for`,
+  `kept`), plus identity, decision and `never_read`. Returned only to the
+  requester and never stored. `@tollbooth/core` now exports `arrivalReading`.
+- `@tollbooth/core`, `@tollbooth/hono` and `@tollbooth/cloudflare` move to
+  2.1.0 together. The site vendors the dist by hand ("built from bb68bbd",
+  tunnelmind-site/vendor/README.md:7), so the site run (connect-arrival-1b)
+  must re-vendor the 2.1.0 dist of core, hono and cloudflare.
 
 ## 2.0.1 — 2026-10-06
 

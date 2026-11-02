@@ -42,5 +42,8 @@ Enforcement levels: **MUST** (violation = reject the code), **SHOULD** (deviatio
 23. Dependency budget: core package ≤ 5 runtime dependencies. Each new dependency requires a one-line justification in the PR.
 24. ADR-before-implementation for any decision that contradicts `plan.md`; ADRs live in `docs/adr/`.
 
+## What the door reads
+`GET /_tollbooth/arrival` (free, never tolled) returns to the requester what tollbooth read from their own request: one row per field with `name`, `value`, `read` (`value` / `presence only` / `not read`), `used_for` and `kept`. The reading is returned only to the requester and never stored (Article I). Secret headers are read for presence only with value `null`, and the body reads `not read` (Article III). `kept` is `no` for humans and passes, `agent ledger (ua, count, paths)` only for agent traffic recorded to the in-memory agent ledger, and `counter only` is reserved and never used on a row.
+
 ## Amendment
 Changes to this constitution are a PR against this file, merged by the maintainer (Josh), before any code that depends on the change.

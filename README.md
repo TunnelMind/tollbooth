@@ -340,6 +340,38 @@ authentication. Reads: `GET https://data.tunnelmind.ai/v1/tollbooth/stats` (live
 documents as JSON Lines, verifiable offline with `tollbooth verify`). How-to and stated limits:
 https://tunnelmind.ai/conduct/join
 
+## What the door reads
+
+`GET /_tollbooth/arrival` shows a requester what tollbooth read from their own request. It is free on
+every mode, never tolled or mazed, needs no voucher, moves no counter and emits no receipt. The route
+is the same on `@tollbooth/hono` and on the Cloudflare Pages middleware (`createPagesMiddleware`). The
+response is JSON with `cache-control: no-store` and `vary: *`. The reading is returned only to the
+requester and never stored.
+
+The body is `{ rows, identity: { kind, via, matched }, decision: { type, reason }, never_read }`.
+Each row has five fields:
+
+- `name` — the field (`method`, `path`, `host`, `scheme`, `user-agent`, `accept`, `cookie`,
+  `sec-fetch-site`, `signature`, `signature-input`, `signature-agent`, `x-payment`,
+  `tollbooth-voucher`, `client_ip`, `body`).
+- `value` — what was read, or `null`.
+- `read` — `"value"`, `"presence only"` or `"not read"`.
+- `used_for` — what tollbooth uses it for.
+- `kept` — whether anything of it is kept after the request (below).
+
+Secrets are read for presence only, value `null`: the cookie, `signature`, `signature-input`,
+`x-payment` and `tollbooth-voucher`. The body reads `"not read"`. `never_read` lists the cookie value,
+the request body, country, ASN and `request.cf`.
+
+`kept` has three values:
+
+- `"no"` — nothing of the field is kept. Humans and passes read `"no"`: they only bump a counter, which
+  keeps nothing of the request. Every row except `path` and `user-agent` always reads `"no"`.
+- `"agent ledger (ua, count, paths)"` — only agent traffic (agent, anonymous-agent and spoofer
+  identities) is recorded to the in-memory agent ledger, which keeps the user-agent and the path plus
+  a count. Only the `path` and `user-agent` rows of such traffic read this.
+- `"counter only"` — reserved; a counter stores nothing of the request, so no row is ever kept that way.
+
 ## Honest limits — read before deploying
 
 - **Enforcement is soft.** Vouchers are stateless signed credits: parallel
