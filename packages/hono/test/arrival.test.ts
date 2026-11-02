@@ -173,6 +173,26 @@ describe("A002 GET /_tollbooth/arrival", () => {
     expect(batches).toEqual([]);
   });
 
+  it("A008: an agent's HEAD is answered here: 200, no-store, nothing recorded", async () => {
+    const { app, reporter, batches, report } = await setup();
+    const before = await report();
+    const res = await app.request(URL_, {
+      method: "HEAD",
+      headers: { "user-agent": "curl/8.7.1", accept: "*/*" },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("vary")).toBe("*");
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect(await res.text()).toBe("");
+    const after = await report();
+    expect(after).toEqual(before);
+    expect(after.agents).toEqual([]);
+    await reporter.flush();
+    expect(reporter.queued).toBe(0);
+    expect(batches).toEqual([]);
+  });
+
   it("a POST is not the arrival route", async () => {
     const { app } = await setup();
     const res = await app.request(URL_, {

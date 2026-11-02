@@ -697,7 +697,12 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     // counter and emits nothing. decide() skips identify on free paths, so
     // this calls identify() directly, with fetchDirectory only: no ledger,
     // jti or nonce cache, so no voucher is spent and no replay count burns.
-    if (c.req.method === "GET" && c.req.path === ARRIVAL_PATH) {
+    // HEAD too: Hono routes HEAD to GET handlers but c.req.method stays
+    // "HEAD", so a GET-only test let HEAD fall through to record() (A008).
+    if (
+      (c.req.method === "GET" || c.req.method === "HEAD") &&
+      c.req.path === ARRIVAL_PATH
+    ) {
       const req = requestFromContext(c, options.clientIp);
       const nowS = options.nowS?.();
       // A signed request is not verified here: verification fetches the

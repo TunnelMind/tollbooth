@@ -78,6 +78,28 @@ describe("GET /_tollbooth/arrival on Pages", () => {
     }
   });
 
+  it("A008: an agent's HEAD is answered here, not tolled, next() never called", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    let nextCalled = false;
+    const c = {
+      ...ctx(PATH, agent(), {}),
+      next: async () => {
+        nextCalled = true;
+        return new Response("site content");
+      },
+    };
+    c.request = new Request(c.request, { method: "HEAD" });
+    // Past offer_grace: a HEAD that fell through to the pipeline would 402.
+    for (let i = 0; i < 5; i++) {
+      const resp = await mw(c);
+      expect(resp.status).toBe(200);
+      expect(resp.headers.get("cache-control")).toBe("no-store");
+      expect(resp.headers.get("vary")).toBe("*");
+      expect(await resp.text()).toBe("");
+    }
+    expect(nextCalled).toBe(false);
+  });
+
   it("carries none of the report-path x-tollbooth-* headers", async () => {
     const mw = createPagesMiddleware({ config: toml() });
     const resp = await mw(ctx(PATH, agent(), {}));
