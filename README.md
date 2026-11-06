@@ -31,11 +31,10 @@ have.
 
 ## Install
 
-> **The packages are not yet on npm** (v2.1.0 in the tree). Until they publish, install
-> from source — everything below works from a clone, and the `@tollbooth/*`
-> imports resolve through the workspace unchanged. They become
-> `npm install @tollbooth/core @tollbooth/hono …` the day the packages land on
-> npm; the import lines and the code do not change.
+> **The packages are not yet on npm** (v2.1.0 in the tree). Install from source —
+> everything below works from a clone, and the `@tollbooth/*` imports resolve
+> through the workspace unchanged. The `@tollbooth` scope on npm belongs to
+> another maintainer, not us, so don't install anything from it.
 
 ```bash
 git clone https://github.com/TunnelMind/tollbooth
@@ -189,9 +188,8 @@ const key = await loadOrCreateSiteKey(cfg.site_key_path);
 if (key.created) console.log(`site public key: ${toBase64Url(key.publicKey)}`);
 const siteKeys = { secret: key.secretKey, pub: key.publicKey };
 
-// pre-generate the maze corpus first (from source until published:
+// pre-generate the maze corpus first, from a checkout after pnpm install && pnpm build:
 //   node packages/cli/dist/cli.js corpus --out ./maze-corpus
-// once on npm:  npx @tollbooth/cli corpus --out ./maze-corpus)
 const maze = makeMazeHandler({ corpus: await loadCorpusDir(cfg.maze.corpus_path), cfg });
 
 const app = new Hono();
@@ -298,11 +296,10 @@ number of spoofs and `ua` cut to 128 characters with control characters
 stripped.
 
 Verify one on an air-gapped machine — only the receipt and the site's public
-key are needed:
+key are needed. Run it from a checkout after `pnpm install && pnpm build`:
 
 ```bash
-# from source until published:  node packages/cli/dist/cli.js verify …
-npx @tollbooth/cli verify receipt.json --pubkey <site-public-key>
+node packages/cli/dist/cli.js verify receipt.json --pubkey <site-public-key>
 # schema: PASS
 # canonical form: PASS
 # signature: PASS
@@ -335,10 +332,31 @@ report_domain = "your-domain.example"   # the domain that vouches for your site 
 
 Until a domain vouches for a key its receipts are stored but labelled *unattested* and kept out of
 the exhibits; there is no token and nothing to register — the signature on each receipt is the
-authentication. Reads: `GET https://data.tunnelmind.ai/v1/tollbooth/stats` (live exhibit) and
-`GET https://data.tunnelmind.ai/v1/tollbooth/export?day=YYYY-MM-DD` (a UTC day of verbatim signed
-documents as JSON Lines, verifiable offline with `tollbooth verify`). How-to and stated limits:
-https://tunnelmind.ai/conduct/join
+authentication.
+
+Reads:
+
+- `GET https://data.tunnelmind.ai/v1/tollbooth/stats` is the live exhibit.
+- `GET https://data.tunnelmind.ai/v1/tollbooth/export?day=YYYY-MM-DD[&kind=receipts|reports]`
+  returns one UTC day as JSON Lines, one signed document per line. `kind` defaults to `receipts`.
+- A page holds up to 5,000 rows. When the response header `x-commons-capped: true` is set, more
+  rows follow: send the value of `x-commons-next-after` as the `after` query parameter to get the
+  next page.
+- Each line wraps the signed document in a `_commons` envelope, and the envelope is not signed.
+  Receipt lines are `{_commons, receipt}`; report lines carry a `snapshot`. The response header
+  `x-commons-verify` carries the verification recipe.
+- To verify a receipt line, save its inner `receipt` object to its own file and pass that
+  receipt's own `site` key, from a checkout after `pnpm install && pnpm build`:
+  `node packages/cli/dist/cli.js verify receipt.json --pubkey <site>`. The wrapped
+  line as exported fails the schema check, and `verify` needs one of `--pubkey`, `--pin` or
+  `--domain`.
+- `tollbooth verify` does not verify snapshots (`kind=reports`) today: a snapshot is not a
+  receipt, so it fails. Check one with `packages/core` in this repo instead: `sig` is an Ed25519 signature
+  over `canonicalize(snapshot without sig)`, by the key in the snapshot's `site` field (decode both
+  with `fromBase64Url`, then call `verify(sig, message, site)`). Or open
+  https://tunnelmind.ai/conduct/log in a browser.
+
+How-to and stated limits: https://tunnelmind.ai/conduct/join
 
 ## What the door reads
 
