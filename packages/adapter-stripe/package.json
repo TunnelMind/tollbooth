@@ -1,6 +1,7 @@
 {
   "name": "@tunnelmindai/tollbooth-adapter-stripe",
   "version": "2.0.0",
+  "private": true,
   "description": "Stripe webhook route and voucher mint, mounted on the operator's own app with the operator's own keys.",
   "license": "MIT",
   "type": "module",
@@ -23,8 +24,5 @@
     "url": "git+https://github.com/TunnelMind/tollbooth.git",
     "directory": "packages/adapter-stripe"
   },
-  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
-  "publishConfig": {
-    "access": "public"
-  }
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme"
 }
