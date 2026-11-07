@@ -351,15 +351,28 @@ Reads:
 - Each line wraps the signed document in a `_commons` envelope, and the envelope is not signed.
   Receipt lines are `{_commons, receipt}`; report lines carry a `snapshot`. The response header
   `x-commons-verify` carries the verification recipe.
-- To verify a receipt line, save its inner `receipt` object to its own file and pass that
-  receipt's own `site` key, from a checkout after `pnpm install && pnpm build`:
-  `node packages/cli/dist/cli.js verify receipt.json --pubkey <site>`. The wrapped
-  line as exported fails the schema check, and `verify` needs one of `--pubkey`, `--pin` or
-  `--domain`.
-- `tollbooth verify` does not verify snapshots (`kind=reports`) today: a snapshot is not a
-  receipt, so it fails. Check one with `packages/core` in this repo instead: `sig` is an Ed25519 signature
-  over `canonicalize(snapshot without sig)`, by the key in the snapshot's `site` field (decode both
-  with `fromBase64Url`, then call `verify(sig, message, site)`). Or open
+<!-- DRAFT: facts verified 2026-11-07; prose is Josh's -->
+- To verify, save what you fetched to a file and run, from a checkout after
+  `pnpm install && pnpm build`:
+  `node packages/cli/dist/cli.js verify <file> --pubkey <site>` (or `--pin <file>`, or
+  `--domain <host>` in place of `--pubkey`). One of the three is required. `<file>` can be:
+  - **a wrapped line** `{_commons, receipt}` or `{_commons, snapshot}`, as exported: the inner
+    document is unwrapped and verified. The `_commons` envelope is not signed and not checked,
+    and the output says so. A line with any other keys FAILs.
+  - **a bare receipt**: verified exactly as before, with the output shown in the example above.
+  - **a snapshot** (`kind=reports`, `"kind": "tollbooth-observe-snapshot"`), bare or wrapped:
+    checked by `verifySnapshot` in `packages/core`.
+  - **a file of lines**, such as a whole export page: one document per line, each report line
+    prefixed `line N: `, blank lines skipped. It PASSes only if every line passes. A file that
+    parses as one JSON document (such as a page of one row) is read as that one document, with
+    no prefix.
+
+  `--pubkey` and `--pin` check offline against that one key and print `key not bound to a
+  domain`. `--domain <host>` alone checks each document against its own `site` key and makes
+  one fetch per run of `https://<host>/.well-known/tollbooth-site.json`, which must list every
+  key. Exit codes: 0 PASS, 1 FAIL, 64 usage. The manual way to check a snapshot: `sig` is an
+  Ed25519 signature over `canonicalize(snapshot without sig)` by the key in its `site` field
+  (decode both with `fromBase64Url`, then call `verify(sig, message, site)`). Or open
   https://tunnelmind.ai/conduct/log in a browser.
 
 How-to and stated limits: https://tunnelmind.ai/conduct/join

@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "../src/canonicalize.js";
 import {
+  fromBase64Url,
   generateSecretKey,
   publicKeyOf,
   sign,
@@ -12,6 +15,7 @@ import {
   type Receipt,
   receiptFactsFor,
   verifyReceipt,
+  verifySnapshot,
 } from "../src/receipt.js";
 import type { SiteKeyPair } from "../src/voucher.js";
 
@@ -309,5 +313,120 @@ describe("verifyReceipt fails closed on hostile input, never throws", () => {
     const r = await verifyReceipt({ ...receipt, ua: "a\udc00" }, site.pub);
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/canonical/);
+  });
+});
+
+describe("verifySnapshot - the observe-snapshot dialect", () => {
+  // Signed the way flushSnapshot in packages/cloudflare/src/index.ts does.
+  async function signedSnapshot() {
+    const site = await makeSite();
+    const unsigned = {
+      v: 1,
+      kind: "tollbooth-observe-snapshot",
+      site: toBase64Url(site.pub),
+      isolate_id: "3f2b6c1e-0000-4000-8000-000000000001",
+      seq: 3,
+      taken_at: new Date(NOW * 1000).toISOString(),
+      humans_passed: 12,
+      free_path_hits: 4,
+      agents: [{ agent_key: "k", count: 2 }],
+    };
+    const sig = toBase64Url(await sign(canonicalize(unsigned), site.secret));
+    return { site, snapshot: { ...unsigned, sig } };
+  }
+
+  it("a snapshot signed like flushSnapshot verifies", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    expect(await verifySnapshot(snapshot, site.pub)).toEqual({ ok: true });
+  });
+
+  it("checks schema first: v, kind, sig", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    const { sig: _sig, ...noSig } = snapshot;
+    for (const [doc, reason] of [
+      [null, "schema: not an object"],
+      [{ ...snapshot, v: 2 }, "schema: v must be 1"],
+      [
+        { ...snapshot, kind: "tollbooth-receipt" },
+        "schema: kind must be tollbooth-observe-snapshot",
+      ],
+      [noSig, "schema: sig must be a string"],
+    ] as const) {
+      expect(await verifySnapshot(doc, site.pub)).toEqual({
+        ok: false,
+        reason,
+      });
+    }
+  });
+
+  it("the wrong site key is a site-mismatch", async () => {
+    const { snapshot } = await signedSnapshot();
+    const other = await makeSite();
+    expect(await verifySnapshot(snapshot, other.pub)).toEqual({
+      ok: false,
+      reason: "site-mismatch",
+    });
+  });
+
+  it("a tampered field or a padded sig is a failed signature", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    for (const doc of [
+      { ...snapshot, seq: snapshot.seq + 1 },
+      { ...snapshot, sig: `${snapshot.sig}=` },
+    ]) {
+      expect(await verifySnapshot(doc, site.pub)).toEqual({
+        ok: false,
+        reason: "signature",
+      });
+    }
+  });
+
+  it("a lone surrogate fails the canonical form, never throws", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    const r = await verifySnapshot(
+      { ...snapshot, isolate_id: "\ud800" },
+      site.pub,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/^canonical form: /);
+  });
+});
+
+describe("real Commons export fixtures verify with core's verifiers", () => {
+  // Verbatim lines from the live Commons export (see SOURCE.md there). Each
+  // inner doc is checked under its own `site` key; the dispatch is on the doc
+  // key, not the file name, so a misfiled line still gets the right verifier.
+  const dir = new URL("../../cli/test/fixtures/commons/", import.meta.url);
+  const lines = ["receipts.ndjson", "reports.ndjson"].flatMap((name) =>
+    readFileSync(fileURLToPath(new URL(name, dir)), "utf8")
+      .split("\n")
+      .filter((l) => l.trim() !== "")
+      .map((l) => JSON.parse(l)),
+  );
+
+  it("every receipt and snapshot line verifies ok", async () => {
+    let receipts = 0;
+    let snapshots = 0;
+    for (const line of lines) {
+      if (line.snapshot) {
+        snapshots++;
+        expect(
+          await verifySnapshot(
+            line.snapshot,
+            fromBase64Url(line.snapshot.site),
+          ),
+        ).toEqual({ ok: true });
+      }
+      if (line.receipt) {
+        receipts++;
+        expect(
+          await verifyReceipt(line.receipt, fromBase64Url(line.receipt.site)),
+        ).toEqual({ ok: true });
+      }
+    }
+    // Not vacuous: both dialects must actually be exercised.
+    expect(receipts).toBeGreaterThanOrEqual(1);
+    expect(snapshots).toBeGreaterThanOrEqual(1);
+    expect(receipts + snapshots).toBe(lines.length);
   });
 });

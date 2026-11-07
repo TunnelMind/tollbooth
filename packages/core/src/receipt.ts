@@ -6,14 +6,20 @@
 // Ed25519-signed by the site key, verifiable offline by anyone holding the
 // site public key (III.10).
 //
-// verifyReceipt's contract. Dialect: a flat v1 object whose `sig` is the
-// unpadded base64url Ed25519 signature over the JCS bytes of every other
-// field; nothing else is accepted (no envelope, no embedded key, no
-// attestation_strength, so no strength ceiling applies). Trust: only the site
-// public key the caller passes; the receipt's own `site` must equal it. The
-// receipt is hostile: shape and the III.9 key rules are checked first, a lone
-// surrogate fails the canonical-form step, a non-canonical sig spelling fails.
-// Fails closed and never throws: every failure is {ok:false, reason}.
+// Two signed dialects, one signature tail (verifySigned):
+// - verifyReceipt: the flat v1 receipt. `sig` is the unpadded base64url
+//   Ed25519 signature over the JCS bytes of every other field; nothing else is
+//   accepted (no envelope, no embedded key, no attestation_strength, so no
+//   strength ceiling applies). Shape and the III.9 key rules are checked first.
+// - verifySnapshot: the v1 `kind: "tollbooth-observe-snapshot"` document that
+//   flushSnapshot in packages/cloudflare/src/index.ts signs: unsigned = {v,
+//   kind, site, isolate_id, seq, taken_at, humans_passed, free_path_hits,
+//   agents}, sig = toBase64Url(sign(canonicalize(unsigned), site secret)).
+//   Only v/kind/site/sig are shape-checked; the signature covers the rest.
+// Trust: only the site public key the caller passes; the document's own
+// `site` must equal it. The document is hostile: a lone surrogate fails the
+// canonical-form step, a non-canonical sig spelling fails. Both fail closed
+// and never throw: every failure is {ok:false, reason}.
 import { canonicalize } from "./canonicalize.js";
 import { fromBase64Url, sign, toBase64Url, verify } from "./keys.js";
 import type { Decision } from "./pipeline.js";
@@ -138,11 +144,41 @@ export async function verifyReceipt(
   if (r.type !== "SPOOF" && r.claimed_key !== null)
     return fail("claimed_key is SPOOF-only (III.9)");
   if (r.site !== toBase64Url(sitePub)) return fail("site-mismatch");
+  return verifySigned(r as Receipt, sitePub);
+}
 
-  const { sig, ...unsigned } = r as Receipt;
+/**
+ * Offline verification of a signed observe snapshot: schema (v, kind, site,
+ * sig only), site key, canonical form, signature. Same contract as
+ * verifyReceipt: fails closed, never throws.
+ */
+export async function verifySnapshot(
+  value: unknown,
+  sitePub: Uint8Array,
+): Promise<{ ok: boolean; reason?: string }> {
+  const fail = (reason: string) => ({ ok: false, reason });
+  if (value === null || typeof value !== "object")
+    return fail("schema: not an object");
+  const d = value as Record<string, unknown>;
+  if (d.v !== 1) return fail("schema: v must be 1");
+  if (d.kind !== "tollbooth-observe-snapshot")
+    return fail("schema: kind must be tollbooth-observe-snapshot");
+  if (typeof d.site !== "string") return fail("schema: site must be a string");
+  if (typeof d.sig !== "string") return fail("schema: sig must be a string");
+  if (d.site !== toBase64Url(sitePub)) return fail("site-mismatch");
+  return verifySigned(d as { sig: string }, sitePub);
+}
+
+/** The signature tail both dialects share: canonical form, then sig. */
+async function verifySigned(
+  doc: { sig: string },
+  sitePub: Uint8Array,
+): Promise<{ ok: boolean; reason?: string }> {
+  const fail = (reason: string) => ({ ok: false, reason });
+  const { sig, ...unsigned } = doc;
   // Canonical form before the signature, the order the docstring gives and
   // `tollbooth verify` reports in. canonicalize refuses a lone surrogate,
-  // which any string field of a hostile receipt can carry: a failed check,
+  // which any string field of a hostile document can carry: a failed check,
   // not a rejected promise.
   let message: string;
   try {
