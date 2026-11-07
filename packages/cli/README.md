@@ -1,4 +1,4 @@
-# @tollbooth/cli
+# @tunnelmindai/tollbooth-cli
 
 tollbooth CLI: maze corpus generation, offline receipt verification, voucher inspect/mint.
 

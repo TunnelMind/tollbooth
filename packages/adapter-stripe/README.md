@@ -1,4 +1,4 @@
-# @tollbooth/adapter-stripe
+# @tunnelmindai/tollbooth-adapter-stripe
 
 Stripe webhook handling and render-once voucher redemption for tollbooth.
 

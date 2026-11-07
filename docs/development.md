@@ -35,7 +35,7 @@ pnpm lint       # biome
 ```
 
 `dist/` is only produced by `tsc -b`, so **build before anything that imports a
-package by its `@tollbooth/*` name** — cross-package tests resolve to `dist/`,
+package by its `@tunnelmindai/tollbooth-*` name** — cross-package tests resolve to `dist/`,
 not `src/`. `pnpm test` builds for you (via `pretest`); if you run vitest
 directly, `pnpm build` first or those cross-package suites go red on a clean
 clone.
