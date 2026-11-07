@@ -688,6 +688,38 @@ describe("verify a file of lines (FR-001, FR-007, FR-008)", () => {
     expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
   });
 
+  it("never puts an empty key from a malformed export line in the domain check", async () => {
+    const [line] = await fixtureLines();
+    const bad = JSON.stringify({ _commons: {}, receipt: {}, snapshot: {} });
+    const file = await writeLines(`${line}\n${bad}\n`);
+    const r = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys: [SITE] }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("line 1: signature: PASS");
+    expect(r.stdout).toContain(
+      "line 2: schema: FAIL (export line: both receipt and snapshot)",
+    );
+    expect(r.stdout).toContain("domain: PASS\n");
+    expect(r.stdout).not.toContain("key not listed");
+    expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
+  it("FAILs keyless input under --domain with no keys and no fetch", async () => {
+    const docs = [{ _commons: {}, receipt: {}, snapshot: {} }, { site: 42 }];
+    for (const doc of docs) {
+      const file = await writeLines(`${JSON.stringify(doc)}\n`);
+      const r = await cli(["verify", file, "--domain", "example.com"], {
+        preload: FAKESITE,
+        siteJson: JSON.stringify({ v: 1, keys: [SITE] }),
+      });
+      expect(r.code).toBe(1);
+      expect(r.stdout).toContain("domain: FAIL (no keys)\n");
+      expect(r.stderr).not.toContain("fetch:");
+    }
+  });
+
   it("keeps a single-document file unprefixed", async () => {
     const [line] = await fixtureLines();
     const file = await writeLines(`${line}\n`);

@@ -248,13 +248,16 @@ async function verifyCmd(args: string[]): Promise<number> {
     }
     const result = await checkDocument(doc.value, pubkey);
     for (const line of result.lines) console.log(prefix + line);
-    keys.add(result.key);
+    // A document that fails before yielding a key (a malformed export line,
+    // or no --pubkey and a non-string site) has key "": never ask the domain
+    // about an empty name.
+    if (result.key !== "") keys.add(result.key);
     ok &&= result.ok;
   }
   if (domain === undefined) {
     console.log("key not bound to a domain");
   } else if (keys.size === 0) {
-    // Every line was not JSON (each already a FAIL): no key, so no fetch.
+    // No document yielded a key (each already a FAIL), so no fetch.
     console.log("domain: FAIL (no keys)");
     ok = false;
   } else {
