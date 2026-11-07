@@ -1,6 +1,6 @@
 # ADR 006 — `tollbooth verify` checks export lines and snapshots
 
-**Status:** Proposed (GATE 2: the owner accepts it before any code).
+**Status:** Accepted (2026-11-07, coordinator on Josh's delegation)
 **Deviates from / extends:** spec 126 `plan.md`, "Where the change goes" and
 "Approach notes"; spec 126 `spec.md` FR-001–FR-004 and FR-008. Required by
 the plan's Constitution Check row for tollbooth VII.24 (ADR before a
