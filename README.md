@@ -31,10 +31,15 @@ have.
 
 ## Install
 
-> **The packages are not yet on npm** (v2.1.0 in the tree). Install from source —
-> everything below works from a clone, and the `@tollbooth/*` imports resolve
-> through the workspace unchanged. The `@tollbooth` scope on npm belongs to
-> another maintainer, not us, so don't install anything from it.
+> **The packages are not yet on npm** (v2.1.0 in the tree). Five will publish,
+> by the owner:
+> `@tunnelmindai/tollbooth-core`,
+> `@tunnelmindai/tollbooth-hono`,
+> `@tunnelmindai/tollbooth-maze`,
+> `@tunnelmindai/tollbooth-adapter-x402` and
+> `@tunnelmindai/tollbooth-cloudflare`. Until then, install from source —
+> everything below works from a clone, and the `@tunnelmindai/tollbooth-*`
+> imports resolve through the workspace.
 
 ```bash
 git clone https://github.com/TunnelMind/tollbooth
@@ -57,7 +62,7 @@ passes unmodified:
 
 ```ts
 import { serve } from "@hono/node-server";
-import { tollbooth } from "@tollbooth/hono";
+import { tollbooth } from "@tunnelmindai/tollbooth-hono";
 import { Hono } from "hono";
 
 const app = new Hono();
@@ -145,12 +150,12 @@ app.use(tollbooth({
   free and never turns into a 500.
 
 On Cloudflare Pages, `createPagesMiddleware({ exists: "assets" })` does this
-against the static asset binding — see [`@tollbooth/cloudflare`](packages/cloudflare).
+against the static asset binding — see [`@tunnelmindai/tollbooth-cloudflare`](packages/cloudflare).
 
 `pass_verified` is an opt-in pass for crawlers you want to let through,
 **off by default** (`[]`). `"search"` passes Googlebot and bingbot only when
 the client IP is inside the ranges Google and Bing publish (a dated snapshot
-vendored in `@tollbooth/core`, never fetched at runtime); a spoofed UA from
+vendored in `@tunnelmindai/tollbooth-core`, never fetched at runtime); a spoofed UA from
 any other IP, or a request with no trusted IP, gets the normal 402.
 `"preview"` passes Slackbot, Twitterbot, facebookexternalhit, LinkedInBot and
 Discordbot by UA, for HTML page GET/HEAD requests only.
@@ -160,9 +165,9 @@ and the User-Agent header is trivially spoofable: any client can send
 only if you accept that; don't use it on content you want paid. A request carrying
 Web Bot Auth headers is never shortcut. Each pass is counted in the report as
 its own class (`verified_search_passed`, `verified_preview_passed`). 
-`@tollbooth/hono` has no default client IP, so the search pass fails closed
+`@tunnelmindai/tollbooth-hono` has no default client IP, so the search pass fails closed
 until you pass `tollbooth({ clientIp: (c) => ... })` with a source you trust;
-`@tollbooth/cloudflare` wires `cf-connecting-ip` itself, since Cloudflare's
+`@tunnelmindai/tollbooth-cloudflare` wires `cf-connecting-ip` itself, since Cloudflare's
 edge sets it.
 
 ```toml
@@ -172,13 +177,13 @@ pass_verified = ["search", "preview"]  # "preview" is UA-only, spoofable
 ```ts
 import { readFileSync } from "node:fs";
 import { serve } from "@hono/node-server";
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { makeStripeAdapter } from "@tollbooth/adapter-stripe";
-import { parseConfig, toBase64Url } from "@tollbooth/core";
-import { loadOrCreateSiteKey } from "@tollbooth/core/node";
-import { tollbooth } from "@tollbooth/hono";
-import { corpusFromMap, makeMazeHandler, robotsFragment } from "@tollbooth/maze";
-import { loadCorpusDir } from "@tollbooth/maze/node";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { makeStripeAdapter } from "@tunnelmindai/tollbooth-adapter-stripe";
+import { parseConfig, toBase64Url } from "@tunnelmindai/tollbooth-core";
+import { loadOrCreateSiteKey } from "@tunnelmindai/tollbooth-core/node";
+import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+import { corpusFromMap, makeMazeHandler, robotsFragment } from "@tunnelmindai/tollbooth-maze";
+import { loadCorpusDir } from "@tunnelmindai/tollbooth-maze/node";
 import { Hono } from "hono";
 
 const cfg = parseConfig(readFileSync("./tollbooth.toml", "utf8"));
@@ -296,7 +301,8 @@ number of spoofs and `ua` cut to 128 characters with control characters
 stripped.
 
 Verify one on an air-gapped machine — only the receipt and the site's public
-key are needed. Run it from a checkout after `pnpm install && pnpm build`:
+key are needed. The CLI is not published; run it from a checkout after
+`pnpm install && pnpm build`:
 
 ```bash
 node packages/cli/dist/cli.js verify receipt.json --pubkey <site-public-key>
@@ -362,7 +368,7 @@ How-to and stated limits: https://tunnelmind.ai/conduct/join
 
 `GET /_tollbooth/arrival` shows a requester what tollbooth read from their own request. It is free on
 every mode, never tolled or mazed, needs no voucher, moves no counter and emits no receipt. The route
-is the same on `@tollbooth/hono` and on the Cloudflare Pages middleware (`createPagesMiddleware`). The
+is the same on `@tunnelmindai/tollbooth-hono` and on the Cloudflare Pages middleware (`createPagesMiddleware`). The
 response is JSON with `cache-control: no-store` and `vary: *`. The reading is returned only to the
 requester and never stored.
 
@@ -386,7 +392,7 @@ the request body, country, ASN and `request.cf`.
 `kept_scope` is always `"an ordinary request like this one; this arrival request itself is never
 recorded"`: every `kept` says what tollbooth would keep for an ordinary request like this one, not for
 the arrival request itself. `kept` comes from the same rule the agent ledger uses (`keptFor` in
-`@tollbooth/core`) and has three values:
+`@tunnelmindai/tollbooth-core`) and has three values:
 
 - `"no"` — nothing of the field is kept. Humans and free paths read `"no"`: humans only bump a
   counter, which keeps nothing of the request. Every row except `path` and `user-agent` always reads
@@ -459,13 +465,13 @@ NFR-1 (pass-path added latency <= 1 ms p50, <= 5 ms p99): **PASS** (added p50 0.
 
 | package | what it is | runtime deps |
 |---|---|---|
-| `@tollbooth/core` | identify, offer state, vouchers, receipts, config — no HTTP, no chain code | zod, smol-toml, @noble/ed25519 |
-| `@tollbooth/hono` | the middleware: one binding for Node, Bun, Workers | core (+ your hono) |
-| `@tollbooth/adapter-x402` | x402 offers and local proof verification | @noble/curves, @noble/hashes |
-| `@tollbooth/adapter-stripe` | webhook + render-once voucher redemption, no Stripe SDK | core |
-| `@tollbooth/maze` | decoy corpus generation, loading and serving | none |
-| `@tollbooth/cli` | `corpus`, `verify`, `voucher inspect`/`mint` | core, maze |
-| `@tollbooth/cloudflare` | Cloudflare Pages middleware: settle-then-serve x402, snapshots | core, hono, maze, adapter-x402 |
+| `@tunnelmindai/tollbooth-core` | identify, offer state, vouchers, receipts, config — no HTTP, no chain code | zod, smol-toml, @noble/ed25519 |
+| `@tunnelmindai/tollbooth-hono` | the middleware: one binding for Node, Bun, Workers | core (+ your hono) |
+| `@tunnelmindai/tollbooth-adapter-x402` | x402 offers and local proof verification | @noble/curves, @noble/hashes |
+| `@tunnelmindai/tollbooth-adapter-stripe` | private, not published: webhook + render-once voucher redemption, no Stripe SDK | core |
+| `@tunnelmindai/tollbooth-maze` | decoy corpus generation, loading and serving | none |
+| `@tunnelmindai/tollbooth-cli` | private, not published (run from source): `corpus`, `verify`, `voucher inspect`/`mint` | core, maze |
+| `@tunnelmindai/tollbooth-cloudflare` | Cloudflare Pages middleware: settle-then-serve x402, snapshots | core, hono, maze, adapter-x402 |
 
 ## Development
 
