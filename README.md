@@ -473,6 +473,24 @@ NFR-1 (pass-path added latency <= 1 ms p50, <= 5 ms p99): **PASS** (added p50 0.
 | `@tunnelmindai/tollbooth-cli` | private, not published (run from source): `corpus`, `verify`, `voucher inspect`/`mint` | core, maze |
 | `@tunnelmindai/tollbooth-cloudflare` | Cloudflare Pages middleware: settle-then-serve x402, snapshots | core, hono, maze, adapter-x402 |
 
+## Publish plan
+
+> Draft: for Josh's voice. Facts only.
+
+Nothing is published to npm yet. The owner publishes. These five packages
+are the ones to publish, because tunnelmind-site needs them:
+
+| package | required by |
+|---|---|
+| `@tunnelmindai/tollbooth-cloudflare` | tunnelmind-site `functions/_middleware.js:15` imports `createPagesMiddleware` from it (under the old `tollbooth` scope) |
+| `@tunnelmindai/tollbooth-adapter-x402` | tunnelmind-site `scripts/data/x402.data.mjs:10` imports `usdToAtomic` from it (under the old `tollbooth` scope); also a runtime dependency of cloudflare |
+| `@tunnelmindai/tollbooth-hono` | runtime dependency of cloudflare |
+| `@tunnelmindai/tollbooth-maze` | runtime dependency of cloudflare |
+| `@tunnelmindai/tollbooth-core` | runtime dependency of cloudflare |
+
+`@tunnelmindai/tollbooth-cli` and `@tunnelmindai/tollbooth-adapter-stripe`
+are `private: true` and not published until someone asks.
+
 ## Development
 
 This repo is spec-driven: [constitution.md](constitution.md) holds the
