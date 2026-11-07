@@ -8,7 +8,7 @@ import {
   encodePayment,
   type TransferAuthorization,
   usdToAtomic,
-} from "@tollbooth/adapter-x402";
+} from "@tunnelmindai/tollbooth-adapter-x402";
 
 type Creds = { voucher?: string; ethKeyHex?: string; fetchFn?: typeof fetch };
 type Offer = {

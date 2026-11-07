@@ -1,7 +1,7 @@
 // AC-6.3 wired: decisions become signed receipts, batched to the configured
 // log endpoint, verifiable offline - and the request never waits for any of
 // it. Reporting is off by default; this test turns it on explicitly.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import {
   generateSecretKey,
   publicKeyOf,
@@ -9,7 +9,7 @@ import {
   ReceiptReporter,
   type SiteKeyPair,
   verifyReceipt,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {

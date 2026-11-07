@@ -2,7 +2,7 @@
 // loop here (autoFlush: false); each request signs, queues and POSTs inside
 // the runtime's waitUntil. With no waitUntil the receipt cannot survive the
 // isolate, so it is counted in receipts_dropped instead of vanishing.
-import { generateSecretKey, toBase64Url } from "@tollbooth/core";
+import { generateSecretKey, toBase64Url } from "@tunnelmindai/tollbooth-core";
 import { describe, expect, it } from "vitest";
 import {
   makeAuth,

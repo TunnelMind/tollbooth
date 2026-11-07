@@ -1,6 +1,6 @@
 // Bun example: identical middleware, Bun's server. Testnet values only.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { tollbooth } from "@tollbooth/hono";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { tollbooth } from "@tunnelmindai/tollbooth-hono";
 import { Hono } from "hono";
 
 const config = `

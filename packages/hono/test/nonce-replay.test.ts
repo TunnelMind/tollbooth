@@ -1,6 +1,6 @@
 // R102: in toll mode the middleware wires a NonceCache into WBA verify, so a
 // replayed nonce-bearing signature must not be credited to the agent twice.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { NOW, PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";

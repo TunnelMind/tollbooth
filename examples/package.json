@@ -6,9 +6,9 @@
     "@hono/node-server": "^2.1.1",
     "@noble/curves": "^2.3.0",
     "@noble/hashes": "^2.3.0",
-    "@tollbooth/adapter-x402": "workspace:*",
-    "@tollbooth/core": "workspace:*",
-    "@tollbooth/hono": "workspace:*",
+    "@tunnelmindai/tollbooth-adapter-x402": "workspace:*",
+    "@tunnelmindai/tollbooth-core": "workspace:*",
+    "@tunnelmindai/tollbooth-hono": "workspace:*",
     "hono": "^4.13.7"
   }
 }

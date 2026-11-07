@@ -1,9 +1,11 @@
-# @tollbooth/cloudflare
+# @tunnelmindai/tollbooth-cloudflare
 
 ## 2.1.0 — Unreleased
 
 DRAFT (Josh rewrites public prose)
 
+- Renamed on 2026-11-04 from the tollbooth npm scope to the tunnelmindai
+  scope: every published package is now `tunnelmindai/tollbooth-<name>` on npm.
 - New option `exists: "assets"`: in toll mode, before an offer, HEAD the path
   on `env.ASSETS`; a 404 there answers a plain 404 with no offer, settle,
   maze or receipt. A throwing check falls through to the normal 402 offer and
@@ -11,19 +13,19 @@ DRAFT (Josh rewrites public prose)
   With the option set and no `ASSETS.fetch`, construction throws
   `TollboothBindingMissingError`.
 - Built on the new `exists?: (path) => Promise<boolean>` option in
-  `@tollbooth/hono` (toll mode only, never asked for `free_paths`; a throw
+  `@tunnelmindai/tollbooth-hono` (toll mode only, never asked for `free_paths`; a throw
   means "exists"; 404s counted as `not_found` in the report stats).
-  `@tollbooth/core` now exports `isFreePath`.
+  `@tunnelmindai/tollbooth-core` now exports `isFreePath`.
 - The settle POST body now carries `resource`, the requested URL (origin,
   path and query): `{ payment, price_usd, resource }`.
-- New route `GET /_tollbooth/arrival` (from `@tollbooth/hono`, so it works
+- New route `GET /_tollbooth/arrival` (from `@tunnelmindai/tollbooth-hono`, so it works
   through `createPagesMiddleware` unchanged): free, never tolled, returns the
   requester's own arrival reading as JSON with `cache-control: no-store` and
   `vary: *` — one row per field read (`name`, `value`, `read`, `used_for`,
   `kept`, `present`), plus identity, decision and `never_read`. Presence-only
   rows (cookie and the secret headers) report `present` while `value` stays
   `null`. Returned only to the
-  requester and never stored. New `@tollbooth/core` exports, each public for
+  requester and never stored. New `@tunnelmindai/tollbooth-core` exports, each public for
   the bindings' arrival route or to keep it from drifting:
   - `arrivalReading` (types `ArrivalReading`, `ArrivalRow`, `ArrivalKept`):
     builds the reading; pure, shared by the bindings.
@@ -41,7 +43,7 @@ DRAFT (Josh rewrites public prose)
     identity, so the route calls it directly.
   - `verifiedPass`: `decide()` Step 1b as a pure check, so the route reads the
     same verified search/preview outcome without running `decide()`.
-- `@tollbooth/core`, `@tollbooth/hono` and `@tollbooth/cloudflare` move to
+- `@tunnelmindai/tollbooth-core`, `@tunnelmindai/tollbooth-hono` and `@tunnelmindai/tollbooth-cloudflare` move to
   2.1.0 together. The site vendors the dist by hand ("built from bb68bbd",
   tunnelmind-site/vendor/README.md:7), so the site run (connect-arrival-1b)
   must re-vendor the 2.1.0 dist of core, hono and cloudflare.
