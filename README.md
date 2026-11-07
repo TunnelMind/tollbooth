@@ -363,7 +363,9 @@ Reads:
   - **a snapshot** (`kind=reports`, `"kind": "tollbooth-observe-snapshot"`), bare or wrapped:
     checked by `verifySnapshot` in `packages/core`.
   - **a file of lines**, such as a whole export page: one document per line, each report line
-    prefixed `line N: `, blank lines skipped. It PASSes only if every line passes.
+    prefixed `line N: `, blank lines skipped. It PASSes only if every line passes. A file that
+    parses as one JSON document (such as a page of one row) is read as that one document, with
+    no prefix.
 
   `--pubkey` and `--pin` check offline against that one key and print `key not bound to a
   domain`. `--domain <host>` alone checks each document against its own `site` key and makes

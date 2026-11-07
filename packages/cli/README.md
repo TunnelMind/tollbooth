@@ -13,7 +13,8 @@ node packages/cli/dist/cli.js verify <file> --pubkey <site> | --pin <file> | --d
 
 `<file>` is a bare receipt, a snapshot (`kind: "tollbooth-observe-snapshot"`), a Conduct Log
 Commons export line (`{_commons, receipt|snapshot}`, unwrapped first), or a file of JSON lines
-(one document per line, output prefixed `line N: `; PASS only if every line passes). The
+(one document per line, output prefixed `line N: `; PASS only if every line passes; a file
+that parses as one JSON document, such as a one-row page, is that document, no prefix). The
 `_commons` envelope is not signed and not checked.
 
 - `--pubkey <key>` / `--pin <file>`: offline, one key for every document; prints
