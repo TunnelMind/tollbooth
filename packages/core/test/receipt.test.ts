@@ -12,6 +12,7 @@ import {
   type Receipt,
   receiptFactsFor,
   verifyReceipt,
+  verifySnapshot,
 } from "../src/receipt.js";
 import type { SiteKeyPair } from "../src/voucher.js";
 
@@ -309,5 +310,81 @@ describe("verifyReceipt fails closed on hostile input, never throws", () => {
     const r = await verifyReceipt({ ...receipt, ua: "a\udc00" }, site.pub);
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/canonical/);
+  });
+});
+
+describe("verifySnapshot - the observe-snapshot dialect", () => {
+  // Signed the way flushSnapshot in packages/cloudflare/src/index.ts does.
+  async function signedSnapshot() {
+    const site = await makeSite();
+    const unsigned = {
+      v: 1,
+      kind: "tollbooth-observe-snapshot",
+      site: toBase64Url(site.pub),
+      isolate_id: "3f2b6c1e-0000-4000-8000-000000000001",
+      seq: 3,
+      taken_at: new Date(NOW * 1000).toISOString(),
+      humans_passed: 12,
+      free_path_hits: 4,
+      agents: [{ agent_key: "k", count: 2 }],
+    };
+    const sig = toBase64Url(await sign(canonicalize(unsigned), site.secret));
+    return { site, snapshot: { ...unsigned, sig } };
+  }
+
+  it("a snapshot signed like flushSnapshot verifies", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    expect(await verifySnapshot(snapshot, site.pub)).toEqual({ ok: true });
+  });
+
+  it("checks schema first: v, kind, sig", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    const { sig: _sig, ...noSig } = snapshot;
+    for (const [doc, reason] of [
+      [null, "schema: not an object"],
+      [{ ...snapshot, v: 2 }, "schema: v must be 1"],
+      [
+        { ...snapshot, kind: "tollbooth-receipt" },
+        "schema: kind must be tollbooth-observe-snapshot",
+      ],
+      [noSig, "schema: sig must be a string"],
+    ] as const) {
+      expect(await verifySnapshot(doc, site.pub)).toEqual({
+        ok: false,
+        reason,
+      });
+    }
+  });
+
+  it("the wrong site key is a site-mismatch", async () => {
+    const { snapshot } = await signedSnapshot();
+    const other = await makeSite();
+    expect(await verifySnapshot(snapshot, other.pub)).toEqual({
+      ok: false,
+      reason: "site-mismatch",
+    });
+  });
+
+  it("a tampered field or a padded sig is a failed signature", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    for (const doc of [
+      { ...snapshot, seq: snapshot.seq + 1 },
+      { ...snapshot, sig: `${snapshot.sig}=` },
+    ]) {
+      expect(await verifySnapshot(doc, site.pub)).toEqual({
+        ok: false,
+        reason: "signature",
+      });
+    }
+  });
+
+  it("a lone surrogate fails the canonical form, never throws", async () => {
+    const { site, snapshot } = await signedSnapshot();
+    const r = await verifySnapshot(
+      { ...snapshot, isolate_id: "\ud800" },
+      site.pub,
+    );
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/^canonical form: /);
   });
 });

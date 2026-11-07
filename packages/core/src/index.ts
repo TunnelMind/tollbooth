@@ -43,7 +43,12 @@ export {
   verifiedPass,
 } from "./pipeline.js";
 export type { Receipt, ReceiptFacts, ReceiptType } from "./receipt.js";
-export { buildReceipt, receiptFactsFor, verifyReceipt } from "./receipt.js";
+export {
+  buildReceipt,
+  receiptFactsFor,
+  verifyReceipt,
+  verifySnapshot,
+} from "./receipt.js";
 export type { ReporterOptions } from "./reporter.js";
 export { ReceiptReporter } from "./reporter.js";
 export type { SiteKeyPair, SpendResult, VoucherPayload } from "./voucher.js";
