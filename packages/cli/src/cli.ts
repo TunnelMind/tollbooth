@@ -6,10 +6,15 @@
 // `verify` trust: the file is hostile and only core judges it: verifySnapshot
 // for an observe snapshot, verifyReceipt for anything else. A Conduct Log
 // Commons export line ({_commons, receipt|snapshot}) is unwrapped first; its
-// _commons envelope is unsigned and never verified. The key is the operator's --pubkey or --pin file; with --domain
-// alone it is the receipt's own `site` key, which passes only if
-// https://<host>/.well-known/tollbooth-site.json lists it (a bare host[:port],
-// no redirects, 5 s timeout, 64 KB cap). Exit 0 PASS, 1 FAIL, 64 usage.
+// _commons envelope is unsigned and never verified. A file that is not one
+// JSON document is read as JSON lines (blank lines skipped, one trailing \r
+// stripped); each line's report is prefixed `line N: ` and the run PASSes only
+// if there is at least one document and all pass. The key is the operator's
+// --pubkey or --pin file; with --domain alone it is each document's own `site`
+// key, which passes only if https://<host>/.well-known/tollbooth-site.json
+// lists it (fetched once per run, unlisted keys named for a file of lines; a
+// bare host[:port], no redirects, 5 s timeout, 64 KB cap).
+// Exit 0 PASS, 1 FAIL, 64 usage.
 // `voucher mint` reads (or, if missing, creates) the site secret key file via
 // core/node and prints only the public key and the voucher, never the secret.
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -27,7 +32,8 @@ import { corpusHash, generateCorpus } from "@tunnelmindai/tollbooth-maze";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]
-  tollbooth verify <receipt.json> --pubkey <site-pub-b64url> | --pin <file> | --domain <host>
+  tollbooth verify <file> --pubkey <site-pub-b64url> | --pin <file> | --domain <host>
+    <file> is a receipt, a snapshot, an export line, or a file of lines (one per line)
   tollbooth voucher inspect <voucher>
   tollbooth voucher mint --agent <pubkey>|--bearer [--key path] [--credits n] [--ttl-days n]`;
 
@@ -200,26 +206,74 @@ async function verifyCmd(args: string[]): Promise<number> {
       return 64;
     }
   }
-  let value: unknown;
+  let text: string;
   try {
-    value = JSON.parse(await readFile(file, "utf8"));
+    text = await readFile(file, "utf8");
   } catch {
     console.log("schema: FAIL (unreadable or not JSON)");
     console.log("FAIL");
     return 1;
   }
-  const { lines, key, ok: docOk } = await checkDocument(value, pubkey);
-  for (const line of lines) console.log(line);
-  let ok = docOk;
+  // FR-001: the whole file as one document first; only if that fails is it a
+  // file of lines. `docs` holds each document with its 1-based physical line
+  // number (null for a single document, which prints with no prefix).
+  let docs: { n: number | null; value: unknown; json: boolean }[];
+  try {
+    docs = [{ n: null, value: JSON.parse(text), json: true }];
+  } catch {
+    docs = [];
+    text.split("\n").forEach((raw, i) => {
+      const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+      if (line.trim() === "") return;
+      try {
+        docs.push({ n: i + 1, value: JSON.parse(line), json: true });
+      } catch {
+        docs.push({ n: i + 1, value: undefined, json: false });
+      }
+    });
+  }
+  if (docs.length === 0) {
+    console.log("schema: FAIL (no documents)");
+    console.log("FAIL");
+    return 1;
+  }
+  let ok = true;
+  const keys = new Set<string>();
+  for (const doc of docs) {
+    const prefix = doc.n === null ? "" : `line ${doc.n}: `;
+    if (!doc.json) {
+      console.log(`${prefix}schema: FAIL (not JSON)`);
+      ok = false;
+      continue;
+    }
+    const result = await checkDocument(doc.value, pubkey);
+    for (const line of result.lines) console.log(prefix + line);
+    keys.add(result.key);
+    ok &&= result.ok;
+  }
   if (domain === undefined) {
     console.log("key not bound to a domain");
+  } else if (keys.size === 0) {
+    // Every line was not JSON (each already a FAIL): no key, so no fetch.
+    console.log("domain: FAIL (no keys)");
+    ok = false;
   } else {
+    // FR-008: one fetch for the whole file; every document's key must be
+    // listed. `_commons.domain` is never consulted (it is unsigned).
     try {
-      const listed = (await domainKeys(domain)).includes(key);
+      const listed = await domainKeys(domain);
+      const unlisted = [...keys].filter((k) => !listed.includes(k));
+      const single = docs[0]?.n === null;
       console.log(
-        `domain: ${listed ? "PASS" : `FAIL (key not listed by ${domain})`}`,
+        `domain: ${
+          unlisted.length === 0
+            ? "PASS"
+            : single
+              ? `FAIL (key not listed by ${domain})`
+              : `FAIL (key not listed by ${domain}: ${unlisted.join(", ")})`
+        }`,
       );
-      ok &&= listed;
+      ok &&= unlisted.length === 0;
     } catch (error) {
       console.log(`domain: FAIL (${(error as Error).message})`);
       ok = false;

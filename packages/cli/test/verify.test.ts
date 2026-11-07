@@ -576,3 +576,123 @@ describe("verify one document: export lines and snapshots, networking disabled",
     }
   });
 });
+
+describe("verify a file of lines (FR-001, FR-007, FR-008)", () => {
+  const COMMONS = new URL("./fixtures/commons/", import.meta.url);
+  const SITE = "S0f4n53Oth5iEYVWgeV5VaxKJ-lrmj7GXtVLxASee88";
+
+  async function fixtureLines(): Promise<string[]> {
+    const lines: string[] = [];
+    for (const name of ["receipts.ndjson", "reports.ndjson"]) {
+      const text = await readFile(new URL(name, COMMONS), "utf8");
+      lines.push(...text.split("\n").filter((l) => l.trim() !== ""));
+    }
+    return lines;
+  }
+
+  async function writeLines(text: string): Promise<string> {
+    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const file = join(dir, "lines.ndjson");
+    await writeFile(file, text);
+    return file;
+  }
+
+  it("PASSes every fixture line under --domain with one fetch", async () => {
+    const lines = await fixtureLines();
+    const keys = lines.map((l) => {
+      const doc = JSON.parse(l) as Record<string, { site: string }>;
+      return (doc.receipt ?? doc.snapshot)?.site as string;
+    });
+    const file = await writeLines(`${lines.join("\n")}\n`);
+    const r = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys }),
+    });
+    expect(r.code).toBe(0);
+    expect(r.stderr.match(/^fetch:/gm)).toHaveLength(1);
+    const out = r.stdout.trim().split("\n");
+    expect(out.slice(-2)).toEqual(["domain: PASS", "PASS"]);
+    for (const l of out.slice(0, -2)) expect(l).toMatch(/^line \d+: /);
+    for (let n = 1; n <= lines.length; n++)
+      expect(r.stdout).toContain(`line ${n}: signature: PASS`);
+  });
+
+  it("FAILs one tampered line by number while the others still report", async () => {
+    const lines = await fixtureLines();
+    const doc = JSON.parse(lines[2] as string) as {
+      snapshot: Record<string, unknown>;
+    };
+    doc.snapshot.free_path_hits = 9999;
+    lines[2] = JSON.stringify(doc);
+    const file = await writeLines(lines.join("\n"));
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("line 3: signature: FAIL");
+    for (const n of [1, 2, 4])
+      expect(r.stdout).toContain(`line ${n}: signature: PASS`);
+    expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
+  it("gives not JSON for trailing data on a line", async () => {
+    // The one real receipt line, repeated (T001 note: the export has one).
+    const [line] = await fixtureLines();
+    const file = await writeLines(`${line}\n${line}${line}\n${line} x\n`);
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("line 1: signature: PASS");
+    expect(r.stdout).toContain("line 2: schema: FAIL (not JSON)\n");
+    expect(r.stdout).toContain("line 3: schema: FAIL (not JSON)\n");
+    expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
+  it("FAILs an empty or blank-only file, with no fetch", async () => {
+    for (const text of ["", "\n \r\n\t\n"]) {
+      const file = await writeLines(text);
+      const r = await cli(["verify", file, "--domain", "example.com"], {
+        preload: FAKESITE,
+        siteJson: JSON.stringify({ v: 1, keys: [SITE] }),
+      });
+      expect(r.code).toBe(1);
+      expect(r.stdout).toBe("schema: FAIL (no documents)\nFAIL\n");
+      expect(r.stderr).not.toContain("fetch:");
+    }
+  });
+
+  it("PASSes CRLF lines and counts blank lines in N", async () => {
+    const lines = await fixtureLines();
+    const file = await writeLines(`${lines[0]}\r\n\r\n${lines[1]}\r\n`);
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("line 1: signature: PASS");
+    expect(r.stdout).toContain("line 3: signature: PASS");
+    expect(r.stdout).not.toContain("line 2:");
+  });
+
+  it("does not trust _commons.domain: an unlisted key FAILs and is named", async () => {
+    const lines = await fixtureLines();
+    const doc = JSON.parse(lines[1] as string) as {
+      _commons: { domain: string };
+    };
+    expect(doc._commons.domain).toBe("tunnelmind.ai");
+    const file = await writeLines(`${lines[1]}\n${lines[2]}\n`);
+    const r = await cli(["verify", file, "--domain", "tunnelmind.ai"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys: ["someone-else"] }),
+    });
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("line 1: signature: PASS");
+    expect(r.stdout).toContain(
+      `domain: FAIL (key not listed by tunnelmind.ai: ${SITE})\n`,
+    );
+    expect(r.stderr.match(/^fetch:/gm)).toHaveLength(1);
+    expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
+  it("keeps a single-document file unprefixed", async () => {
+    const [line] = await fixtureLines();
+    const file = await writeLines(`${line}\n`);
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).not.toMatch(/^line /m);
+  });
+});
