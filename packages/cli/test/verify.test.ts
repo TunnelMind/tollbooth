@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -477,5 +477,102 @@ describe("FR-9 - voucher inspect and mint", () => {
   it("refuses to mint without --agent or --bearer", async () => {
     const result = await cli(["voucher", "mint", "--key", "/tmp/nope.key"]);
     expect(result.code).toBe(64);
+  });
+});
+
+// FR-002/003/006: one document per file, from the real Conduct Log Commons
+// export fixtures (test/fixtures/commons, see SOURCE.md). Each line is
+// {_commons, receipt|snapshot}; the inner value alone is the bare document.
+describe("verify one document: export lines and snapshots, networking disabled", () => {
+  const COMMONS = new URL("./fixtures/commons/", import.meta.url);
+  const WRAPPED = ", from an export line; the _commons envelope is not signed";
+
+  async function firstLine(name: string) {
+    const text = await readFile(new URL(name, COMMONS), "utf8");
+    return JSON.parse(text.split("\n")[0] as string) as Record<
+      string,
+      Record<string, unknown>
+    >;
+  }
+
+  async function verifyDoc(doc: unknown, pubkey: string) {
+    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const file = join(dir, "doc.json");
+    await writeFile(file, JSON.stringify(doc));
+    return cli(["verify", file, "--pubkey", pubkey]);
+  }
+
+  const pass =
+    "schema: PASS\ncanonical form: PASS\nsignature: PASS\n" +
+    "key not bound to a domain\nPASS\n";
+
+  it("PASSes a wrapped receipt line and names the document", async () => {
+    const line = await firstLine("receipts.ndjson");
+    const r = await verifyDoc(line, line.receipt?.site as string);
+    expect(r.stdout).toBe(`document: receipt${WRAPPED}\n${pass}`);
+    expect(r.code).toBe(0);
+  });
+
+  it("PASSes a bare receipt with no document line", async () => {
+    const { receipt } = await firstLine("receipts.ndjson");
+    const r = await verifyDoc(receipt, receipt?.site as string);
+    expect(r.stdout).toBe(pass);
+    expect(r.code).toBe(0);
+  });
+
+  it("PASSes a wrapped snapshot line", async () => {
+    const line = await firstLine("reports.ndjson");
+    const r = await verifyDoc(line, line.snapshot?.site as string);
+    expect(r.stdout).toBe(`document: snapshot${WRAPPED}\n${pass}`);
+    expect(r.code).toBe(0);
+  });
+
+  it("PASSes a bare snapshot", async () => {
+    const { snapshot } = await firstLine("reports.ndjson");
+    const r = await verifyDoc(snapshot, snapshot?.site as string);
+    expect(r.stdout).toBe(`document: snapshot\n${pass}`);
+    expect(r.code).toBe(0);
+  });
+
+  it("FAILs a tampered snapshot on the signature", async () => {
+    const { snapshot } = await firstLine("reports.ndjson");
+    const tampered = { ...snapshot, free_path_hits: 9999 };
+    const r = await verifyDoc(tampered, snapshot?.site as string);
+    expect(r.stdout).toContain("schema: PASS");
+    expect(r.stdout).toContain("signature: FAIL");
+    expect(r.code).toBe(1);
+  });
+
+  it("FAILs a snapshot without sig on the schema", async () => {
+    const { snapshot } = await firstLine("reports.ndjson");
+    const { sig: _sig, ...unsigned } = snapshot as Record<string, unknown>;
+    const r = await verifyDoc(unsigned, snapshot?.site as string);
+    expect(r.stdout).toContain("document: snapshot\n");
+    expect(r.stdout).toContain("schema: FAIL (schema: sig must be a string)");
+    expect(r.code).toBe(1);
+  });
+
+  it("reports site-mismatch for the wrong --pubkey", async () => {
+    const line = await firstLine("reports.ndjson");
+    const other = toBase64Url((await makeSite()).pub);
+    const r = await verifyDoc(line, other);
+    expect(r.stdout).toContain("schema: FAIL (site-mismatch)");
+    expect(r.code).toBe(1);
+  });
+
+  it("FAILs ambiguous export wrappers on the schema", async () => {
+    const rline = await firstLine("receipts.ndjson");
+    const sline = await firstLine("reports.ndjson");
+    const site = rline.receipt?.site as string;
+    for (const doc of [
+      { ...rline, snapshot: sline.snapshot },
+      { _commons: rline._commons },
+      { ...rline, extra: 1 },
+    ]) {
+      const r = await verifyDoc(doc, site);
+      expect(r.stdout).toMatch(/^schema: FAIL \(export line: /);
+      expect(r.stdout).not.toContain("document:");
+      expect(r.code).toBe(1);
+    }
   });
 });

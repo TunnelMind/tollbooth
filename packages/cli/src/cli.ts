@@ -3,8 +3,10 @@
 // tollbooth CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
 // mint is the re-mint fallback for expired-unredeemed purchases, spec 5.3).
 //
-// `verify` trust: the receipt file is hostile and only core's verifyReceipt
-// judges it. The key is the operator's --pubkey or --pin file; with --domain
+// `verify` trust: the file is hostile and only core judges it: verifySnapshot
+// for an observe snapshot, verifyReceipt for anything else. A Conduct Log
+// Commons export line ({_commons, receipt|snapshot}) is unwrapped first; its
+// _commons envelope is unsigned and never verified. The key is the operator's --pubkey or --pin file; with --domain
 // alone it is the receipt's own `site` key, which passes only if
 // https://<host>/.well-known/tollbooth-site.json lists it (a bare host[:port],
 // no redirects, 5 s timeout, 64 KB cap). Exit 0 PASS, 1 FAIL, 64 usage.
@@ -18,6 +20,7 @@ import {
   mintVoucher,
   toBase64Url,
   verifyReceipt,
+  verifySnapshot,
 } from "@tunnelmindai/tollbooth-core";
 import { loadOrCreateSiteKey } from "@tunnelmindai/tollbooth-core/node";
 import { corpusHash, generateCorpus } from "@tunnelmindai/tollbooth-maze";
@@ -102,6 +105,76 @@ async function domainKeys(host: string): Promise<string[]> {
 }
 
 /**
+ * Checks one parsed document (FR-002, FR-003, FR-006) and returns its report
+ * lines, the key it was checked against (for the --domain step) and the
+ * verdict. An export line `{_commons, receipt|snapshot}` is unwrapped first;
+ * `_commons` itself is never verified, so the report says so. A snapshot goes
+ * to verifySnapshot, anything else to verifyReceipt, so a bare receipt (and
+ * garbage) prints exactly what it did before export lines existed.
+ */
+async function checkDocument(
+  parsed: unknown,
+  pubkey: string | undefined,
+): Promise<{ lines: string[]; key: string; ok: boolean }> {
+  let value = parsed;
+  let unwrapped = false;
+  if (value !== null && typeof value === "object" && "_commons" in value) {
+    const keys = Object.keys(value);
+    const inner = keys.filter((k) => k === "receipt" || k === "snapshot");
+    if (keys.length !== 2 || inner.length !== 1) {
+      const why =
+        inner.length === 2
+          ? "both receipt and snapshot"
+          : inner.length === 0
+            ? "no receipt or snapshot"
+            : "unexpected keys";
+      return {
+        lines: [
+          `schema: FAIL (export line: ${why})`,
+          "canonical form: SKIPPED",
+          "signature: SKIPPED",
+        ],
+        key: "",
+        ok: false,
+      };
+    }
+    value = (value as Record<string, unknown>)[inner[0] as string];
+    unwrapped = true;
+  }
+  const isSnapshot =
+    (value as { kind?: unknown } | null)?.kind === "tollbooth-observe-snapshot";
+  const lines: string[] = [];
+  if (unwrapped || isSnapshot)
+    lines.push(
+      `document: ${isSnapshot ? "snapshot" : "receipt"}${unwrapped ? ", from an export line; the _commons envelope is not signed" : ""}`,
+    );
+  // --domain alone: verify against the document's own site key, then require
+  // the domain to vouch for it. A non-string falls to the schema check.
+  const site = (value as { site?: unknown } | null)?.site;
+  const key = pubkey ?? (typeof site === "string" ? site : "");
+  let keyBytes: Uint8Array = new Uint8Array();
+  try {
+    keyBytes = fromBase64Url(key);
+  } catch {
+    // not base64url: left empty, so the verifier reports site-mismatch
+  }
+  const result = isSnapshot
+    ? await verifySnapshot(value, keyBytes)
+    : await verifyReceipt(value, keyBytes);
+  // Both verifiers check schema, then canonical form, then signature, and
+  // report the first failure: each line reads PASS up to it, FAIL at it,
+  // SKIPPED after it.
+  const canonFail = result.reason?.startsWith("canonical form") ?? false;
+  const schemaOk = result.ok || result.reason === "signature" || canonFail;
+  lines.push(
+    `schema: ${schemaOk ? "PASS" : `FAIL (${result.reason})`}`,
+    `canonical form: ${!schemaOk ? "SKIPPED" : canonFail ? `FAIL (${result.reason})` : "PASS"}`,
+    `signature: ${result.ok ? "PASS" : schemaOk && !canonFail ? "FAIL" : "SKIPPED"}`,
+  );
+  return { lines, key, ok: result.ok };
+}
+
+/**
  * AC-6.1: verification, printing each check. No network unless --domain is
  * given; --pubkey/--pin verify offline but say the key is not domain-bound.
  */
@@ -135,30 +208,9 @@ async function verifyCmd(args: string[]): Promise<number> {
     console.log("FAIL");
     return 1;
   }
-  // --domain alone: verify against the receipt's own site key, then require
-  // the domain to vouch for it below. A non-string falls to the schema check.
-  const site = (value as { site?: unknown } | null)?.site;
-  const key = pubkey ?? (typeof site === "string" ? site : "");
-  let keyBytes: Uint8Array = new Uint8Array();
-  try {
-    keyBytes = fromBase64Url(key);
-  } catch {
-    // not base64url: left empty, so verifyReceipt reports site-mismatch
-  }
-  const result = await verifyReceipt(value, keyBytes);
-  // verifyReceipt checks schema, then canonical form, then signature, and
-  // reports the first failure: each line reads PASS up to it, FAIL at it,
-  // SKIPPED after it.
-  const canonFail = result.reason?.startsWith("canonical form") ?? false;
-  const schemaOk = result.ok || result.reason === "signature" || canonFail;
-  console.log(`schema: ${schemaOk ? "PASS" : `FAIL (${result.reason})`}`);
-  console.log(
-    `canonical form: ${!schemaOk ? "SKIPPED" : canonFail ? `FAIL (${result.reason})` : "PASS"}`,
-  );
-  console.log(
-    `signature: ${result.ok ? "PASS" : schemaOk && !canonFail ? "FAIL" : "SKIPPED"}`,
-  );
-  let ok = result.ok;
+  const { lines, key, ok: docOk } = await checkDocument(value, pubkey);
+  for (const line of lines) console.log(line);
+  let ok = docOk;
   if (domain === undefined) {
     console.log("key not bound to a domain");
   } else {
