@@ -7,7 +7,7 @@ import type { Decision, Identity, PipelineRequest } from "./pipeline.js";
 
 /**
  * Every header name the bindings' request parser reads (`requestFromContext`
- * in @tollbooth/hono). It lives here because hono and cloudflare both depend
+ * in @tunnelmindai/tollbooth-hono). It lives here because hono and cloudflare both depend
  * on core; hono's parser test checks its `header("…")` reads against this
  * list, and the arrival test checks each name has exactly one row — so the
  * reading cannot drift from what is actually parsed.
@@ -69,7 +69,7 @@ export const ARRIVAL_KEPT_SCOPE =
   "an ordinary request like this one; this arrival request itself is never recorded";
 
 /**
- * What record() in @tollbooth/hono keeps for a request with this decision, in
+ * What record() in @tunnelmindai/tollbooth-hono keeps for a request with this decision, in
  * record()'s own branch order. record() gates its agent ledger on this, so the
  * reading and the ledger cannot drift. Takes any Decision; the arrival route
  * also passes `{ identity }` alone for "identified, not a verified pass".

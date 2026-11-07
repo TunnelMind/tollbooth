@@ -18,9 +18,9 @@ import {
   mintVoucher,
   toBase64Url,
   verifyReceipt,
-} from "@tollbooth/core";
-import { loadOrCreateSiteKey } from "@tollbooth/core/node";
-import { corpusHash, generateCorpus } from "@tollbooth/maze";
+} from "@tunnelmindai/tollbooth-core";
+import { loadOrCreateSiteKey } from "@tunnelmindai/tollbooth-core/node";
+import { corpusHash, generateCorpus } from "@tunnelmindai/tollbooth-maze";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]

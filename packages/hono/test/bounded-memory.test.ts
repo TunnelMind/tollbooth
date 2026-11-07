@@ -1,13 +1,13 @@
 // B004: attacker-sized UAs and paths must not grow the middleware's memory
 // without bound - every recorded copy is truncated and the stats map has a
 // byte budget on top of its entry cap.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import {
   generateSecretKey,
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {

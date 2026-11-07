@@ -1,7 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { serve } from "@hono/node-server";
-import { generateSecretKey, mintVoucher, publicKeyOf } from "@tollbooth/core";
-import { tollbooth } from "@tollbooth/hono";
+import {
+  generateSecretKey,
+  mintVoucher,
+  publicKeyOf,
+} from "@tunnelmindai/tollbooth-core";
+import { tollbooth } from "@tunnelmindai/tollbooth-hono";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { fetchPaying } from "../agent-client.js";

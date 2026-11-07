@@ -1,7 +1,7 @@
 {
-  "name": "@tollbooth/hono",
+  "name": "@tunnelmindai/tollbooth-hono",
   "version": "2.1.0",
-  "description": "Hono middleware binding of @tollbooth/core \u2014 one package covers Node, Bun, and Cloudflare Workers.",
+  "description": "Hono middleware binding of @tunnelmindai/tollbooth-core \u2014 one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -16,12 +16,12 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@tollbooth/core": "workspace:*"
+    "@tunnelmindai/tollbooth-core": "workspace:*"
   },
   "devDependencies": {
-    "@tollbooth/adapter-stripe": "workspace:*",
-    "@tollbooth/adapter-x402": "workspace:*",
-    "@tollbooth/maze": "workspace:*",
+    "@tunnelmindai/tollbooth-adapter-stripe": "workspace:*",
+    "@tunnelmindai/tollbooth-adapter-x402": "workspace:*",
+    "@tunnelmindai/tollbooth-maze": "workspace:*",
     "hono": "^4.13.7"
   },
   "peerDependencies": {

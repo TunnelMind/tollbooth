@@ -1,6 +1,6 @@
 // B008: fail open on our own fault, never on the origin's; and a verify-only
 // x402 adapter is refused at startup on mainnet.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

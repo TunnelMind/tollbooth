@@ -5,7 +5,7 @@
 // doc's "round-trip tested only" limit: if our bytes matched only
 // ourselves, this suite would fail.
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { parseConfig } from "@tollbooth/core";
+import { parseConfig } from "@tunnelmindai/tollbooth-core";
 import { hashTypedData } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";

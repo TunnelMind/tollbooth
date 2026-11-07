@@ -1,8 +1,8 @@
 // Node example: the tollbooth on @hono/node-server (ADR 002). Testnet
 // values only - the operator sets real ones (Constitution V.15).
 import { serve } from "@hono/node-server";
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
-import { tollbooth } from "@tollbooth/hono";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { tollbooth } from "@tunnelmindai/tollbooth-hono";
 import { Hono } from "hono";
 
 const config = `
