@@ -204,6 +204,130 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
   });
 });
 
+// Golden output: pins today's full `verify` stdout and exit code byte for
+// byte, so a refactor of cli.ts cannot change the report without failing
+// here. A fixed secret key plus fixed facts make every receipt identical on
+// every run (Ed25519 signing is deterministic). Expected strings are inline,
+// copied from the CLI's output before any refactor; no snapshot files.
+describe("AC-6.1 golden output - exact verify stdout and exit code", () => {
+  const PAID = {
+    type: "PASS_PAID" as const,
+    agentKey: "k",
+    ua: "u",
+    path: "/a",
+    count: 1,
+    windowStartS: NOW,
+    windowEndS: NOW,
+  };
+
+  async function fixedSite() {
+    const secret = new Uint8Array(32).fill(7);
+    return { secret, pub: await publicKeyOf(secret) };
+  }
+
+  async function verifyBody(body: string, pub: Uint8Array) {
+    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const file = join(dir, "receipt.json");
+    await writeFile(file, body);
+    return cli(["verify", file, "--pubkey", toBase64Url(pub)]);
+  }
+
+  it("genuine receipt", async () => {
+    const site = await fixedSite();
+    const receipt = await buildReceipt(
+      {
+        type: "TOLL_IGNORED",
+        agentKey: "k",
+        ua: "TestBot/1.0",
+        path: "/articles/x",
+        count: 4,
+        windowStartS: NOW - 600,
+        windowEndS: NOW,
+      },
+      site,
+    );
+    const result = await verifyBody(JSON.stringify(receipt, null, 2), site.pub);
+    expect(result.stdout).toBe(
+      "schema: PASS\n" +
+        "canonical form: PASS\n" +
+        "signature: PASS\n" +
+        "key not bound to a domain\n" +
+        "PASS\n",
+    );
+    expect(result.code).toBe(0);
+  });
+
+  it("lone surrogate", async () => {
+    const site = await fixedSite();
+    const receipt = await buildReceipt(PAID, site);
+    const result = await verifyBody(
+      JSON.stringify(receipt).replace('"ua":"u"', '"ua":"\\udc00"'),
+      site.pub,
+    );
+    expect(result.stdout).toBe(
+      "schema: PASS\n" +
+        "canonical form: FAIL (canonical form: JCS: lone surrogate in string)\n" +
+        "signature: SKIPPED\n" +
+        "key not bound to a domain\n" +
+        "FAIL\n",
+    );
+    expect(result.code).toBe(1);
+  });
+
+  it("lone surrogate and mis-spelled signature", async () => {
+    const site = await fixedSite();
+    const receipt = await buildReceipt(PAID, site);
+    const result = await verifyBody(
+      JSON.stringify({ ...receipt, sig: `${receipt.sig}==` }).replace(
+        '"ua":"u"',
+        '"ua":"\\udc00"',
+      ),
+      site.pub,
+    );
+    expect(result.stdout).toBe(
+      "schema: PASS\n" +
+        "canonical form: FAIL (canonical form: JCS: lone surrogate in string)\n" +
+        "signature: SKIPPED\n" +
+        "key not bound to a domain\n" +
+        "FAIL\n",
+    );
+    expect(result.code).toBe(1);
+  });
+
+  it("tampered count", async () => {
+    const site = await fixedSite();
+    const receipt = await buildReceipt(PAID, site);
+    const result = await verifyBody(
+      JSON.stringify({ ...receipt, count: 999 }),
+      site.pub,
+    );
+    expect(result.stdout).toBe(
+      "schema: PASS\n" +
+        "canonical form: PASS\n" +
+        "signature: FAIL\n" +
+        "key not bound to a domain\n" +
+        "FAIL\n",
+    );
+    expect(result.code).toBe(1);
+  });
+
+  it("garbage", async () => {
+    const site = await fixedSite();
+    const result = await verifyBody(
+      JSON.stringify({ hello: "world" }),
+      site.pub,
+    );
+    expect(result.stdout).toBe(
+      "schema: FAIL (schema: v must be 1)\n" +
+        "canonical form: SKIPPED\n" +
+        "signature: SKIPPED\n" +
+        "key not bound to a domain\n" +
+        "FAIL\n",
+    );
+    expect(result.code).toBe(1);
+  });
+});
+
 /** A genuine receipt on disk plus its site key, for the key-source tests. */
 async function receiptFile() {
   const site = await makeSite();
