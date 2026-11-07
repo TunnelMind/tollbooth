@@ -645,6 +645,25 @@ describe("verify a file of lines (FR-001, FR-007, FR-008)", () => {
     expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
   });
 
+  it("FAILs a truncated pretty-printed document once, not per line", async () => {
+    const [line] = await fixtureLines();
+    const pretty = JSON.stringify(JSON.parse(line as string), null, 2);
+    const file = await writeLines(pretty.slice(0, pretty.length / 2));
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toBe("schema: FAIL (unreadable or not JSON)\nFAIL\n");
+  });
+
+  it("keeps per-line reports when a line-shaped file has a garbage line", async () => {
+    const [line] = await fixtureLines();
+    const file = await writeLines(`${line}\nnot json at all\n`);
+    const r = await cli(["verify", file, "--pubkey", SITE]);
+    expect(r.code).toBe(1);
+    expect(r.stdout).toContain("line 1: signature: PASS");
+    expect(r.stdout).toContain("line 2: schema: FAIL (not JSON)\n");
+    expect(r.stdout.trim().endsWith("FAIL")).toBe(true);
+  });
+
   it("FAILs an empty or blank-only file, with no fetch", async () => {
     for (const text of ["", "\n \r\n\t\n"]) {
       const file = await writeLines(text);

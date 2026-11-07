@@ -221,6 +221,17 @@ async function verifyCmd(args: string[]): Promise<number> {
   try {
     docs = [{ n: null, value: JSON.parse(text), json: true }];
   } catch {
+    // A broken pretty-printed document (first line a lone `{` or `{ "a":`)
+    // is one bad document, not a file of lines: report it once, as before
+    // files of lines existed. A first line that closes with `}` (any first
+    // line that parses as an object does) reads as a line-shaped file and
+    // gets per-line reports.
+    const first = (text.split("\n").find((l) => l.trim() !== "") ?? "").trim();
+    if (first.startsWith("{") && !first.endsWith("}")) {
+      console.log("schema: FAIL (unreadable or not JSON)");
+      console.log("FAIL");
+      return 1;
+    }
     docs = [];
     text.split("\n").forEach((raw, i) => {
       const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
