@@ -1,5 +1,7 @@
 # @tunnelmindai/tollbooth-cli
 
+> **Notice:** This package is not published. Run it from source with `node packages/cli/dist/cli.js` (build first with `pnpm build`).
+
 tollbooth CLI: maze corpus generation, offline receipt verification, voucher inspect/mint.
 
 Part of [tollbooth](https://github.com/TunnelMind/tollbooth) - pay the toll or meet

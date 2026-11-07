@@ -1,5 +1,7 @@
 # @tunnelmindai/tollbooth-adapter-stripe
 
+> **Notice:** Stripe was retired as a TunnelMind payment processor in October 2026. This package is not published and is kept in-repo only.
+
 Stripe webhook handling and render-once voucher redemption for tollbooth.
 
 Part of [tollbooth](https://github.com/TunnelMind/tollbooth) - pay the toll or meet
