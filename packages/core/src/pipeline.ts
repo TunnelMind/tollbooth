@@ -27,7 +27,7 @@ export interface PipelineRequest {
   signatureAgent?: string;
   /** X-PAYMENT header, verbatim, when the client is retrying with proof. */
   payment?: string;
-  /** Tollbooth-Voucher header, verbatim. */
+  /** Fareseal-Voucher header, verbatim. */
   voucher?: string;
   /** Client IP from a source the binding trusts; absent when it has none. */
   clientIp?: string;
@@ -54,7 +54,7 @@ export type OfferOption =
       method: "stripe-voucher";
       payment_link: string;
       credits: number;
-      voucher_header: "Tollbooth-Voucher";
+      voucher_header: "Fareseal-Voucher";
     };
 
 export type Decision =
@@ -148,7 +148,7 @@ export function buildOfferBody(cfg: FaresealConfig): OfferBody {
       method: "stripe-voucher",
       payment_link: cfg.toll.stripe.payment_link,
       credits: cfg.toll.stripe.credits_per_purchase,
-      voucher_header: "Tollbooth-Voucher",
+      voucher_header: "Fareseal-Voucher",
     });
   }
   return { v: 1, price_usd: cfg.toll.price_usd, options };

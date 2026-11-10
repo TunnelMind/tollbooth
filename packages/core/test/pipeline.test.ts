@@ -210,7 +210,7 @@ describe("step 8 - the 402 offer body (AC-2.1 shape, AC-7.2 machine-readable)", 
       method: "stripe-voucher",
       payment_link: "https://buy.stripe.com/test_123",
       credits: 5000,
-      voucher_header: "Tollbooth-Voucher",
+      voucher_header: "Fareseal-Voucher",
     });
   });
 });

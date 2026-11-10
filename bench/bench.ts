@@ -102,9 +102,12 @@ const scenarios: Array<[string, () => unknown]> = [
     "voucher spend + re-sign (ed25519 x2)",
     async () => {
       const resp = await voucherApp.request("http://x.test/a", {
-        headers: { ...CURL, "tollbooth-voucher": voucher },
+        headers: { ...CURL, "fareseal-voucher": voucher },
       });
-      voucher = resp.headers.get("tollbooth-voucher") ?? voucher;
+      voucher =
+        resp.headers.get("fareseal-voucher") ??
+        resp.headers.get("tollbooth-voucher") ?? // pre-rename alias
+        voucher;
     },
   ],
 ];

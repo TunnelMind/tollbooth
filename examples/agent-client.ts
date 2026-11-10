@@ -50,7 +50,7 @@ export async function fetchPaying(
   const offer = (await first.json()) as Offer;
 
   if (creds.voucher !== undefined)
-    return f(url, { headers: { "tollbooth-voucher": creds.voucher } });
+    return f(url, { headers: { "fareseal-voucher": creds.voucher } });
 
   const x = offer.options.find((o) => o.method === "x402");
   if (!x?.network || !x.pay_to || !x.price_usd || !creds.ethKeyHex)

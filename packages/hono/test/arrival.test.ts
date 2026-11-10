@@ -228,7 +228,8 @@ describe("A002 GET /_tollbooth/arrival", () => {
     const secrets = {
       cookie: "session=COOKIE-SECRET-123",
       "x-payment": "PAYMENT-SECRET-456",
-      "tollbooth-voucher": "VOUCHER-SECRET-789",
+      "fareseal-voucher": "VOUCHER-SECRET-789",
+      "tollbooth-voucher": "VOUCHER-SECRET-OLD",
       signature: "sig1=:SIGNATURE-SECRET-abc:",
       "signature-input": "sig1=(INPUT-SECRET-def)",
     };
@@ -241,6 +242,7 @@ describe("A002 GET /_tollbooth/arrival", () => {
       "COOKIE-SECRET-123",
       "PAYMENT-SECRET-456",
       "VOUCHER-SECRET-789",
+      "VOUCHER-SECRET-OLD",
       "SIGNATURE-SECRET-abc",
       "INPUT-SECRET-def",
     ])

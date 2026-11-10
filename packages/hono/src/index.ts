@@ -432,6 +432,8 @@ function requestFromContext(
   const clientIp = clientIpOf?.(c);
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);
+  const voucherHeader =
+    header("fareseal-voucher") ?? header("tollbooth-voucher");
   return {
     // Raw (still %-encoded) pathname: c.req.path is decoded, which would break
     // a WBA "@path" signature made over the wire bytes and free-path matching.
@@ -459,9 +461,9 @@ function requestFromContext(
     ...(header("x-payment") !== undefined
       ? { payment: header("x-payment") as string }
       : {}),
-    ...(header("tollbooth-voucher") !== undefined
-      ? { voucher: header("tollbooth-voucher") as string }
-      : {}),
+    // `tollbooth-voucher` is the pre-rename name, read until 3.0.0; the new
+    // header wins when both are present.
+    ...(voucherHeader !== undefined ? { voucher: voucherHeader } : {}),
     ...(clientIp !== undefined ? { clientIp } : {}),
   };
 }
@@ -898,8 +900,11 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
 
     if (cfg.mode === "observe") return next();
     if (decision.action === "pass") {
-      if (decision.voucher !== undefined)
+      if (decision.voucher !== undefined) {
+        c.header("fareseal-voucher", decision.voucher);
+        // Old name emitted too until 3.0.0, so un-migrated agents keep the chain.
         c.header("tollbooth-voucher", decision.voucher);
+      }
       await next();
       // x402 v1 settlement receipt. A local-only verifier has no on-chain
       // transaction, so `transaction` is "" there.

@@ -95,6 +95,7 @@ describe("arrivalReading", () => {
     const r = arrivalReading(curl, anon);
     for (const name of [
       "x-payment",
+      "fareseal-voucher",
       "tollbooth-voucher",
       "signature",
       "signature-input",
@@ -236,6 +237,7 @@ describe("arrivalReading present", () => {
     "signature",
     "signature-input",
     "x-payment",
+    "fareseal-voucher",
     "tollbooth-voucher",
   ];
 

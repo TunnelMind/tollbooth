@@ -22,7 +22,8 @@ export const REQUEST_HEADERS_READ = [
   "signature-input",
   "signature-agent",
   "x-payment",
-  "tollbooth-voucher",
+  "fareseal-voucher",
+  "tollbooth-voucher", // pre-rename alias, read until 3.0.0
 ] as const;
 
 // "counter only": a verified search/preview pass bumps its own counter and
@@ -192,6 +193,8 @@ export function arrivalReading(
       "Web Bot Auth key directory lookup",
     ),
     secret("x-payment", "x402 payment verification", req.payment !== undefined),
+    secret("fareseal-voucher", "voucher spend", req.voucher !== undefined),
+    // pre-rename alias, still read until 3.0.0
     secret("tollbooth-voucher", "voucher spend", req.voucher !== undefined),
     valueRow(
       "client_ip",

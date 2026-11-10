@@ -16,5 +16,6 @@ Tollbooth was renamed Fareseal on 2026-11-10. One row per renamed surface.
 | Route `/_tollbooth/report` | `/_tollbooth/report` | `/_fareseal/report` | Yes: served as an alias with identical handling | 3.0.0 |
 | Route `/_tollbooth/stripe-webhook` | `/_tollbooth/stripe-webhook` | `/_fareseal/stripe-webhook` | Yes: served as an alias with identical handling | 3.0.0 |
 | Route `/_tollbooth/voucher/` | `/_tollbooth/voucher/` | `/_fareseal/voucher/` | Yes: served as an alias with identical handling | 3.0.0 |
+| Request/response header `tollbooth-voucher` | `tollbooth-voucher` | `fareseal-voucher` | Yes: the old header is read as a fallback (new wins when both are sent) and emitted alongside the new one | 3.0.0 |
 
 `PRICE_USD` and `LEAK_REPLAY` do not exist on origin/main: `git grep -n 'PRICE_USD\|LEAK_REPLAY'` finds nothing (only the lower-case `price_usd` settle-body field, which is not an env var), so there is nothing to alias.

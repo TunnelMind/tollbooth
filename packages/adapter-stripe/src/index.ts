@@ -102,7 +102,7 @@ interface CheckoutSession {
 const PAGE_FOUND = (voucher: string) => `<!doctype html>
 <title>Your Fareseal voucher</title>
 <h1>Voucher &mdash; shown once</h1>
-<p>Send this on every request in the <code>Tollbooth-Voucher</code> header.
+<p>Send this on every request in the <code>Fareseal-Voucher</code> header.
 It is stored nowhere else; save it now.</p>
 <p><code id="voucher">${voucher}</code></p>`;
 

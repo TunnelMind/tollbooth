@@ -96,6 +96,7 @@ bearer = true
     });
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe("paid content");
-    expect(resp.headers.get("tollbooth-voucher")).toBeTruthy(); // the successor rides back
+    expect(resp.headers.get("fareseal-voucher")).toBeTruthy();
+    expect(resp.headers.get("tollbooth-voucher")).toBeTruthy(); // old name, until 3.0.0 // the successor rides back
   });
 });
