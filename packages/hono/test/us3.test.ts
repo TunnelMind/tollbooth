@@ -2,14 +2,14 @@
 // spends the voucher. Purchase (mocked webhook) -> render-once redemption ->
 // key-bound spends with decrementing re-signs -> mismatch 403 -> soft replay
 // damping. Everything crosses a real Hono app.
-import { makeStripeAdapter } from "@tunnelmindai/tollbooth-adapter-stripe";
+import { makeStripeAdapter } from "@tunnelmindai/fareseal-adapter-stripe";
 import {
   decodeVoucher,
   generateSecretKey,
   parseConfig,
   publicKeyOf,
   type SiteKeyPair,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

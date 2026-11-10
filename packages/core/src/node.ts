@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Node-only entry (@tunnelmindai/tollbooth-core/node): key-file I/O. The root entry stays
+// Node-only entry (@tunnelmindai/fareseal-core/node): key-file I/O. The root entry stays
 // platform-free for Workers; anything touching the filesystem lives here.
 import { readFile, writeFile } from "node:fs/promises";
 import {

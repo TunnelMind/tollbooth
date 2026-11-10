@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-core
+# @tunnelmindai/fareseal-core
 
 Framework-free toll logic: identification, offers, vouchers, signed conduct receipts, config.
 

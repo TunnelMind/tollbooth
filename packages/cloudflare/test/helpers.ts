@@ -1,4 +1,4 @@
-// Shared test scaffolding for the @tunnelmindai/tollbooth-cloudflare acceptance suites.
+// Shared test scaffolding for the @tunnelmindai/fareseal-cloudflare acceptance suites.
 import { PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";
 
 export const HUMAN_UA =

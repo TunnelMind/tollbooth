@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-adapter-stripe: webhook handling and voucher minting, mounted on
+// @tunnelmindai/fareseal-adapter-stripe: webhook handling and voucher minting, mounted on
 // the operator's own app with the operator's own keys - we host nothing
 // (Article I.3). No Stripe SDK: webhook signatures are HMAC-SHA256 over
 // `t.payload`, done with WebCrypto, so the adapter stays platform-free.
@@ -10,10 +10,7 @@
 // which renders it exactly once. Expired unredeemed -> the buyer contacts the
 // operator, who re-mints (`cli voucher mint`); Stripe is the record of
 // purchase. No customer table, ever (Article I.2).
-import {
-  mintVoucher,
-  type TollboothConfig,
-} from "@tunnelmindai/tollbooth-core";
+import { mintVoucher, type TollboothConfig } from "@tunnelmindai/fareseal-core";
 
 const encoder = new TextEncoder();
 

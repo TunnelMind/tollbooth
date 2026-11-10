@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-adapter-stripe
+# @tunnelmindai/fareseal-adapter-stripe
 
 > **Notice:** Stripe was retired as a TunnelMind payment processor in October 2026. This package is not published and is kept in-repo only.
 

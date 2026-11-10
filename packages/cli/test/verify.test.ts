@@ -11,8 +11,8 @@ import {
   publicKeyOf,
   spendVoucher,
   toBase64Url,
-} from "@tunnelmindai/tollbooth-core";
-import { loadOrCreateSiteKey } from "@tunnelmindai/tollbooth-core/node";
+} from "@tunnelmindai/fareseal-core";
+import { loadOrCreateSiteKey } from "@tunnelmindai/fareseal-core/node";
 import { describe, expect, it } from "vitest";
 
 const run = promisify(execFile);

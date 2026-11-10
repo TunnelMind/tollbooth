@@ -1,6 +1,6 @@
 {
-  "name": "@tunnelmindai/tollbooth-adapter-x402",
-  "version": "2.0.0",
+  "name": "@tunnelmindai/fareseal-adapter-x402",
+  "version": "2.2.0",
   "description": "x402 offer headers and payment-proof verification. Chain specifics stay inside this boundary.",
   "license": "MIT",
   "type": "module",
@@ -20,7 +20,7 @@
     "@noble/hashes": "2.3.0"
   },
   "devDependencies": {
-    "@tunnelmindai/tollbooth-core": "workspace:*",
+    "@tunnelmindai/fareseal-core": "workspace:*",
     "viem": "^2.55.19"
   },
   "repository": {

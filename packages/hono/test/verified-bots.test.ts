@@ -1,4 +1,4 @@
-import { botRanges } from "@tunnelmindai/tollbooth-core";
+import { botRanges } from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { dirWith, NOW } from "../../core/test/fixtures/wba.js";
@@ -17,7 +17,7 @@ const GOOGLE_V4 = (
 const GOOGLEBOT =
   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
-// The Workers-style trusted source, as @tunnelmindai/tollbooth-cloudflare wires it.
+// The Workers-style trusted source, as @tunnelmindai/fareseal-cloudflare wires it.
 const CF_IP: Partial<TollboothOptions> = {
   clientIp: (c) => c.req.header("cf-connecting-ip"),
 };

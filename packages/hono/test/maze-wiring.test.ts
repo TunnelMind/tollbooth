@@ -1,12 +1,12 @@
 // US-4 through a real Hono app: grace offers, then the maze; spoofers
 // straight to the maze; payment redeems (AC-4.1/4.2/4.4).
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
-import { parseConfig } from "@tunnelmindai/tollbooth-core";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
 import {
   corpusFromMap,
   generateCorpus,
   makeMazeHandler,
-} from "@tunnelmindai/tollbooth-maze";
+} from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

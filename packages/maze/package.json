@@ -1,6 +1,6 @@
 {
-  "name": "@tunnelmindai/tollbooth-maze",
-  "version": "2.0.0",
+  "name": "@tunnelmindai/fareseal-maze",
+  "version": "2.2.0",
   "description": "Static decoy-maze corpus loader and handler. Pre-generated content only, never inference.",
   "license": "MIT",
   "type": "module",
@@ -20,7 +20,7 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@tunnelmindai/tollbooth-core": "workspace:*"
+    "@tunnelmindai/fareseal-core": "workspace:*"
   },
   "repository": {
     "type": "git",

@@ -26,9 +26,9 @@ import {
   toBase64Url,
   verifyReceipt,
   verifySnapshot,
-} from "@tunnelmindai/tollbooth-core";
-import { loadOrCreateSiteKey } from "@tunnelmindai/tollbooth-core/node";
-import { corpusHash, generateCorpus } from "@tunnelmindai/tollbooth-maze";
+} from "@tunnelmindai/fareseal-core";
+import { loadOrCreateSiteKey } from "@tunnelmindai/fareseal-core/node";
+import { corpusHash, generateCorpus } from "@tunnelmindai/fareseal-maze";
 
 const USAGE = `usage:
   tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]

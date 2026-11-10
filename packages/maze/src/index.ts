@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-maze: corpus loader interface and the serving handler.
+// @tunnelmindai/fareseal-maze: corpus loader interface and the serving handler.
 // Content is pre-generated (VI.17); serving cost is one corpus read plus a
 // timer (AC-4.3) - never generation, never a busy-wait. Every response
 // carries X-Robots-Tag and no-store: the maze must never leak into search
 // indexes or CDN caches (VI.18 - poisoning the operator's SEO is a
 // release-blocking bug).
-import type { TollboothConfig } from "@tunnelmindai/tollbooth-core";
+import type { TollboothConfig } from "@tunnelmindai/fareseal-core";
 import { fnv1a, pageName } from "./corpus.js";
 
 export type { CorpusOptions } from "./corpus.js";

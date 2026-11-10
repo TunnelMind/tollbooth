@@ -1,8 +1,8 @@
-# ADR 004 — @tunnelmindai/tollbooth-cloudflare is batteries-included
+# ADR 004 — @tunnelmindai/fareseal-cloudflare is batteries-included
 
 **Relates to:** plan D-7, AC-2.3, Constitution I (zero-infra), V.15.
 
-D-7 keeps @tunnelmindai/tollbooth-hono injection-only so operators who use only Stripe
+D-7 keeps @tunnelmindai/fareseal-hono injection-only so operators who use only Stripe
 never pull chain code. That is the right default for a composable
 middleware — and the wrong trade for a drop-in distribution artifact: on
 Cloudflare Pages the operator writes exactly one file, and every import
@@ -11,13 +11,13 @@ deployment carried ~200 lines of this plumbing (state caching, corpus
 generation, binding-routed reporting, settle-then-serve, damping) around
 ~40 lines of actual site policy.
 
-**Decision:** @tunnelmindai/tollbooth-cloudflare imports core, hono, maze, and
+**Decision:** @tunnelmindai/fareseal-cloudflare imports core, hono, maze, and
 adapter-x402, and wires them behind `createPagesMiddleware(options)`.
 One import, config in, tolling out.
 
 Bounds that keep the rest of the system honest:
 
-- @tunnelmindai/tollbooth-hono stays injection-only; AC-2.3's test is untouched. The
+- @tunnelmindai/fareseal-hono stays injection-only; AC-2.3's test is untouched. The
   widening of `X402Adapter.verifyProof` to allow a Promise return changes
   a type, not a dependency — core's `VerifyPayment` always allowed it and
   the pipeline awaits.

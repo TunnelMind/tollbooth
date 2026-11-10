@@ -5,13 +5,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { hrtime } from "node:process";
 import { fileURLToPath } from "node:url";
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
   generateSecretKey,
   mintVoucher,
   publicKeyOf,
-} from "@tunnelmindai/tollbooth-core";
-import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+} from "@tunnelmindai/fareseal-core";
+import { tollbooth } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const HUMAN = {

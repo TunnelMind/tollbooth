@@ -1,4 +1,13 @@
-# @tunnelmindai/tollbooth-cloudflare
+# @tunnelmindai/fareseal-cloudflare
+
+Tollbooth was renamed Fareseal on 2026-11-10.
+
+## 2.2.0
+
+- Renamed the npm packages from `@tunnelmindai/tollbooth-*` to
+  `@tunnelmindai/fareseal-*`.
+- All seven packages move to one version, 2.2.0, the next minor over 2.1.0,
+  because publish.yml refuses mixed versions.
 
 ## 2.1.0 — Unreleased
 

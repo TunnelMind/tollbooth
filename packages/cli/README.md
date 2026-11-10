@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-cli
+# @tunnelmindai/fareseal-cli
 
 > **Notice:** This package is not published. Run it from source with `node packages/cli/dist/cli.js` (build first with `pnpm build`).
 

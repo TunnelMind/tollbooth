@@ -1,5 +1,5 @@
 # Trusted publishing (TunnelMind spec 094): a version tag publishes the five public
-# @tunnelmindai/tollbooth-* packages (core, cloudflare, hono, maze, adapter-x402) to npm with
+# @tunnelmindai/fareseal-* packages (core, cloudflare, hono, maze, adapter-x402) to npm with
 # OIDC identity and provenance. cli and adapter-stripe are `"private": true`, so
 # `pnpm -r publish` skips them. No registry token exists anywhere in this
 # repository — the trusted publisher configured on npmjs.com binds this exact workflow file

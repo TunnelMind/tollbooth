@@ -1,7 +1,7 @@
 // Cloudflare Workers example: the same middleware as a module worker -
 // nothing in the stack imports node builtins. Testnet values only.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
-import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
+import { tollbooth } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const config = `

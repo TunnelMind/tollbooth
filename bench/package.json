@@ -1,11 +1,11 @@
 {
-  "name": "tollbooth-bench",
+  "name": "fareseal-bench",
   "private": true,
   "type": "module",
   "dependencies": {
-    "@tunnelmindai/tollbooth-adapter-x402": "workspace:*",
-    "@tunnelmindai/tollbooth-core": "workspace:*",
-    "@tunnelmindai/tollbooth-hono": "workspace:*",
+    "@tunnelmindai/fareseal-adapter-x402": "workspace:*",
+    "@tunnelmindai/fareseal-core": "workspace:*",
+    "@tunnelmindai/fareseal-hono": "workspace:*",
     "hono": "^4.13.7"
   }
 }

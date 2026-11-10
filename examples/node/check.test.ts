@@ -4,8 +4,8 @@ import {
   generateSecretKey,
   mintVoucher,
   publicKeyOf,
-} from "@tunnelmindai/tollbooth-core";
-import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+} from "@tunnelmindai/fareseal-core";
+import { tollbooth } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { fetchPaying } from "../agent-client.js";

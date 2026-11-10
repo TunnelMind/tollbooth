@@ -26,13 +26,13 @@ importers:
 
   bench:
     dependencies:
-      '@tunnelmindai/tollbooth-adapter-x402':
+      '@tunnelmindai/fareseal-adapter-x402':
         specifier: workspace:*
         version: link:../packages/adapter-x402
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../packages/core
-      '@tunnelmindai/tollbooth-hono':
+      '@tunnelmindai/fareseal-hono':
         specifier: workspace:*
         version: link:../packages/hono
       hono:
@@ -50,13 +50,13 @@ importers:
       '@noble/hashes':
         specifier: ^2.3.0
         version: 2.3.0
-      '@tunnelmindai/tollbooth-adapter-x402':
+      '@tunnelmindai/fareseal-adapter-x402':
         specifier: workspace:*
         version: link:../packages/adapter-x402
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../packages/core
-      '@tunnelmindai/tollbooth-hono':
+      '@tunnelmindai/fareseal-hono':
         specifier: workspace:*
         version: link:../packages/hono
       hono:
@@ -65,7 +65,7 @@ importers:
 
   packages/adapter-stripe:
     dependencies:
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
 
@@ -78,7 +78,7 @@ importers:
         specifier: 2.3.0
         version: 2.3.0
     devDependencies:
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
       viem:
@@ -87,25 +87,25 @@ importers:
 
   packages/cli:
     dependencies:
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
-      '@tunnelmindai/tollbooth-maze':
+      '@tunnelmindai/fareseal-maze':
         specifier: workspace:*
         version: link:../maze
 
   packages/cloudflare:
     dependencies:
-      '@tunnelmindai/tollbooth-adapter-x402':
+      '@tunnelmindai/fareseal-adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
-      '@tunnelmindai/tollbooth-hono':
+      '@tunnelmindai/fareseal-hono':
         specifier: workspace:*
         version: link:../hono
-      '@tunnelmindai/tollbooth-maze':
+      '@tunnelmindai/fareseal-maze':
         specifier: workspace:*
         version: link:../maze
       hono:
@@ -126,17 +126,17 @@ importers:
 
   packages/hono:
     dependencies:
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@tunnelmindai/tollbooth-adapter-stripe':
+      '@tunnelmindai/fareseal-adapter-stripe':
         specifier: workspace:*
         version: link:../adapter-stripe
-      '@tunnelmindai/tollbooth-adapter-x402':
+      '@tunnelmindai/fareseal-adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
-      '@tunnelmindai/tollbooth-maze':
+      '@tunnelmindai/fareseal-maze':
         specifier: workspace:*
         version: link:../maze
       hono:
@@ -145,7 +145,7 @@ importers:
 
   packages/maze:
     devDependencies:
-      '@tunnelmindai/tollbooth-core':
+      '@tunnelmindai/fareseal-core':
         specifier: workspace:*
         version: link:../core
 

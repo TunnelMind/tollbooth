@@ -1,6 +1,6 @@
 {
-  "name": "@tunnelmindai/tollbooth-cli",
-  "version": "2.0.0",
+  "name": "@tunnelmindai/fareseal-cli",
+  "version": "2.2.0",
   "private": true,
   "description": "tollbooth CLI: corpus, verify, voucher inspect/mint.",
   "license": "MIT",
@@ -20,8 +20,8 @@
     "tollbooth": "./dist/cli.js"
   },
   "dependencies": {
-    "@tunnelmindai/tollbooth-core": "workspace:*",
-    "@tunnelmindai/tollbooth-maze": "workspace:*"
+    "@tunnelmindai/fareseal-core": "workspace:*",
+    "@tunnelmindai/fareseal-maze": "workspace:*"
   },
   "repository": {
     "type": "git",

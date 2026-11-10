@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-adapter-x402: x402 offer headers and payment-proof verification.
+// @tunnelmindai/fareseal-adapter-x402: x402 offer headers and payment-proof verification.
 // ALL chain specifics live inside this boundary (AC-2.3, D-7) - core never
 // imports a chain library, and this adapter is off the hot path for
 // non-paying traffic (Article I.1).
@@ -17,7 +17,7 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils.js";
-import type { TollboothConfig } from "@tunnelmindai/tollbooth-core";
+import type { TollboothConfig } from "@tunnelmindai/fareseal-core";
 
 /**
  * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example

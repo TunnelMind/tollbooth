@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-hono
+# @tunnelmindai/fareseal-hono
 
 The tollbooth middleware for Hono - one binding covers Node, Bun and Cloudflare Workers.
 

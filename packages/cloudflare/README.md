@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-cloudflare
+# @tunnelmindai/fareseal-cloudflare
 
 Batteries-included [tollbooth](https://github.com/TunnelMind/tollbooth) for
 Cloudflare Pages: one import, config in, tolling out. Wires the maze,
@@ -7,7 +7,7 @@ your `functions/_middleware.js` is nothing but policy.
 
 ```js
 // functions/_middleware.js
-import { createPagesMiddleware } from "@tunnelmindai/tollbooth-cloudflare";
+import { createPagesMiddleware } from "@tunnelmindai/fareseal-cloudflare";
 
 const toml = (env) => `
 mode = "toll"
@@ -67,4 +67,4 @@ and a payer with three fresh failures inside ten minutes is cooled down
 locally instead of burning your facilitator quota. Eviction is amnesty.
 
 Prefer wiring the pieces yourself (or Stripe-only without chain code)?
-Use [`@tunnelmindai/tollbooth-hono`](../hono) — it stays injection-only by design.
+Use [`@tunnelmindai/fareseal-hono`](../hono) — it stays injection-only by design.

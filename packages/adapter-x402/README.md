@@ -1,4 +1,4 @@
-# @tunnelmindai/tollbooth-adapter-x402
+# @tunnelmindai/fareseal-adapter-x402
 
 x402 payment offers and local EIP-3009 proof verification for tollbooth.
 

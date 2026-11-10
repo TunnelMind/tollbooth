@@ -4,7 +4,7 @@ import {
   parseConfig,
   publicKeyOf,
   spendVoucher,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { makeStripeAdapter, verifyStripeSignature } from "../src/index.js";
 import {

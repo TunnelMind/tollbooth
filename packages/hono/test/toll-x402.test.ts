@@ -1,6 +1,6 @@
 // The T-010 milestone: a usable x402 tollbooth end to end. An agent with a
 // valid payment passes; an unpaid one gets 402s with actionable headers.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

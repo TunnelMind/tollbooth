@@ -1,6 +1,6 @@
 // E001: the optional `exists` check. A missing page is answered 404 before
 // any offer or payment check, so nobody is charged for nothing.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
