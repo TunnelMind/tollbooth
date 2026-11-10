@@ -14,7 +14,7 @@ import {
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {

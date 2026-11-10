@@ -26,13 +26,13 @@ importers:
 
   bench:
     dependencies:
-      '@tollbooth/adapter-x402':
+      '@tunnelmindai/tollbooth-adapter-x402':
         specifier: workspace:*
         version: link:../packages/adapter-x402
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../packages/core
-      '@tollbooth/hono':
+      '@tunnelmindai/tollbooth-hono':
         specifier: workspace:*
         version: link:../packages/hono
       hono:
@@ -50,13 +50,13 @@ importers:
       '@noble/hashes':
         specifier: ^2.3.0
         version: 2.3.0
-      '@tollbooth/adapter-x402':
+      '@tunnelmindai/tollbooth-adapter-x402':
         specifier: workspace:*
         version: link:../packages/adapter-x402
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../packages/core
-      '@tollbooth/hono':
+      '@tunnelmindai/tollbooth-hono':
         specifier: workspace:*
         version: link:../packages/hono
       hono:
@@ -65,7 +65,7 @@ importers:
 
   packages/adapter-stripe:
     dependencies:
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
 
@@ -78,7 +78,7 @@ importers:
         specifier: 2.3.0
         version: 2.3.0
     devDependencies:
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
       viem:
@@ -87,25 +87,25 @@ importers:
 
   packages/cli:
     dependencies:
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
-      '@tollbooth/maze':
+      '@tunnelmindai/tollbooth-maze':
         specifier: workspace:*
         version: link:../maze
 
   packages/cloudflare:
     dependencies:
-      '@tollbooth/adapter-x402':
+      '@tunnelmindai/tollbooth-adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
-      '@tollbooth/hono':
+      '@tunnelmindai/tollbooth-hono':
         specifier: workspace:*
         version: link:../hono
-      '@tollbooth/maze':
+      '@tunnelmindai/tollbooth-maze':
         specifier: workspace:*
         version: link:../maze
       hono:
@@ -126,17 +126,17 @@ importers:
 
   packages/hono:
     dependencies:
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
     devDependencies:
-      '@tollbooth/adapter-stripe':
+      '@tunnelmindai/tollbooth-adapter-stripe':
         specifier: workspace:*
         version: link:../adapter-stripe
-      '@tollbooth/adapter-x402':
+      '@tunnelmindai/tollbooth-adapter-x402':
         specifier: workspace:*
         version: link:../adapter-x402
-      '@tollbooth/maze':
+      '@tunnelmindai/tollbooth-maze':
         specifier: workspace:*
         version: link:../maze
       hono:
@@ -145,7 +145,7 @@ importers:
 
   packages/maze:
     devDependencies:
-      '@tollbooth/core':
+      '@tunnelmindai/tollbooth-core':
         specifier: workspace:*
         version: link:../core
 

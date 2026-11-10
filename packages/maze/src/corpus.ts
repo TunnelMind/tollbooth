@@ -5,7 +5,7 @@
 // plausible but valueless, no real content, no real names (Constitution
 // VI.19), internal links only, each page within page_bytes_max. Generation
 // happens at build/CLI time, never at request time (VI.17).
-// Lives in @tollbooth/maze, not the CLI, so the serving handler and the
+// Lives in @tunnelmindai/tollbooth-maze, not the CLI, so the serving handler and the
 // generator share one fnv1a/pageName; the CLI re-exports it.
 
 export interface CorpusOptions {

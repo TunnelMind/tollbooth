@@ -1,5 +1,5 @@
 /**
- * @tollbooth/cloudflare — batteries-included Cloudflare Pages middleware.
+ * @tunnelmindai/tollbooth-cloudflare — batteries-included Cloudflare Pages middleware.
  *
  * One import, config in, tolling out (ADR-004): per-isolate state cache,
  * seeded maze corpus, receipt reporting + signed traffic snapshots, and
@@ -31,7 +31,7 @@
  * Your `config` builder may read any further vars of its own (report
  * tokens, prices) — its output is part of the cache key.
  */
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import {
   canonicalize,
   fromBase64Url,
@@ -42,17 +42,17 @@ import {
   sign,
   type TollboothConfig,
   toBase64Url,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import {
   tollbooth,
   type X402Adapter,
   type X402VerifyResult,
-} from "@tollbooth/hono";
+} from "@tunnelmindai/tollbooth-hono";
 import {
   corpusFromMap,
   generateCorpus,
   makeMazeHandler,
-} from "@tollbooth/maze";
+} from "@tunnelmindai/tollbooth-maze";
 import { Hono } from "hono";
 import { TollboothBindingMissingError } from "./errors.js";
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tollbooth/hono: thin binding of core's decide() to Hono. One package
+// @tunnelmindai/tollbooth-hono: thin binding of core's decide() to Hono. One package
 // covers Node, Bun and Workers, so nothing here may import node builtins at
 // load time (the one node:dns use is a dynamic import behind a Node check).
 // Observe mode computes the decision and records it but always passes -
@@ -30,12 +30,12 @@ import {
   type SiteKeyPair,
   type TollboothConfig,
   verifiedPass,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import type { Context, MiddlewareHandler } from "hono";
 
 /**
  * The x402 adapter is injected, never imported: operators who only use
- * Stripe never pull chain libraries (D-7, AC-2.3). @tollbooth/adapter-x402
+ * Stripe never pull chain libraries (D-7, AC-2.3). @tunnelmindai/tollbooth-adapter-x402
  * satisfies this shape structurally.
  */
 export interface X402Adapter {
@@ -70,12 +70,12 @@ export interface X402VerifyResult {
   transaction?: string;
 }
 
-/** @tollbooth/maze's makeMazeHandler satisfies this structurally. */
+/** @tunnelmindai/tollbooth-maze's makeMazeHandler satisfies this structurally. */
 export type MazeHandler = (
   path: string,
 ) => Promise<{ status: number; body: string; headers: Record<string, string> }>;
 
-/** @tollbooth/adapter-stripe's makeStripeAdapter satisfies this structurally. */
+/** @tunnelmindai/tollbooth-adapter-stripe's makeStripeAdapter satisfies this structurally. */
 export interface StripeRoutes {
   handleWebhook(
     rawBody: string,
@@ -91,9 +91,9 @@ export interface StripeRoutes {
 export interface TollboothOptions {
   /** Parsed config, or TOML source (parsed with the same fail-hard rules). */
   config: TollboothConfig | string;
-  /** Site keypair for voucher verify/re-sign (load via @tollbooth/core/node). */
+  /** Site keypair for voucher verify/re-sign (load via @tunnelmindai/tollbooth-core/node). */
   siteKeys?: SiteKeyPair;
-  /** The x402 payment adapter (pass @tollbooth/adapter-x402's exports). */
+  /** The x402 payment adapter (pass @tunnelmindai/tollbooth-adapter-x402's exports). */
   x402?: X402Adapter;
   /** The maze handler; serves the prefix and receives consequence redirects. */
   maze?: MazeHandler;
@@ -115,7 +115,7 @@ export interface TollboothOptions {
   /**
    * Trusted client IP for `pass_verified = ["search"]`. No default: without
    * it the search pass fails closed. Supply a source you trust (e.g. the
-   * socket address on Node or Bun); @tollbooth/cloudflare wires
+   * socket address on Node or Bun); @tunnelmindai/tollbooth-cloudflare wires
    * cf-connecting-ip itself.
    */
   clientIp?: (c: Context) => string | undefined;
@@ -425,7 +425,7 @@ function requestFromContext(
   // No default source: headers like cf-connecting-ip or x-forwarded-for are
   // client-forgeable unless a known edge sets them, so only the caller can
   // say which is trustworthy. Without options.clientIp the search pass fails
-  // closed; @tollbooth/cloudflare passes cf-connecting-ip explicitly.
+  // closed; @tunnelmindai/tollbooth-cloudflare passes cf-connecting-ip explicitly.
   const clientIp = clientIpOf?.(c);
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);

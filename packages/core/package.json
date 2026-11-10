@@ -1,5 +1,5 @@
 {
-  "name": "@tollbooth/core",
+  "name": "@tunnelmindai/tollbooth-core",
   "version": "2.1.0",
   "description": "Framework-free toll logic: identify, offer state, vouchers, receipts, canonicalization, config schema. No HTTP imports.",
   "license": "MIT",

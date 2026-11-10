@@ -1,4 +1,4 @@
-# @tollbooth/maze
+# @tunnelmindai/tollbooth-maze
 
 Decoy-maze corpus loading and serving for tollbooth.
 

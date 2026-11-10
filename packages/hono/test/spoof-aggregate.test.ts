@@ -1,14 +1,14 @@
 // B007: SPOOF receipts can't frame a key. Anyone can send junk signatures
 // naming any key, so spoofs aggregate per claimed key per 60 s window into
 // ONE receipt carrying a count, and the attacker-chosen strings are capped.
-import { buildOffer, verifyProof } from "@tollbooth/adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
 import {
   generateSecretKey,
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
   verifyReceipt,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { NOW, PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";

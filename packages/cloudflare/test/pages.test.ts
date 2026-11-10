@@ -10,7 +10,7 @@ import {
   publicKeyOf,
   toBase64Url,
   verify,
-} from "@tollbooth/core";
+} from "@tunnelmindai/tollbooth-core";
 import { describe, expect, it } from "vitest";
 import { PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";
 import { createPagesMiddleware } from "../src/index.js";

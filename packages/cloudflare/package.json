@@ -1,5 +1,5 @@
 {
-  "name": "@tollbooth/cloudflare",
+  "name": "@tunnelmindai/tollbooth-cloudflare",
   "version": "2.1.0",
   "description": "Batteries-included Cloudflare Pages middleware: config in, tolling out \u2014 maze, receipts, snapshots, and settle-then-serve x402 pre-wired.",
   "license": "MIT",
@@ -16,10 +16,10 @@
     "LICENSE"
   ],
   "dependencies": {
-    "@tollbooth/adapter-x402": "workspace:*",
-    "@tollbooth/core": "workspace:*",
-    "@tollbooth/hono": "workspace:*",
-    "@tollbooth/maze": "workspace:*",
+    "@tunnelmindai/tollbooth-adapter-x402": "workspace:*",
+    "@tunnelmindai/tollbooth-core": "workspace:*",
+    "@tunnelmindai/tollbooth-hono": "workspace:*",
+    "@tunnelmindai/tollbooth-maze": "workspace:*",
     "hono": "^4.13.7"
   },
   "repository": {

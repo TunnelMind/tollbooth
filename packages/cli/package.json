@@ -1,6 +1,7 @@
 {
-  "name": "@tollbooth/cli",
+  "name": "@tunnelmindai/tollbooth-cli",
   "version": "2.0.0",
+  "private": true,
   "description": "tollbooth CLI: corpus, verify, voucher inspect/mint.",
   "license": "MIT",
   "type": "module",
@@ -19,16 +20,13 @@
     "tollbooth": "./dist/cli.js"
   },
   "dependencies": {
-    "@tollbooth/core": "workspace:*",
-    "@tollbooth/maze": "workspace:*"
+    "@tunnelmindai/tollbooth-core": "workspace:*",
+    "@tunnelmindai/tollbooth-maze": "workspace:*"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/TunnelMind/tollbooth.git",
     "directory": "packages/cli"
   },
-  "homepage": "https://github.com/TunnelMind/tollbooth#readme",
-  "publishConfig": {
-    "access": "public"
-  }
+  "homepage": "https://github.com/TunnelMind/tollbooth#readme"
 }
