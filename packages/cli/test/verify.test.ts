@@ -17,6 +17,7 @@ import { describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 const CLI = new URL("../dist/cli.js", import.meta.url).pathname;
+const SHIM = new URL("../dist/tollbooth-bin.js", import.meta.url).pathname;
 const KILLNET = pathToFileURL(
   new URL("./fixtures/killnet.mjs", import.meta.url).pathname,
 ).href;
@@ -27,13 +28,26 @@ const NOW = 1_800_000_000;
 
 async function cli(
   args: string[],
-  opts: { preload?: string; siteJson?: string } = {},
+  opts: {
+    preload?: string;
+    siteJson?: string;
+    sitePath?: string;
+    siteStatus?: string;
+    script?: string;
+  } = {},
 ): Promise<{ code: number; stdout: string; stderr: string }> {
   try {
     const { stdout, stderr } = await run(
       "node",
-      ["--import", opts.preload ?? KILLNET, CLI, ...args],
-      { env: { ...process.env, TB_SITE_JSON: opts.siteJson ?? "" } },
+      ["--import", opts.preload ?? KILLNET, opts.script ?? CLI, ...args],
+      {
+        env: {
+          ...process.env,
+          TB_SITE_JSON: opts.siteJson ?? "",
+          ...(opts.siteStatus ? { TB_SITE_STATUS: opts.siteStatus } : {}),
+          ...(opts.sitePath ? { TB_SITE_PATH: opts.sitePath } : {}),
+        },
+      },
     );
     return { code: 0, stdout, stderr };
   } catch (error) {
@@ -372,7 +386,7 @@ describe("verify key sources: --pin offline, --domain as explicit network opt-in
     expect(result.stdout).toContain("key not bound to a domain");
   });
 
-  it("--domain PASSes when tollbooth-site.json lists the receipt's key", async () => {
+  it("--domain PASSes when fareseal-site.json lists the receipt's key", async () => {
     const { file, pub } = await receiptFile();
     const result = await cli(["verify", file, "--domain", "example.com"], {
       preload: FAKESITE,
@@ -380,12 +394,57 @@ describe("verify key sources: --pin offline, --domain as explicit network opt-in
     });
     expect(result.code).toBe(0);
     expect(result.stderr).toContain(
-      "fetch: https://example.com/.well-known/tollbooth-site.json redirect=error",
+      "fetch: https://example.com/.well-known/fareseal-site.json redirect=error",
     );
+    // the new file was found, so the old one is never fetched
+    expect(result.stderr).not.toContain("tollbooth-site.json");
     expect(result.stdout).toContain("signature: PASS");
     expect(result.stdout).toContain("domain: PASS");
     expect(result.stdout).not.toContain("key not bound");
     expect(result.stdout.trim().endsWith("PASS")).toBe(true);
+  });
+
+  it("--domain falls back to tollbooth-site.json on a 404, new file first", async () => {
+    const { file, pub } = await receiptFile();
+    const result = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteJson: JSON.stringify({ v: 1, keys: [pub] }),
+      sitePath: "tollbooth-site.json",
+    });
+    expect(result.code).toBe(0);
+    const fetches = result.stderr
+      .split("\n")
+      .filter((l) => l.startsWith("fetch:"));
+    expect(fetches).toEqual([
+      "fetch: https://example.com/.well-known/fareseal-site.json redirect=error",
+      "fetch: https://example.com/.well-known/tollbooth-site.json redirect=error",
+    ]);
+    expect(result.stdout).toContain("domain: PASS");
+  });
+
+  it("--domain does not fall back on a non-404 failure", async () => {
+    const { file } = await receiptFile();
+    const result = await cli(["verify", file, "--domain", "example.com"], {
+      preload: FAKESITE,
+      siteStatus: "500",
+    });
+    expect(result.code).toBe(1);
+    expect(result.stdout).toContain("domain: FAIL");
+    expect(result.stderr).not.toContain("tollbooth-site.json");
+  });
+
+  it("the tollbooth shim prints one alias line, then behaves exactly like fareseal", async () => {
+    const alias =
+      "tollbooth: renamed fareseal on 2026-11-10; use `fareseal` (this alias is removed in 3.0.0)\n";
+    const { file, pub } = await receiptFile();
+    for (const args of [[], ["verify", file, "--pubkey", pub]]) {
+      const real = await cli(args);
+      const shim = await cli(args, { script: SHIM });
+      expect(shim.stdout).toBe(real.stdout);
+      expect(shim.code).toBe(real.code);
+      expect(shim.stderr).toBe(alias + real.stderr);
+    }
+    expect((await cli([], { script: SHIM })).code).toBe(64);
   });
 
   it("--domain FAILs (exit 1) when the key is not listed", async () => {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
-// tollbooth CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
+// fareseal CLI: corpus (T-015), verify (T-020), voucher inspect/mint (FR-9;
 // mint is the re-mint fallback for expired-unredeemed purchases, spec 5.3).
 //
 // `verify` trust: the file is hostile and only core judges it: verifySnapshot
@@ -11,8 +11,8 @@
 // stripped); each line's report is prefixed `line N: ` and the run PASSes only
 // if there is at least one document and all pass. The key is the operator's
 // --pubkey or --pin file; with --domain alone it is each document's own `site`
-// key, which passes only if https://<host>/.well-known/tollbooth-site.json
-// lists it (fetched once per run, unlisted keys named for a file of lines; a
+// key, which passes only if https://<host>/.well-known/fareseal-site.json
+// (tollbooth-site.json if that 404s) lists it (fetched once per run, unlisted keys named for a file of lines; a
 // bare host[:port], no redirects, 5 s timeout, 64 KB cap).
 // Exit 0 PASS, 1 FAIL, 64 usage.
 // `voucher mint` reads (or, if missing, creates) the site secret key file via
@@ -34,11 +34,11 @@ import {
 import { corpusHash, generateCorpus } from "@tunnelmindai/fareseal-maze";
 
 const USAGE = `usage:
-  tollbooth corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]
-  tollbooth verify <file> --pubkey <site-pub-b64url> | --pin <file> | --domain <host>
+  fareseal corpus [--seed s] [--pages n] [--max-bytes n] [--out dir]
+  fareseal verify <file> --pubkey <site-pub-b64url> | --pin <file> | --domain <host>
     <file> is a receipt, a snapshot, an export line, or a file of lines (one per line)
-  tollbooth voucher inspect <voucher>
-  tollbooth voucher mint --agent <pubkey>|--bearer [--key path] [--credits n] [--ttl-days n]`;
+  fareseal voucher inspect <voucher>
+  fareseal voucher mint --agent <pubkey>|--bearer [--key path] [--credits n] [--ttl-days n]`;
 
 function flag(args: string[], name: string): string | undefined {
   const at = args.indexOf(`--${name}`);
@@ -46,6 +46,8 @@ function flag(args: string[], name: string): string | undefined {
 }
 
 async function corpus(args: string[]): Promise<number> {
+  // Frozen constant (GATE 0 Q5): the default seed keeps its old name so corpus
+  // output stays byte-identical across the rename.
   const seed = flag(args, "seed") ?? "tollbooth";
   const pages = Number(flag(args, "pages") ?? 2000);
   const pageBytesMax = Number(flag(args, "max-bytes") ?? 4096);
@@ -74,43 +76,52 @@ async function corpus(args: string[]): Promise<number> {
 const SITE_JSON_MAX_BYTES = 65536;
 
 /**
- * Keys a domain vouches for via https://<host>/.well-known/tollbooth-site.json
- * ({ "v": 1, "keys": [b64url...] }). The only network call in this CLI, and
- * only behind an explicit --domain. https only, no redirects (one could land
- * on http or an internal host), 5 s timeout, 64 KB cap enforced while reading.
+ * Keys a domain vouches for via https://<host>/.well-known/fareseal-site.json
+ * ({ "v": 1, "keys": [b64url...] }); a 404 there falls back to the pre-rename
+ * tollbooth-site.json (removed in 3.0.0), any other failure throws. The only
+ * network call in this CLI, and only behind an explicit --domain. https only,
+ * no redirects (one could land on http or an internal host), 5 s timeout,
+ * 64 KB cap enforced while reading.
  */
 async function domainKeys(host: string): Promise<string[]> {
   // A bare host[:port] only, so the argument cannot steer the path or scheme.
   if (!/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(host)) throw new Error("bad host");
-  const resp = await fetch(`https://${host}/.well-known/tollbooth-site.json`, {
-    redirect: "error",
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-  const reader = resp.body?.getReader();
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  for (;;) {
-    const chunk = await reader?.read();
-    if (!chunk || chunk.done) break;
-    bytes += chunk.value.byteLength;
-    if (bytes > SITE_JSON_MAX_BYTES) {
-      await reader?.cancel();
-      throw new Error("tollbooth-site.json exceeds 64KB");
+  const get = async (
+    name: string,
+    on404?: () => Promise<string[]>,
+  ): Promise<string[]> => {
+    const resp = await fetch(`https://${host}/.well-known/${name}`, {
+      redirect: "error",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (resp.status === 404 && on404) return on404();
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const reader = resp.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let bytes = 0;
+    for (;;) {
+      const chunk = await reader?.read();
+      if (!chunk || chunk.done) break;
+      bytes += chunk.value.byteLength;
+      if (bytes > SITE_JSON_MAX_BYTES) {
+        await reader?.cancel();
+        throw new Error(`${name} exceeds 64KB`);
+      }
+      chunks.push(chunk.value);
     }
-    chunks.push(chunk.value);
-  }
-  const doc = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
-    v?: unknown;
-    keys?: unknown;
+    const doc = JSON.parse(Buffer.concat(chunks).toString("utf8")) as {
+      v?: unknown;
+      keys?: unknown;
+    };
+    if (
+      doc?.v !== 1 ||
+      !Array.isArray(doc.keys) ||
+      !doc.keys.every((k) => typeof k === "string")
+    )
+      throw new Error(`${name} is not { v: 1, keys: [...] }`);
+    return doc.keys;
   };
-  if (
-    doc?.v !== 1 ||
-    !Array.isArray(doc.keys) ||
-    !doc.keys.every((k) => typeof k === "string")
-  )
-    throw new Error("tollbooth-site.json is not { v: 1, keys: [...] }");
-  return doc.keys;
+  return get("fareseal-site.json", () => get("tollbooth-site.json"));
 }
 
 /**

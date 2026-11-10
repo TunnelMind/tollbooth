@@ -32,3 +32,12 @@ Tollbooth was renamed Fareseal on 2026-11-10. One row per renamed surface.
 | Log prefixes, robots comment, node maze message | `tollbooth …` | `fareseal …` | n/a | n/a |
 
 The signed snapshot `kind` stays `tollbooth-observe-snapshot` (Q4), and the corpus seed and Commons fixtures are untouched.
+
+## T009: CLI
+
+| Surface | Old | New | Old still works? | Removed in |
+| --- | --- | --- | --- | --- |
+| CLI bin | `tollbooth` | `fareseal` | Yes: `tollbooth` (`dist/tollbooth-bin.js`) prints one stderr line, then runs the same main with the same stdout and exit code | 3.0.0 |
+| `verify --domain` site file | `/.well-known/tollbooth-site.json` | `/.well-known/fareseal-site.json` | Yes: tried only after the new file returns 404 | 3.0.0 |
+
+The corpus default seed stays `tollbooth` (Q5, frozen constant) so corpus output is unchanged.
