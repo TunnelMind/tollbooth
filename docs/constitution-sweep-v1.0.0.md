@@ -1,4 +1,5 @@
 # Constitution compliance sweep — v1.0.0
+Tollbooth was renamed Fareseal on 2026-11-10.
 
 Reviewed 2026-08-25 against the code as of this commit. Method: article-by-
 article check, plus mechanical sweeps (dependency lists, `any` in every

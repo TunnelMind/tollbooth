@@ -1,6 +1,6 @@
-# Vendoring tollbooth
+# Vendoring Fareseal
 
-Template for downstream projects that vendor tollbooth packages instead of
+Template for downstream projects that vendor Fareseal packages instead of
 installing them from npm. Copy this file next to the vendored tarballs and fill
 it in, so anyone can rebuild from the same commit and check they got the same
 bytes.
@@ -34,11 +34,11 @@ pnpm version can change the tarball bytes, so record both.
 
 | package tarball | sha256 |
 |---|---|
-| `tunnelmindai-tollbooth-adapter-x402-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-cloudflare-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-core-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-hono-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-maze-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-adapter-x402-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-cloudflare-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-core-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-hono-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-maze-<version>.tgz` | `<sha256>` |
 
 To check a vendored copy later: `cd vendor && sha256sum -c` against the lines
 above (as `sha256sum` printed them).

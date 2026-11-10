@@ -1,4 +1,4 @@
-# tollbooth architecture
+# Fareseal architecture
 
 A reader's map of the tree. What the software promises is in README.md and
 constitution.md; why it is built this way is in plan.md and docs/adr/.
@@ -31,7 +31,7 @@ constitution.md; why it is built this way is in plan.md and docs/adr/.
    first); repeated ignored offers go to the maze; otherwise a 402 offer.
 4. Decisions that are facts about conduct become signed receipts, which the
    reporter may POST (off by default) and anyone can verify offline with the
-   site's public key (`tollbooth verify`).
+   site's public key (`fareseal verify`).
 
 ## Trust boundaries
 

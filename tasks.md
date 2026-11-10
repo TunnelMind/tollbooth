@@ -1,4 +1,5 @@
 # TASKS — tollbooth
+Tollbooth was renamed Fareseal on 2026-11-10.
 
 Format: `T-nnn (deps) — task → done-when`. Sized for one Claude Code session each. Do them in order; ACs reference spec.md.
 
