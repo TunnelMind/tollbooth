@@ -73,7 +73,7 @@ export interface X402Requirement {
   payTo: string;
   asset: string;
   maxTimeoutSeconds: number;
-  /** x402 v1 requires the key; tollbooth publishes no output schema. */
+  /** x402 v1 requires the key; fareseal publishes no output schema. */
   outputSchema: null;
   extra: { name: string; version: string };
 }
@@ -188,7 +188,7 @@ export function buildOffer(
     maxAmountRequired: usdToAtomic(cfg.toll.price_usd).toString(),
     resource,
     // ponytail: fixed text; the toll does not know what the page holds.
-    description: "Paid access to this resource (tollbooth toll)",
+    description: "Paid access to this resource (fareseal toll)",
     mimeType: "application/json",
     payTo: cfg.toll.x402.pay_to,
     asset: net.asset,

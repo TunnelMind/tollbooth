@@ -66,7 +66,7 @@ describe("B008 - fail open on an internal error", () => {
     expect(r.status).toBe(402);
   });
 
-  it("a throw inside tollbooth's own logic hands the request to the origin once", async () => {
+  it("a throw inside fareseal's own logic hands the request to the origin once", async () => {
     const { a, calls } = app({
       buildOffer,
       verifyProof: () => {

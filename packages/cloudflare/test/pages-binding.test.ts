@@ -1,7 +1,7 @@
 // Spec 088 (TunnelMind estate hardening S2): the middleware never falls back to
 // the global fetch. A named-but-absent binding throws a named error before any
 // request is issued; outbound reporting with no route at all throws too; an
-// explicit `fetch` option works; every outbound write carries x-tollbooth-env,
+// explicit `fetch` option works; every outbound write carries x-fareseal-env,
 // which reads `test` under vitest and `production` when nothing says otherwise.
 import { generateSecretKey, toBase64Url } from "@tunnelmindai/fareseal-core";
 import { afterEach, describe, expect, it, vi } from "vitest";

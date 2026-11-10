@@ -1,4 +1,4 @@
-// A001: the arrival reading — every field tollbooth read for this request,
+// A001: the arrival reading — every field fareseal read for this request,
 // and whether any of it is kept.
 import { describe, expect, it } from "vitest";
 import {
@@ -229,7 +229,7 @@ describe("arrivalReading", () => {
   });
 });
 
-// A009: every row reports the presence tollbooth observed; presence-only rows
+// A009: every row reports the presence fareseal observed; presence-only rows
 // still never echo a value.
 describe("arrivalReading present", () => {
   const PRESENCE_ONLY = [

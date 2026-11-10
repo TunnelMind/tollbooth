@@ -83,7 +83,7 @@ let voucher = await mintVoucher(
 const rows: Array<{ name: string; p50: number; p99: number }> = [];
 const scenarios: Array<[string, () => unknown]> = [
   [
-    "baseline app, no tollbooth",
+    "baseline app, no fareseal",
     () => baseline.request("http://x.test/a", { headers: HUMAN }),
   ],
   [

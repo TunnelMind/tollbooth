@@ -641,7 +641,7 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
     // option (AC-2.1). The body carries both dialects: x402 v1 clients read
-    // x402Version/error/accepts, older tollbooth clients read v/price_usd/
+    // x402Version/error/accepts, older pre-rename clients read v/price_usd/
     // options - no key is shared, so each ignores the other's fields.
     let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
@@ -942,7 +942,7 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
   };
 
   // Fail open (Constitution II: never block on our own fault). A throw from
-  // tollbooth's own logic (decide, verify, record, receipts, offers) hands
+  // fareseal's own logic (decide, verify, record, receipts, offers) hands
   // the request to the origin instead of a 500. Errors from the origin, i.e.
   // after next() was called, propagate as before - and next() runs once.
   return async (c, next) => {

@@ -92,7 +92,7 @@ describe("VI.18 - robots.txt fragment", () => {
 
 describe("node corpus loader - O(file read) serving", () => {
   it("loads a directory lazily and refuses traversal names", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-maze-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-maze-"));
     for (const [name, html] of generateCorpus({ seed: "disk", pages: 5 })) {
       await writeFile(join(dir, name), html);
     }
@@ -104,7 +104,7 @@ describe("node corpus loader - O(file read) serving", () => {
   });
 
   it("an empty corpus directory fails loudly with the fix", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-empty-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-empty-"));
     await expect(loadCorpusDir(dir)).rejects.toThrow(/fareseal corpus/);
   });
 });

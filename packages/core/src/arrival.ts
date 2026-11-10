@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The arrival reading: for one request, every field tollbooth read, what it
+// The arrival reading: for one request, every field fareseal read, what it
 // read it for, and whether anything of it is kept. It is the requester's own
 // data shown back to them, so it is pure — no clock, no counters, no I/O —
 // and the same request always reads the same.
@@ -40,7 +40,7 @@ export interface ArrivalRow {
   read: "value" | "presence only" | "not read";
   used_for: string;
   kept: ArrivalKept;
-  /** Whether this request sent the field — the presence tollbooth observed. */
+  /** Whether this request sent the field — the presence fareseal observed. */
   present: boolean;
 }
 

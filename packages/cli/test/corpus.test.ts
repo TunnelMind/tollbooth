@@ -9,7 +9,7 @@ const run = promisify(execFile);
 
 describe("cli corpus command", () => {
   it("writes the corpus to disk and prints the hash", async () => {
-    const out = await mkdtemp(join(tmpdir(), "tollbooth-corpus-"));
+    const out = await mkdtemp(join(tmpdir(), "fareseal-corpus-"));
     const cli = new URL("../dist/cli.js", import.meta.url).pathname;
     const { stdout } = await run("node", [
       cli,

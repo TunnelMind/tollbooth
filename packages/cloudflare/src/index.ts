@@ -96,7 +96,7 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface CloudflareFaresealOptions {
   /**
-   * tollbooth TOML, or a builder over env for values that live in vars and
+   * fareseal TOML, or a builder over env for values that live in vars and
    * secrets (report token, price). The built text is the state-cache key, so
    * changing any env var it reads rebuilds the toll on the next request.
    */
@@ -105,12 +105,12 @@ export interface CloudflareFaresealOptions {
   corpus?: { seed: string; pages?: number };
   /**
    * Settle-then-serve: every locally-valid x402 payment is POSTed here
-   * ({ payment, price_usd }, bearer TOLLBOOTH_SETTLE_TOKEN) and passes ONLY
+   * ({ payment, price_usd }, bearer FARESEAL_SETTLE_TOKEN) and passes ONLY
    * on `{ data: { settled: true } }`. Omit to keep payments verify-only —
    * in which case they still never pass here (fail closed by absence).
    */
   settle?: { url: string };
-  /** Periodic signed traffic snapshots (requires TOLLBOOTH_SITE_KEY). */
+  /** Periodic signed traffic snapshots (requires FARESEAL_SITE_KEY). */
   snapshots?: { url: string; intervalMs?: number };
   /**
    * Env key of a service binding to carry settle/report/snapshot POSTs —
@@ -173,7 +173,7 @@ export function testRunnerDetected(): boolean {
 
 /**
  * The environment marker every outbound write carries (spec 088, analyze C1):
- * `production` unless a test runner is detected or TOLLBOOTH_ENV says
+ * `production` unless a test runner is detected or FARESEAL_ENV says
  * otherwise. A site that installs the package and sets nothing writes as
  * production — open ingest survives — while every vitest run is refused.
  */

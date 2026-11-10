@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// tollbooth.toml -> FaresealConfig, the one config every binding reads.
+// fareseal.toml -> FaresealConfig, the one config every binding reads.
 // The operator writes the file, so it is trusted for intent but not for
 // shape: every table is a zod strictObject (an unknown or misspelled key is
 // an error, never ignored), durations and paths are validated, and

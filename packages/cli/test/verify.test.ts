@@ -65,7 +65,7 @@ async function makeSite() {
   return { secret, pub: await publicKeyOf(secret) };
 }
 
-describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
+describe("US-6 AC-6.1 - fareseal verify, with networking disabled", () => {
   it("PASSes a genuine receipt and prints the three checks", async () => {
     const site = await makeSite();
     const receipt = await buildReceipt(
@@ -80,7 +80,7 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
       },
       site,
     );
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(file, JSON.stringify(receipt, null, 2));
 
@@ -113,7 +113,7 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
       },
       site,
     );
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(
       file,
@@ -149,7 +149,7 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
       },
       site,
     );
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(
       file,
@@ -186,7 +186,7 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
       },
       site,
     );
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(file, JSON.stringify({ ...receipt, count: 999 }));
 
@@ -204,7 +204,7 @@ describe("US-6 AC-6.1 - tollbooth verify, with networking disabled", () => {
 
   it("FAILs garbage on the schema check", async () => {
     const site = await makeSite();
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(file, JSON.stringify({ hello: "world" }));
     const result = await cli([
@@ -240,7 +240,7 @@ describe("AC-6.1 golden output - exact verify stdout and exit code", () => {
   }
 
   async function verifyBody(body: string, pub: Uint8Array) {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "receipt.json");
     await writeFile(file, body);
     return cli(["verify", file, "--pubkey", toBase64Url(pub)]);
@@ -357,7 +357,7 @@ async function receiptFile() {
     },
     site,
   );
-  const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+  const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
   const file = join(dir, "receipt.json");
   await writeFile(file, JSON.stringify(receipt));
   const pin = join(dir, "key.txt");
@@ -490,7 +490,7 @@ describe("verify key sources: --pin offline, --domain as explicit network opt-in
 
 describe("FR-9 - voucher inspect and mint", () => {
   it("mints against a key file and inspect round-trips the payload", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-mint-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-mint-"));
     const keyPath = join(dir, "site.key");
 
     const minted = await cli([
@@ -555,7 +555,7 @@ describe("verify one document: export lines and snapshots, networking disabled",
   }
 
   async function verifyDoc(doc: unknown, pubkey: string) {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "doc.json");
     await writeFile(file, JSON.stringify(doc));
     return cli(["verify", file, "--pubkey", pubkey]);
@@ -650,7 +650,7 @@ describe("verify a file of lines (FR-001, FR-007, FR-008)", () => {
   }
 
   async function writeLines(text: string): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), "tollbooth-verify-"));
+    const dir = await mkdtemp(join(tmpdir(), "fareseal-verify-"));
     const file = join(dir, "lines.ndjson");
     await writeFile(file, text);
     return file;
