@@ -141,8 +141,10 @@ describe("AC-2.2 - verifyProof verifies locally", () => {
     expect(verifyProof(payment(ok, signAuth(ok)), CFG, { nowS: NOW }).ok).toBe(
       true,
     );
+    // Past the advertised 300 s plus the default 60 s skew tolerance (T003;
+    // was +1 before skew_tolerance existed).
     const long = makeAuth({
-      validBefore: String(NOW + MAX_TIMEOUT_SECONDS + 1),
+      validBefore: String(NOW + MAX_TIMEOUT_SECONDS + 61),
     });
     expect(
       verifyProof(payment(long, signAuth(long)), CFG, { nowS: NOW }).reason,
@@ -150,6 +152,57 @@ describe("AC-2.2 - verifyProof verifies locally", () => {
     expect(buildOffer(CFG, "/x").requirement.maxTimeoutSeconds).toBe(
       MAX_TIMEOUT_SECONDS,
     );
+  });
+});
+
+describe("T003 - clock skew tolerance (toll.x402.skew_tolerance, default 60s)", () => {
+  const reason = (
+    over: Parameters<typeof makeAuth>[0],
+    cfg: typeof CFG = CFG,
+  ) => {
+    const auth = makeAuth(over);
+    return verifyProof(payment(auth, signAuth(auth)), cfg, { nowS: NOW });
+  };
+
+  it("accepts a client whose clock runs 1 s ahead", () => {
+    expect(
+      reason({ validAfter: String(NOW + 1), validBefore: String(NOW + 301) })
+        .ok,
+    ).toBe(true);
+  });
+
+  it("window-too-long only past 300 s + skew", () => {
+    expect(reason({ validBefore: String(NOW + 360) }).ok).toBe(true);
+    expect(reason({ validBefore: String(NOW + 361) }).reason).toBe(
+      "window-too-long",
+    );
+  });
+
+  it("not-yet-valid only past now + skew", () => {
+    expect(reason({ validAfter: String(NOW + 60) }).ok).toBe(true);
+    expect(reason({ validAfter: String(NOW + 61) }).reason).toBe(
+      "not-yet-valid",
+    );
+  });
+
+  it('skew_tolerance = "0s" restores the strict window', () => {
+    const strict = parseConfig(`
+mode = "toll"
+[toll.x402]
+pay_to = "${PAY_TO}"
+skew_tolerance = "0s"
+`);
+    expect(reason({ validBefore: String(NOW + 301) }, strict).reason).toBe(
+      "window-too-long",
+    );
+  });
+
+  it("expired gets no skew", () => {
+    expect(reason({ validBefore: String(NOW - 1) }).reason).toBe("expired");
+  });
+
+  it("offers still advertise 300 s", () => {
+    expect(buildOffer(CFG, "/x").requirement.maxTimeoutSeconds).toBe(300);
   });
 });
 

@@ -4,6 +4,12 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- `[toll.x402] skew_tolerance` (default `"60s"`) absorbs client clock drift:
+  a proof is `not-yet-valid` only when `validAfter` is past now + skew, and
+  `window-too-long` only when `validBefore` is more than 300 s + skew away, so
+  a wallet 1 s fast (`validBefore = now+301`) is no longer refused. `expired`
+  gets no skew; offers still advertise `maxTimeoutSeconds: 300`. Set `"0s"`
+  for the old strict window.
 - A rejected `X-PAYMENT` now gets its reason in the 402 body's `error`
   (e.g. `wrong payTo`, `authorization expired`, `nonce already used`), from a
   fixed table so no internal text reaches the payer. With no `X-PAYMENT`

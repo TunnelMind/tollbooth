@@ -124,6 +124,7 @@ window = "10m"
 [toll.x402]
 network = "base-sepolia"          # testnet example
 pay_to = "0xYOUR_ADDRESS"
+skew_tolerance = "60s"            # default; client clock drift accepted on validAfter/validBefore
 
 [toll.stripe]                     # optional second rail: prepaid vouchers
 enabled = true

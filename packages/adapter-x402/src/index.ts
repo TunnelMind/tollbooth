@@ -250,11 +250,16 @@ export function verifyProof(
   if (value < usdToAtomic(cfg.toll.price_usd))
     return fail("insufficient-value");
   const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
-  if (validAfter > nowS) return fail("not-yet-valid");
+  // Client clocks drift ahead of ours: a wallet 1 s fast signs validAfter =
+  // now+1 and validBefore = now+301, which a strict check rejects. Allow the
+  // configured skew on both of those bounds. `expired` gets none: a proof
+  // past its own validBefore is dead by the signer's clock too.
+  const skewS = BigInt(Math.ceil(cfg.toll.x402.skew_tolerance / 1000));
+  if (validAfter > nowS + skewS) return fail("not-yet-valid");
   if (validBefore < nowS) return fail("expired");
   // A long-lived authorization is a replayable bearer token; hold the payer
-  // to the window the offer advertised.
-  if (validBefore - nowS > BigInt(MAX_TIMEOUT_SECONDS))
+  // to the window the offer advertised (plus skew).
+  if (validBefore - nowS > BigInt(MAX_TIMEOUT_SECONDS) + skewS)
     return fail("window-too-long");
 
   let payer: string;

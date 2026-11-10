@@ -49,6 +49,8 @@ const x402Schema = z
     enabled: z.boolean().prefault(true),
     network: z.string().min(1).prefault("base-sepolia"),
     pay_to: z.string().prefault(""),
+    /** Clock drift accepted on a proof's validAfter/validBefore; offers still advertise 300 s. */
+    skew_tolerance: duration("60s"),
   })
   .prefault({});
 
