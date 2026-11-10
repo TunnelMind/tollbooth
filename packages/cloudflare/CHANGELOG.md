@@ -4,6 +4,10 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- A misspelled `[toll.x402] network` is now a startup/config error:
+  `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the
+  supported networks (`base-sepolia`, `base`), and the Pages middleware
+  rethrows a `ConfigError` instead of failing open to the origin.
 - Operator-side settle failures (settle HTTP non-2xx, `retryable: true`,
   `settlement-not-configured`, `network-mismatch`, `verify-error:` /
   `settle-error:`, `(verify|settle)-failed(5xx)`) now return

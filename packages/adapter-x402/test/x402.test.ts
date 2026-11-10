@@ -43,9 +43,12 @@ describe("AC-2.1 - buildOffer emits payment-required headers from config", () =>
   });
 
   it("throws on an unknown network, naming the supported set", () => {
-    const cfg = parseConfig(
-      `mode = "toll"\n[toll.x402]\npay_to = "${PAY_TO}"\nnetwork = "mars"`,
-    );
+    // parseConfig now refuses "mars" itself, so spread a valid cfg to reach
+    // networkOf's runtime guard (callers can hand buildOffer any object).
+    const cfg = {
+      ...CFG,
+      toll: { ...CFG.toll, x402: { ...CFG.toll.x402, network: "mars" } },
+    } as unknown as typeof CFG;
     expect(() => buildOffer(cfg, "/x")).toThrow(
       /unsupported x402 network "mars".*base-sepolia/,
     );

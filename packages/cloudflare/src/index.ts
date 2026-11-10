@@ -34,6 +34,7 @@
  */
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
+  ConfigError,
   canonicalize,
   type FaresealConfig,
   fromBase64Url,
@@ -625,10 +626,12 @@ export function createPagesMiddleware(
       }
       return resp;
     } catch (err) {
-      // A missing outbound route is a deployment error, not a runtime one:
-      // it must surface (a red suite, a failed request), never serve the
-      // site untolled and post nowhere in silence.
+      // A missing outbound route or an invalid config (e.g. a misspelled
+      // [toll.x402] network) is an operator error, not a runtime one: it must
+      // surface (a red suite, a failed request), never serve the site
+      // untolled in silence.
       if (err instanceof FaresealBindingMissingError) throw err;
+      if (err instanceof ConfigError) throw err;
       console.error("fareseal middleware failed open:", err);
       return context.next();
     }

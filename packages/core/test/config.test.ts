@@ -164,3 +164,15 @@ it("report_domain: off by default, carried verbatim when set", () => {
     "example.org",
   );
 });
+
+it("an unknown x402 network is a ConfigError naming the path and the supported set", () => {
+  const net = (n: string) =>
+    parseConfig(
+      `mode = "toll"\n[toll.x402]\npay_to = "0xabc"\nnetwork = "${n}"`,
+    );
+  expect(() => net("base-mainnet")).toThrowError(ConfigError);
+  expect(() => net("base-mainnet")).toThrowError(/toll\.x402\.network/);
+  expect(() => net("base-mainnet")).toThrowError(/"base-sepolia".*"base"/);
+  expect(net("base").toll.x402.network).toBe("base");
+  expect(parseConfig("").toll.x402.network).toBe("base-sepolia");
+});

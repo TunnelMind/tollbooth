@@ -17,15 +17,19 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils.js";
-import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
+import type {
+  FaresealConfig,
+  X402_NETWORKS,
+} from "@tunnelmindai/fareseal-core";
 
 /**
  * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example
  * uses it; base (mainnet) is present but must be named explicitly by the
  * operator (Constitution V.15, ADR 003). No mainnet is ever a default.
  */
+// Keyed by core's X402_NETWORKS: a missing or extra network is a compile error.
 export const NETWORKS: Record<
-  string,
+  (typeof X402_NETWORKS)[number],
   { chainId: bigint; asset: string; assetName: string; assetVersion: string }
 > = {
   "base-sepolia": {
@@ -113,8 +117,11 @@ const TWA_TYPEHASH = keccakText(
   "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)",
 );
 
+// Runtime guard kept: callers may pass a network that never went through parseConfig.
 function networkOf(network: string) {
-  const net = NETWORKS[network];
+  const net = Object.hasOwn(NETWORKS, network)
+    ? NETWORKS[network as keyof typeof NETWORKS]
+    : undefined;
   if (!net)
     throw new Error(
       `unsupported x402 network "${network}" (supported: ${Object.keys(NETWORKS).join(", ")})`,

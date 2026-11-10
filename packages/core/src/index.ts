@@ -16,6 +16,7 @@ export {
   LEGACY_MAZE_PREFIX,
   mazePrefixes,
   parseConfig,
+  X402_NETWORKS,
 } from "./config.js";
 export { readEnv } from "./env.js";
 export type { HeuristicResult, HeuristicSignals } from "./heuristics.js";
