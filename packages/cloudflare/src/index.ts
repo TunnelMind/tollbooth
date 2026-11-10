@@ -34,6 +34,7 @@
  */
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
+  ConfigError,
   canonicalize,
   type FaresealConfig,
   fromBase64Url,
@@ -273,23 +274,56 @@ export function makeSettlingVerify(
               : {}),
           }),
         });
-        const data =
-          ((await resp.json()) as { data?: Record<string, unknown> })?.data ??
-          {};
+        // A non-2xx body may not parse (a proxy's HTML 502); it is still
+        // classified by status below. A 2xx that fails to parse throws, as
+        // before, into settle-unreachable.
+        const body = (await (resp.ok
+          ? resp.json()
+          : resp.json().catch(() => null))) as {
+          data?: Record<string, unknown>;
+        } | null;
+        const data = body?.data ?? {};
         if (data.settled === true) {
+          // Settle routes name the on-chain id `transaction` or `tx`;
+          // `transaction` wins when both are present.
+          const txId =
+            typeof data.transaction === "string" && data.transaction !== ""
+              ? data.transaction
+              : typeof data.tx === "string" && data.tx !== ""
+                ? data.tx
+                : null;
+          if (txId === null) {
+            // A settle we cannot point the payer at is not proof of payment.
+            // Remember it (the nonce may be spent; never settle it twice), but
+            // leave payerFails alone: a malformed answer is not the payer's
+            // fault.
+            remember(seenPayments, key, "no-transaction-id");
+            return { ok: false, payer: null, reason: "no-transaction-id" };
+          }
           remember(seenPayments, key, "already-settled"); // EIP-3009 nonces are single-use
           payerFails.delete(payer);
           return {
             ok: true,
             payer: typeof data.payer === "string" ? data.payer : payer,
             // Surfaced to the payer in X-PAYMENT-RESPONSE.
-            ...(typeof data.transaction === "string"
-              ? { transaction: data.transaction }
-              : {}),
+            transaction: txId,
           };
         }
         const reason =
           typeof data.reason === "string" ? data.reason : "settle-failed";
+        // An operator fault (non-2xx settle, our config, our facilitator's
+        // 5xx) must not burn the payer's nonce or cooldown: not cached, not
+        // counted, so the same X-PAYMENT can be retried once we are healthy.
+        if (
+          !resp.ok ||
+          data.retryable === true ||
+          reason === "settlement-not-configured" ||
+          reason === "network-mismatch" ||
+          reason.startsWith("verify-error:") ||
+          reason.startsWith("settle-error:") ||
+          /^(verify|settle)-failed\(5\d\d\)$/.test(reason)
+        )
+          return { ok: false, payer: null, reason: "settle-retryable" };
         remember(seenPayments, key, reason);
         remember(payerFails, payer, {
           n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
@@ -592,10 +626,12 @@ export function createPagesMiddleware(
       }
       return resp;
     } catch (err) {
-      // A missing outbound route is a deployment error, not a runtime one:
-      // it must surface (a red suite, a failed request), never serve the
-      // site untolled and post nowhere in silence.
+      // A missing outbound route or an invalid config (e.g. a misspelled
+      // [toll.x402] network) is an operator error, not a runtime one: it must
+      // surface (a red suite, a failed request), never serve the site
+      // untolled in silence.
       if (err instanceof FaresealBindingMissingError) throw err;
+      if (err instanceof ConfigError) throw err;
       console.error("fareseal middleware failed open:", err);
       return context.next();
     }

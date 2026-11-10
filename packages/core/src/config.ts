@@ -44,11 +44,20 @@ function duration(defaultValue: string) {
 
 const absolutePath = z.string().startsWith("/");
 
+/**
+ * The x402 networks the adapter has an EIP-712 domain for. A name outside
+ * this list fails config validation, so a typo stops the site at startup
+ * instead of at the first offer. adapter-x402's NETWORKS is typed against it.
+ */
+export const X402_NETWORKS = ["base-sepolia", "base"] as const;
+
 const x402Schema = z
   .strictObject({
     enabled: z.boolean().prefault(true),
-    network: z.string().min(1).prefault("base-sepolia"),
+    network: z.enum(X402_NETWORKS).prefault("base-sepolia"),
     pay_to: z.string().prefault(""),
+    /** Clock drift accepted on a proof's validAfter/validBefore; offers still advertise 300 s. */
+    skew_tolerance: duration("60s"),
   })
   .prefault({});
 

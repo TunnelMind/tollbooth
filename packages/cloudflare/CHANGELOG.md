@@ -2,6 +2,33 @@
 
 Tollbooth was renamed Fareseal on 2026-11-10.
 
+## Unreleased
+
+- A misspelled `[toll.x402] network` is now a startup/config error:
+  `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the
+  supported networks (`base-sepolia`, `base`), and the Pages middleware
+  rethrows a `ConfigError` instead of failing open to the origin.
+- Operator-side settle failures (settle HTTP non-2xx, `retryable: true`,
+  `settlement-not-configured`, `network-mismatch`, `verify-error:` /
+  `settle-error:`, `(verify|settle)-failed(5xx)`) now return
+  `settle-retryable`: the payment is not cached and does not count toward
+  the payer's cooldown, so the same `X-PAYMENT` can be retried.
+- `[toll.x402] skew_tolerance` (default `"60s"`) absorbs client clock drift:
+  a proof is `not-yet-valid` only when `validAfter` is past now + skew, and
+  `window-too-long` only when `validBefore` is more than 300 s + skew away, so
+  a wallet 1 s fast (`validBefore = now+301`) is no longer refused. `expired`
+  gets no skew; offers still advertise `maxTimeoutSeconds: 300`. Set `"0s"`
+  for the old strict window.
+- A rejected `X-PAYMENT` now gets its reason in the 402 body's `error`
+  (e.g. `wrong payTo`, `authorization expired`, `nonce already used`), from a
+  fixed table so no internal text reaches the payer. With no `X-PAYMENT`
+  header `error` stays `X-PAYMENT header is required`.
+- The settle verifier takes the transaction id from `data.transaction`, else
+  `data.tx`, so a settle answering only `tx` no longer yields an empty
+  `X-PAYMENT-RESPONSE.transaction`. A `settled: true` answer with neither now
+  stays 402 with reason `no-transaction-id`; that payment is never settled
+  again and the payer is not damped.
+
 ## 2.2.0
 
 - Renamed the npm packages from `@tunnelmindai/tollbooth-*` to

@@ -72,6 +72,15 @@ describe("createPagesMiddleware — core behaviors", () => {
     expect(await r.text()).toBe("site content");
   });
 
+  it("an unknown x402 network is an operator error: it rejects, never serves the origin", async () => {
+    const mw = createPagesMiddleware({
+      config: toml().replace("base-sepolia", "base-mainnet"),
+    });
+    await expect(mw(ctx("/research", human(), {}))).rejects.toThrow(
+      /toll\.x402\.network/,
+    );
+  });
+
   it("the authed report carries x-tollbooth diagnostics; bad auth carries none", async () => {
     const mw = createPagesMiddleware({ config: toml("report-token-1") });
     const authed = await mw(

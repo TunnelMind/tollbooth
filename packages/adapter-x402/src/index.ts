@@ -17,15 +17,19 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils.js";
-import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
+import type {
+  FaresealConfig,
+  X402_NETWORKS,
+} from "@tunnelmindai/fareseal-core";
 
 /**
  * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example
  * uses it; base (mainnet) is present but must be named explicitly by the
  * operator (Constitution V.15, ADR 003). No mainnet is ever a default.
  */
+// Keyed by core's X402_NETWORKS: a missing or extra network is a compile error.
 export const NETWORKS: Record<
-  string,
+  (typeof X402_NETWORKS)[number],
   { chainId: bigint; asset: string; assetName: string; assetVersion: string }
 > = {
   "base-sepolia": {
@@ -113,8 +117,11 @@ const TWA_TYPEHASH = keccakText(
   "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)",
 );
 
+// Runtime guard kept: callers may pass a network that never went through parseConfig.
 function networkOf(network: string) {
-  const net = NETWORKS[network];
+  const net = Object.hasOwn(NETWORKS, network)
+    ? NETWORKS[network as keyof typeof NETWORKS]
+    : undefined;
   if (!net)
     throw new Error(
       `unsupported x402 network "${network}" (supported: ${Object.keys(NETWORKS).join(", ")})`,
@@ -250,11 +257,16 @@ export function verifyProof(
   if (value < usdToAtomic(cfg.toll.price_usd))
     return fail("insufficient-value");
   const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
-  if (validAfter > nowS) return fail("not-yet-valid");
+  // Client clocks drift ahead of ours: a wallet 1 s fast signs validAfter =
+  // now+1 and validBefore = now+301, which a strict check rejects. Allow the
+  // configured skew on both of those bounds. `expired` gets none: a proof
+  // past its own validBefore is dead by the signer's clock too.
+  const skewS = BigInt(Math.ceil(cfg.toll.x402.skew_tolerance / 1000));
+  if (validAfter > nowS + skewS) return fail("not-yet-valid");
   if (validBefore < nowS) return fail("expired");
   // A long-lived authorization is a replayable bearer token; hold the payer
-  // to the window the offer advertised.
-  if (validBefore - nowS > BigInt(MAX_TIMEOUT_SECONDS))
+  // to the window the offer advertised (plus skew).
+  if (validBefore - nowS > BigInt(MAX_TIMEOUT_SECONDS) + skewS)
     return fail("window-too-long");
 
   let payer: string;

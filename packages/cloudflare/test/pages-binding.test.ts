@@ -179,7 +179,10 @@ function strictBinding() {
       binding.calls.push(req.url);
       if (req.url === SETTLE_URL)
         return new Response(
-          JSON.stringify({ ok: true, data: { settled: true, payer: "0xabc" } }),
+          JSON.stringify({
+            ok: true,
+            data: { settled: true, payer: "0xabc", tx: "0xTX" },
+          }),
           { status: 200 },
         );
       return new Response("{}", { status: 200 });

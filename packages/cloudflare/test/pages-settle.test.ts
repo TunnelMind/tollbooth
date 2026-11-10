@@ -101,6 +101,54 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     );
   });
 
+  // T001: the settle route may name the id `transaction` or `tx`.
+  const txOf = (r: Response) =>
+    JSON.parse(atob(r.headers.get("x-payment-response") ?? "")).transaction;
+
+  it("a settle answering only `tx` surfaces it as the transaction", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
+    const r = await settlingMw()(
+      ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(200);
+    expect(txOf(r)).toBe("0xTX");
+  });
+
+  it("a settle answering only `transaction` surfaces it", async () => {
+    const b = settleBinding({ settled: true, transaction: "0xTXHASH" });
+    const r = await settlingMw()(
+      ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(200);
+    expect(txOf(r)).toBe("0xTXHASH");
+  });
+
+  it("with both `transaction` and `tx`, `transaction` wins", async () => {
+    const b = settleBinding({
+      settled: true,
+      transaction: "0xWIN",
+      tx: "0xLOSE",
+    });
+    const r = await settlingMw()(
+      ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(200);
+    expect(txOf(r)).toBe("0xWIN");
+  });
+
+  it("settled:true with no transaction id stays 402 and is never re-settled", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const mw = settlingMw();
+    const xp = freshPayment();
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(402);
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(402);
+    expect(b.settles.length).toBe(1);
+  });
+
   it("a valid payment that FAILS to settle stays 402 — no free content", async () => {
     const b = settleBinding({ settled: false, reason: "insufficient_funds" });
     const mw = settlingMw();
@@ -111,7 +159,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("a garbage payment never reaches the settle endpoint", async () => {
-    const b = settleBinding({ settled: true });
+    const b = settleBinding({ settled: true, tx: "0xTX" });
     const mw = settlingMw();
     const r = await mw(
       ctx("/research", agent({ "x-payment": "not-a-payment" }), envOf(b)),
@@ -121,7 +169,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("no settle token → a valid payment fails closed", async () => {
-    const b = settleBinding({ settled: true });
+    const b = settleBinding({ settled: true, tx: "0xTX" });
     const mw = settlingMw();
     const r = await mw(
       ctx("/research", agent({ "x-payment": freshPayment() }), { DATA_API: b }),
@@ -131,7 +179,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("no settle option at all → payments cannot buy passage (verify-only is not enough)", async () => {
-    const b = settleBinding({ settled: true });
+    const b = settleBinding({ settled: true, tx: "0xTX" });
     const mw = createPagesMiddleware({ config: toml(), binding: "DATA_API" });
     const r = await mw(
       ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
@@ -153,7 +201,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("a settled payment replayed on a later request is rejected from cache", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     const mw = settlingMw();
     const xp = freshPayment();
     expect(
@@ -163,6 +211,18 @@ describe("createPagesMiddleware — settle-then-serve", () => {
       (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
     ).toBe(402);
     expect(b.settles.length).toBe(1);
+  });
+
+  it("a replayed nonce's 402 says the nonce is already used", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
+    const mw = settlingMw();
+    const xp = freshPayment();
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(200);
+    const replay = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)));
+    expect(replay.status).toBe(402);
+    expect((await replay.json()).error).toBe("nonce already used");
   });
 
   it("a payer with repeated fresh failures gets a cooldown, not more facilitator calls", async () => {
@@ -178,7 +238,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("concurrent identical payments settle once and only the first passes", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" }, 20);
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" }, 20);
     const mw = settlingMw();
     // Warm the isolate state first: a cold burst builds one state per request.
     await mw(ctx("/r", agent(), envOf(b)));
@@ -194,7 +254,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("a re-encoded copy of a settled payment is refused without a settle", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     const mw = settlingMw();
     const xp = freshPayment();
     expect(
@@ -203,7 +263,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     const reencoded = btoa(JSON.stringify(JSON.parse(atob(xp)), null, 1));
     expect(reencoded).not.toBe(xp);
     // Valid on its own: a fresh isolate would settle it.
-    const fresh = settleBinding({ settled: true, payer: "0xabc" });
+    const fresh = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     expect(
       (
         await settlingMw()(
@@ -218,7 +278,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("other spellings of a settled nonce (prefix, leading zeros, case) are refused without a settle", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     const mw = settlingMw();
     // 31 bytes: the signed bytes32 nonce is 0x00 followed by these.
     const hex = "ab".repeat(31);
@@ -226,7 +286,11 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     const spellings = [`0x00${hex}`, `zz${hex}`, `0X${hex.toUpperCase()}`];
     // Each spelling verifies on its own: a fresh isolate would settle it.
     for (const n of spellings) {
-      const fresh = settleBinding({ settled: true, payer: "0xabc" });
+      const fresh = settleBinding({
+        settled: true,
+        payer: "0xabc",
+        tx: "0xTX",
+      });
       expect(
         (
           await settlingMw()(
@@ -248,7 +312,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("a concurrent burst of nonce spellings settles once", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" }, 20);
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" }, 20);
     const mw = settlingMw();
     await mw(ctx("/r", agent(), envOf(b)));
     const hex = "cd".repeat(31);
@@ -264,7 +328,11 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("past the per-isolate settle budget, payments are throttled without a facilitator call", async () => {
-    const outcome: Record<string, unknown> = { settled: true, payer: "0xabc" };
+    const outcome: Record<string, unknown> = {
+      settled: true,
+      payer: "0xabc",
+      tx: "0xTX",
+    };
     const b = settleBinding(outcome);
     const mw = settlingMw();
     const t0 = Date.now();
@@ -303,7 +371,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 
   it("the authed report says settling:true when the wire is live", async () => {
-    const b = settleBinding({ settled: true });
+    const b = settleBinding({ settled: true, tx: "0xTX" });
     const mw = createPagesMiddleware({
       config: toml("report-token-3"),
       settle: { url: SETTLE_URL },
@@ -321,9 +389,118 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 });
 
+// T004: an operator-side settle failure (our config, our facilitator, our
+// 5xx) must not burn the payer's nonce or count toward their cooldown.
+const OPERATOR_FAULT =
+  "settlement unavailable (operator fault); retry the same payment";
+
+/** A settle endpoint answering `status` with `body` verbatim. */
+function rawSettleBinding(status: number, body: unknown) {
+  const b = {
+    settles: 0,
+    fetch: async (req: Request) => {
+      if (req.url === SETTLE_URL) {
+        b.settles += 1;
+        // A string body is sent raw (e.g. a proxy's HTML error page).
+        const text = typeof body === "string" ? body : JSON.stringify(body);
+        return new Response(text, { status });
+      }
+      return new Response("{}", { status: 200 });
+    },
+  };
+  return b;
+}
+
+describe("makeSettlingVerify — operator-side settle failures (T004)", () => {
+  const classes: [string, number, unknown][] = [
+    ["HTTP 401 {ok:false,error}", 401, { ok: false, error: "bad token" }],
+    ["HTTP 503", 503, { ok: false, error: "down" }],
+    ["HTTP 502 non-JSON body", 502, "<html>Bad Gateway</html>"],
+    [
+      "retryable:true",
+      200,
+      { ok: true, data: { settled: false, retryable: true } },
+    ],
+    [
+      "settlement-not-configured",
+      200,
+      {
+        ok: true,
+        data: { settled: false, reason: "settlement-not-configured" },
+      },
+    ],
+    [
+      "verify-error: timeout",
+      200,
+      { ok: true, data: { settled: false, reason: "verify-error: timeout" } },
+    ],
+    [
+      "settle-error: boom",
+      200,
+      { ok: true, data: { settled: false, reason: "settle-error: boom" } },
+    ],
+    [
+      "settle-failed(502)",
+      200,
+      { ok: true, data: { settled: false, reason: "settle-failed(502)" } },
+    ],
+  ];
+  for (const [name, status, body] of classes) {
+    it(`${name}: retryable, not cached, no cooldown, operator-fault 402`, async () => {
+      const b = rawSettleBinding(status, body);
+      const verify = makeSettlingVerify(
+        (url, init) => b.fetch(new Request(url, init)),
+        SETTLE_URL,
+        "settle-secret",
+      );
+      const cfg = parseConfig(toml());
+      const xp = freshPayment();
+      expect(await verify(xp, cfg)).toMatchObject({
+        ok: false,
+        reason: "settle-retryable",
+      });
+      expect(await verify(xp, cfg)).toMatchObject({
+        reason: "settle-retryable",
+      });
+      expect(b.settles).toBe(2);
+      // Same payer, fresh nonces: still no cooldown after four more.
+      for (let i = 0; i < 4; i++) await verify(freshPayment(), cfg);
+      expect((await verify(freshPayment(), cfg)).reason).toBe(
+        "settle-retryable",
+      );
+      expect(b.settles).toBe(7);
+      // Through the middleware, the payer is told it is our fault.
+      const r = await settlingMw()(
+        ctx("/r", agent({ "x-payment": freshPayment() }), envOf(b)),
+      );
+      expect(r.status).toBe(402);
+      expect((await r.json()).error).toBe(OPERATOR_FAULT);
+    });
+  }
+
+  it("payer-side insufficient_funds is still cached and still cools down", async () => {
+    const b = rawSettleBinding(200, {
+      ok: true,
+      data: { settled: false, reason: "insufficient_funds" },
+    });
+    const verify = makeSettlingVerify(
+      (url, init) => b.fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const cfg = parseConfig(toml());
+    const xp = freshPayment();
+    expect((await verify(xp, cfg)).reason).toBe("insufficient_funds");
+    expect((await verify(xp, cfg)).reason).toBe("insufficient_funds");
+    expect(b.settles).toBe(1);
+    for (let i = 0; i < 4; i++) await verify(freshPayment(), cfg);
+    expect((await verify(freshPayment(), cfg)).reason).toBe("payer-cooldown");
+  });
+});
+
 describe("createPagesMiddleware — settle carries the resource (E003)", () => {
   it("the settle body carries origin+pathname+search, no fragment", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     const r = await settlingMw()(
       ctx("/a/b?x=1#frag", agent({ "x-payment": freshPayment() }), envOf(b)),
     );
@@ -332,7 +509,7 @@ describe("createPagesMiddleware — settle carries the resource (E003)", () => {
   });
 
   it("a query string is kept in the resource", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     await settlingMw()(
       ctx(
         "/research?page=2&q=x",
@@ -346,7 +523,7 @@ describe("createPagesMiddleware — settle carries the resource (E003)", () => {
   });
 
   it("without a resource (direct adapter call) the body has no resource key", async () => {
-    const b = settleBinding({ settled: true, payer: "0xabc" });
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
     const verify = makeSettlingVerify(
       (url, init) => b.fetch(new Request(url, init)),
       SETTLE_URL,

@@ -23,6 +23,12 @@ describe("US-1 AC-1.3 — invalid config fails startup naming the bad key", () =
     );
   });
 
+  it("rejects a malformed x402 skew_tolerance, naming the key", () => {
+    expect(() =>
+      parseConfig(`[toll.x402]\nskew_tolerance = "abc"`),
+    ).toThrowError(/toll\.x402\.skew_tolerance/);
+  });
+
   it("rejects a free_paths entry that does not start with a slash", () => {
     expect(() => parseConfig(`free_paths = ["robots.txt"]`)).toThrowError(
       /free_paths/,
@@ -63,6 +69,7 @@ describe("FR-10 — documented defaults for every key (plan §5)", () => {
     expect(c.toll.offer_grace).toBe(3);
     expect(c.toll.window).toBe(600_000);
     expect(c.toll.x402.enabled).toBe(true);
+    expect(c.toll.x402.skew_tolerance).toBe(60_000);
     expect(c.toll.x402.network).toBe("base-sepolia");
     expect(c.toll.x402.pay_to).toBe("");
     expect(c.toll.stripe.enabled).toBe(false);
@@ -156,4 +163,16 @@ it("report_domain: off by default, carried verbatim when set", () => {
   expect(parseConfig('report_domain = "example.org"').report_domain).toBe(
     "example.org",
   );
+});
+
+it("an unknown x402 network is a ConfigError naming the path and the supported set", () => {
+  const net = (n: string) =>
+    parseConfig(
+      `mode = "toll"\n[toll.x402]\npay_to = "0xabc"\nnetwork = "${n}"`,
+    );
+  expect(() => net("base-mainnet")).toThrowError(ConfigError);
+  expect(() => net("base-mainnet")).toThrowError(/toll\.x402\.network/);
+  expect(() => net("base-mainnet")).toThrowError(/"base-sepolia".*"base"/);
+  expect(net("base").toll.x402.network).toBe("base");
+  expect(parseConfig("").toll.x402.network).toBe("base-sepolia");
 });
