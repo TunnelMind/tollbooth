@@ -11,7 +11,7 @@ import {
   mintVoucher,
   publicKeyOf,
 } from "@tunnelmindai/fareseal-core";
-import { tollbooth } from "@tunnelmindai/fareseal-hono";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const HUMAN = {
@@ -56,7 +56,7 @@ baseline.get("*", (c) => c.text("ok"));
 
 const tolled = new Hono();
 tolled.use(
-  tollbooth({
+  fareseal({
     config: TOLL,
     x402: { buildOffer, verifyProof },
     fetchDirectory: async () => ({ keys: [] }),
@@ -67,7 +67,7 @@ tolled.get("*", (c) => c.text("ok"));
 const siteSecret = generateSecretKey();
 const voucherApp = new Hono();
 voucherApp.use(
-  tollbooth({
+  fareseal({
     config: VOUCHER_CFG,
     siteKeys: { secret: siteSecret, pub: await publicKeyOf(siteSecret) },
     fetchDirectory: async () => ({ keys: [] }),

@@ -11,7 +11,7 @@
  * Two things do NOT fail open (2.0.0, TunnelMind spec 088):
  *   - a missing outbound route. If `binding` names a service binding that is
  *     absent from env, or outbound reporting is configured with neither
- *     `binding` nor `fetch`, construction throws TollboothBindingMissingError
+ *     `binding` nor `fetch`, construction throws FaresealBindingMissingError
  *     before any request is issued. There is no implicit global fetch — the
  *     1.x fallback posted test-suite snapshots into production.
  *   - the environment marker. Every outbound write carries
@@ -35,6 +35,7 @@
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
   canonicalize,
+  type FaresealConfig,
   fromBase64Url,
   parseConfig,
   publicKeyOf,
@@ -42,11 +43,10 @@ import {
   readEnv,
   type SiteKeyPair,
   sign,
-  type TollboothConfig,
   toBase64Url,
 } from "@tunnelmindai/fareseal-core";
 import {
-  tollbooth,
+  fareseal,
   type X402Adapter,
   type X402VerifyResult,
 } from "@tunnelmindai/fareseal-hono";
@@ -56,9 +56,12 @@ import {
   makeMazeHandler,
 } from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
-import { TollboothBindingMissingError } from "./errors.js";
+import { FaresealBindingMissingError } from "./errors.js";
 
-export { TollboothBindingMissingError } from "./errors.js";
+export {
+  FaresealBindingMissingError,
+  TollboothBindingMissingError,
+} from "./errors.js";
 
 const REPORT_PATH = "/_tollbooth/report";
 const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
@@ -87,7 +90,7 @@ export type PagesMiddleware = (context: PagesContext) => Promise<Response>;
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
-export interface CloudflareTollboothOptions {
+export interface CloudflareFaresealOptions {
   /**
    * tollbooth TOML, or a builder over env for values that live in vars and
    * secrets (report token, price). The built text is the state-cache key, so
@@ -109,7 +112,7 @@ export interface CloudflareTollboothOptions {
    * Env key of a service binding to carry settle/report/snapshot POSTs —
    * on Cloudflare a same-zone self-fetch 522s, so a binding is the reliable
    * route. When named it MUST be present in env with a fetch(); otherwise
-   * construction throws TollboothBindingMissingError. No global-fetch fallback.
+   * construction throws FaresealBindingMissingError. No global-fetch fallback.
    */
   binding?: string;
   /**
@@ -124,14 +127,14 @@ export interface CloudflareTollboothOptions {
    * charge — when it returns 404. Answers are cached per isolate (bounded,
    * oldest-out); a throwing check is not cached and falls through to the
    * offer. When set, env.ASSETS MUST have a fetch(); otherwise construction
-   * throws TollboothBindingMissingError.
+   * throws FaresealBindingMissingError.
    */
   exists?: "assets";
 }
 
 interface State {
   app: Hono<{ Bindings: { NEXT: () => Response | Promise<Response> } }>;
-  cfg: TollboothConfig;
+  cfg: FaresealConfig;
   siteKeys: SiteKeyPair | null;
   sitePub: string | null;
   routedFetch: FetchLike | null;
@@ -170,7 +173,7 @@ export function testRunnerDetected(): boolean {
  * otherwise. A site that installs the package and sets nothing writes as
  * production — open ingest survives — while every vitest run is refused.
  */
-export function tollboothEnvMarker(env: Record<string, unknown>): string {
+export function faresealEnvMarker(env: Record<string, unknown>): string {
   const explicit = readEnv(env, "ENV");
   if (explicit !== "") return explicit;
   return testRunnerDetected() ? "test" : "production";
@@ -308,7 +311,7 @@ export function makeSettlingVerify(
  * outbound call is a settle or a snapshot flush, both after the state exists).
  */
 function resolveRoutedFetch(
-  opts: CloudflareTollboothOptions,
+  opts: CloudflareFaresealOptions,
   env: Record<string, unknown>,
   needsFetch: boolean,
 ): FetchLike | null {
@@ -317,7 +320,7 @@ function resolveRoutedFetch(
       | { fetch: (req: Request) => Promise<Response> }
       | undefined;
     if (!binding || typeof binding.fetch !== "function") {
-      throw new TollboothBindingMissingError(opts.binding, Object.keys(env));
+      throw new FaresealBindingMissingError(opts.binding, Object.keys(env));
     }
     // Call fetch as a method: workerd throws `Illegal invocation` when a
     // service binding's fetch runs without the binding as `this`.
@@ -325,8 +328,7 @@ function resolveRoutedFetch(
     return (url, init) => binding.fetch(new Request(url, init));
   }
   if (opts.fetch !== undefined) return opts.fetch;
-  if (needsFetch)
-    throw new TollboothBindingMissingError(null, Object.keys(env));
+  if (needsFetch) throw new FaresealBindingMissingError(null, Object.keys(env));
   return null; // nothing outbound is configured; nothing to route
 }
 
@@ -343,7 +345,7 @@ function makeAssetsExists(
     | { fetch: (req: Request) => Promise<Response> }
     | undefined;
   if (!assets || typeof assets.fetch !== "function")
-    throw new TollboothBindingMissingError("ASSETS", Object.keys(env));
+    throw new FaresealBindingMissingError("ASSETS", Object.keys(env));
   const cache = new Map<string, boolean>();
   return async (path) => {
     const hit = cache.get(path);
@@ -361,7 +363,7 @@ function makeAssetsExists(
 
 /** The Pages middleware: `export const onRequest = createPagesMiddleware({...})`. */
 export function createPagesMiddleware(
-  opts: CloudflareTollboothOptions,
+  opts: CloudflareFaresealOptions,
 ): PagesMiddleware {
   let state: State | null = null;
   let stateKey: string | null = null;
@@ -376,7 +378,7 @@ export function createPagesMiddleware(
     const cfg = parseConfig(toml);
     const seed = readEnv(env, "SITE_KEY");
     const settleToken = readEnv(env, "SETTLE_TOKEN");
-    const envMarker = tollboothEnvMarker(env);
+    const envMarker = faresealEnvMarker(env);
 
     let siteKeys: SiteKeyPair | null = null;
     let sitePub: string | null = null;
@@ -430,7 +432,7 @@ export function createPagesMiddleware(
       };
     }>();
     app.use(
-      tollbooth({
+      fareseal({
         config: cfg,
         // Cloudflare's edge sets this header; clients cannot forge it on Workers.
         clientIp: (c) => c.req.header("cf-connecting-ip"),
@@ -577,9 +579,15 @@ export function createPagesMiddleware(
       // A missing outbound route is a deployment error, not a runtime one:
       // it must surface (a red suite, a failed request), never serve the
       // site untolled and post nowhere in silence.
-      if (err instanceof TollboothBindingMissingError) throw err;
+      if (err instanceof FaresealBindingMissingError) throw err;
       console.error("tollbooth middleware failed open:", err);
       return context.next();
     }
   };
 }
+
+/** @deprecated renamed CloudflareFaresealOptions on 2026-11-10; removed in 3.0.0 */
+export type CloudflareTollboothOptions = CloudflareFaresealOptions;
+
+/** @deprecated renamed faresealEnvMarker on 2026-11-10; removed in 3.0.0 */
+export const tollboothEnvMarker = faresealEnvMarker;

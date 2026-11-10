@@ -24,7 +24,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const WEBHOOK_SECRET = "whsec_integration";
 
@@ -48,7 +48,7 @@ async function setup(...directoryAgents: TestAgent[]) {
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG,
       siteKeys: site,
       stripe,

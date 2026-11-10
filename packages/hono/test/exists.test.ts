@@ -8,7 +8,7 @@ import {
   PAY_TO,
   validPayment,
 } from "../../adapter-x402/test/fixtures/payment.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const TOLL = `
 mode = "toll"
@@ -23,7 +23,7 @@ function app(exists: (path: string) => Promise<boolean>) {
   const verify = vi.fn(verifyProof);
   const a = new Hono();
   a.use(
-    tollbooth({
+    fareseal({
       config: TOLL,
       x402: { buildOffer, verifyProof: verify },
       exists,

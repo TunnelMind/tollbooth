@@ -20,7 +20,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const CFG_TOML = `
 mode = "toll"
@@ -38,7 +38,7 @@ function makeApp(...directoryAgents: TestAgent[]) {
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG_TOML,
       x402: { buildOffer, verifyProof },
       maze,

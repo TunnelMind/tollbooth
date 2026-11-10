@@ -10,6 +10,7 @@ import {
   buildReceipt,
   type Decision,
   decide,
+  type FaresealConfig,
   type FetchDirectory,
   type Identity,
   identify,
@@ -28,7 +29,6 @@ import {
   receiptFactsFor,
   SIGNATURE_UNVERIFIED,
   type SiteKeyPair,
-  type TollboothConfig,
   verifiedPass,
 } from "@tunnelmindai/fareseal-core";
 import type { Context, MiddlewareHandler } from "hono";
@@ -40,12 +40,12 @@ import type { Context, MiddlewareHandler } from "hono";
  */
 export interface X402Adapter {
   buildOffer(
-    cfg: TollboothConfig,
+    cfg: FaresealConfig,
     resource: string,
   ): { headers: Record<string, string>; requirement?: object };
   verifyProof(
     xPayment: string,
-    cfg: TollboothConfig,
+    cfg: FaresealConfig,
     opts?: {
       nowS?: number;
       /**
@@ -88,9 +88,9 @@ export interface StripeRoutes {
   };
 }
 
-export interface TollboothOptions {
+export interface FaresealOptions {
   /** Parsed config, or TOML source (parsed with the same fail-hard rules). */
-  config: TollboothConfig | string;
+  config: FaresealConfig | string;
   /** Site keypair for voucher verify/re-sign (load via @tunnelmindai/fareseal-core/node). */
   siteKeys?: SiteKeyPair;
   /** The x402 payment adapter (pass @tunnelmindai/fareseal-adapter-x402's exports). */
@@ -535,7 +535,7 @@ function evictOldest(stats: Stats): void {
 
 function reportJson(
   stats: Stats,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   reporter?: ReceiptReporter,
 ) {
   const price = Number(cfg.toll.price_usd);
@@ -583,7 +583,7 @@ async function bearerMatches(
   return got !== undefined && diff === 0;
 }
 
-export function tollbooth(options: TollboothOptions): MiddlewareHandler {
+export function fareseal(options: FaresealOptions): MiddlewareHandler {
   const cfg =
     typeof options.config === "string"
       ? parseConfig(options.config)
@@ -946,3 +946,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     }
   };
 }
+
+/** @deprecated renamed fareseal on 2026-11-10; removed in 3.0.0 */
+export const tollbooth = fareseal;
+
+/** @deprecated renamed FaresealOptions on 2026-11-10; removed in 3.0.0 */
+export type TollboothOptions = FaresealOptions;

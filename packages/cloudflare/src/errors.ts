@@ -11,18 +11,18 @@
  * and the middleware rethrows it instead of serving the site untolled.
  * A red suite is the point.
  */
-export class TollboothBindingMissingError extends Error {
-  override readonly name = "TollboothBindingMissingError";
+export class FaresealBindingMissingError extends Error {
+  override readonly name = "FaresealBindingMissingError";
   readonly binding: string | null;
   readonly presentKeys: string[];
 
   constructor(binding: string | null, presentKeys: string[]) {
     super(
       binding === null
-        ? "tollbooth: outbound reporting is configured but no `binding` and no `fetch` was given — " +
+        ? "fareseal: outbound reporting is configured but no `binding` and no `fetch` was given — " +
             'there is no implicit global fetch. Pass `binding: "<service binding name>"` (Cloudflare) ' +
             "or `fetch` (an explicit fetcher, e.g. a recording stub in tests)."
-        : `tollbooth: binding "${binding}" is not present in env or has no fetch(). ` +
+        : `fareseal: binding "${binding}" is not present in env or has no fetch(). ` +
             `Present env keys: [${presentKeys.join(", ")}]. There is no implicit global fetch — ` +
             `bind the service (wrangler.toml [[services]]) or stub it in tests.`,
     );
@@ -30,3 +30,8 @@ export class TollboothBindingMissingError extends Error {
     this.presentKeys = presentKeys;
   }
 }
+
+/** @deprecated renamed FaresealBindingMissingError on 2026-11-10; removed in 3.0.0 */
+export const TollboothBindingMissingError = FaresealBindingMissingError;
+/** @deprecated renamed FaresealBindingMissingError on 2026-11-10; removed in 3.0.0 */
+export type TollboothBindingMissingError = FaresealBindingMissingError;

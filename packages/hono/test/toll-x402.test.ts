@@ -14,7 +14,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const TOLL = `
 mode = "toll"
@@ -27,7 +27,7 @@ const curlHeaders = { "user-agent": "curl/8.7.1", accept: "*/*" };
 function app(...directoryAgents: TestAgent[]) {
   const a = new Hono();
   a.use(
-    tollbooth({
+    fareseal({
       config: TOLL,
       x402: { buildOffer, verifyProof },
       fetchDirectory: dirWith(...directoryAgents.map((a) => a.jwk)),

@@ -16,7 +16,7 @@ import {
   validPayment,
 } from "../../adapter-x402/test/fixtures/payment.js";
 import { dirWith, makeAgent } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const LONG_PATH = `/${"p".repeat(1000)}`;
 
@@ -24,7 +24,7 @@ describe("B004 bounded memory", () => {
   it("1,500 requests with distinct 100 KB UAs keep the report under 2 MB", async () => {
     const app = new Hono();
     app.use(
-      tollbooth({
+      fareseal({
         // Entry cap below the request count, so both bounds are exercised.
         config: `report_token = "t"\n[limits]\nagent_ledger_max = 1000\n`,
         fetchDirectory: dirWith(),
@@ -74,7 +74,7 @@ describe("B004 bounded memory", () => {
     const agent = await makeAgent();
     const app = new Hono();
     app.use(
-      tollbooth({
+      fareseal({
         config: `mode = "toll"\nreport = true\nreport_url = "https://log.test/ingest"\n[toll.x402]\npay_to = "${PAY_TO}"\n`,
         siteKeys: site,
         reporter,

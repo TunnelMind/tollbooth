@@ -23,7 +23,7 @@ import {
   NOW,
   signedRequest,
 } from "../../core/test/fixtures/wba.js";
-import { type TollboothOptions, tollbooth } from "../src/index.js";
+import { type FaresealOptions, fareseal } from "../src/index.js";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -42,7 +42,7 @@ pay_to = "0x0000000000000000000000000000000000000001"
 `;
 
 async function setup(
-  fetchDirectory: TollboothOptions["fetchDirectory"] = dirWith(),
+  fetchDirectory: FaresealOptions["fetchDirectory"] = dirWith(),
 ) {
   const secret = generateSecretKey();
   const batches: Receipt[][] = [];
@@ -58,7 +58,7 @@ async function setup(
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG,
       siteKeys: { secret, pub: await publicKeyOf(secret) },
       reporter,
@@ -325,11 +325,11 @@ const SLACKBOT = "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)";
 
 function verifiedApp(keys: unknown[] = []) {
   const app = new Hono();
-  const options: Partial<TollboothOptions> = {
+  const options: Partial<FaresealOptions> = {
     clientIp: (c) => c.req.header("x-test-ip"),
   };
   app.use(
-    tollbooth({
+    fareseal({
       config: VERIFIED_CFG,
       fetchDirectory: dirWith(...keys),
       nowS: () => NOW,

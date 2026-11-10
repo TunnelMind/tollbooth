@@ -5,7 +5,7 @@ import {
   mintVoucher,
   publicKeyOf,
 } from "@tunnelmindai/fareseal-core";
-import { tollbooth } from "@tunnelmindai/fareseal-hono";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { fetchPaying } from "../agent-client.js";
@@ -69,7 +69,7 @@ describe("agent-client (AC-7.1)", () => {
     const site = { secret, pub: await publicKeyOf(secret) };
     const vApp = new Hono();
     vApp.use(
-      tollbooth({
+      fareseal({
         config: `
 mode = "toll"
 [toll.x402]

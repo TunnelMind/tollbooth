@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createPagesMiddleware,
-  TollboothBindingMissingError,
+  FaresealBindingMissingError,
 } from "../src/index.js";
 import { agent, ctx, toml } from "./helpers.js";
 
@@ -82,11 +82,11 @@ describe('exists: "assets"', () => {
     const err = await mw(ctx("/research", agent(), { OTHER: 1 })).catch(
       (e) => e,
     );
-    expect(err).toBeInstanceOf(TollboothBindingMissingError);
+    expect(err).toBeInstanceOf(FaresealBindingMissingError);
     expect(err.binding).toBe("ASSETS");
     await expect(
       mw(ctx("/research", agent(), { ASSETS: { notFetch: true } })),
-    ).rejects.toBeInstanceOf(TollboothBindingMissingError);
+    ).rejects.toBeInstanceOf(FaresealBindingMissingError);
   });
 
   it("without the option the binding is never called", async () => {

@@ -18,7 +18,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 async function setup(...agents: TestAgent[]) {
   const secret = generateSecretKey();
@@ -34,7 +34,7 @@ async function setup(...agents: TestAgent[]) {
   const clock = { now: NOW };
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: `mode = "toll"\nreport = true\nreport_url = "https://log.test/ingest"\n[toll.x402]\npay_to = "${PAY_TO}"\n`,
       siteKeys: site,
       reporter,

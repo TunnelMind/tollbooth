@@ -22,7 +22,7 @@ import {
   makeAgent,
   signedRequest,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const CFG = `
 mode = "toll"
@@ -50,7 +50,7 @@ async function setup() {
   const clock = { now: NOW };
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG,
       siteKeys: site,
       reporter,
@@ -129,7 +129,7 @@ describe("receipt emission wiring", () => {
     const site: SiteKeyPair = { secret, pub: await publicKeyOf(secret) };
     const app = new Hono();
     app.use(
-      tollbooth({
+      fareseal({
         config: `report_token = "t"`,
         siteKeys: site,
         fetchDirectory: dirWith(),

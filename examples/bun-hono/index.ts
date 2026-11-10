@@ -1,6 +1,6 @@
 // Bun example: identical middleware, Bun's server. Testnet values only.
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
-import { tollbooth } from "@tunnelmindai/fareseal-hono";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const config = `
@@ -12,7 +12,7 @@ pay_to = "0x1111111111111111111111111111111111111111"
 
 const app = new Hono();
 // Verify-only is testnet-only: mainnet requires a settling verifier (settles: true).
-app.use(tollbooth({ config, x402: { buildOffer, verifyProof } }));
+app.use(fareseal({ config, x402: { buildOffer, verifyProof } }));
 app.get("/", (c) => c.text("welcome, human"));
 app.get("/article", (c) => c.text("the article"));
 

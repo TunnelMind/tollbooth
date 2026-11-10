@@ -3,7 +3,7 @@
 import { serve } from "@hono/node-server";
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { readEnv } from "@tunnelmindai/fareseal-core";
-import { tollbooth } from "@tunnelmindai/fareseal-hono";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const config = `
@@ -17,7 +17,7 @@ export const app = new Hono();
 // Verify-only is testnet-only: mainnet requires a settling verifier (settles: true).
 // On Node the default directory fetcher resolves Signature-Agent hosts and
 // refuses private addresses; nothing to wire.
-app.use(tollbooth({ config, x402: { buildOffer, verifyProof } }));
+app.use(fareseal({ config, x402: { buildOffer, verifyProof } }));
 app.get("/", (c) => c.text("welcome, human"));
 app.get("/article", (c) => c.text("the article"));
 

@@ -9,14 +9,14 @@ import {
   makeAgent,
   signedRequest,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 describe("R102 nonce replay through the middleware (toll mode)", () => {
   it("credits a nonce-bearing signature once; the replay is anonymous", async () => {
     const agent = await makeAgent();
     const app = new Hono();
     app.use(
-      tollbooth({
+      fareseal({
         config: `mode = "toll"\nreport_token = "sekrit"\n[toll.x402]\npay_to = "${PAY_TO}"\n`,
         x402: { buildOffer, verifyProof },
         fetchDirectory: dirWith(agent.jwk),

@@ -13,9 +13,9 @@ import {
 import {
   createPagesMiddleware,
   ENV_HEADER,
-  TollboothBindingMissingError,
+  FaresealBindingMissingError,
+  faresealEnvMarker,
   testRunnerDetected,
-  tollboothEnvMarker,
 } from "../src/index.js";
 import { agent, ctx, human, toml } from "./helpers.js";
 
@@ -39,11 +39,11 @@ describe("no global-fetch fallback", () => {
     });
     await expect(
       mw(ctx("/research", agent(), { ...seedEnv(), OTHER: 1 })),
-    ).rejects.toBeInstanceOf(TollboothBindingMissingError);
+    ).rejects.toBeInstanceOf(FaresealBindingMissingError);
     const err = await mw(ctx("/research", agent(), { ...seedEnv() })).catch(
       (e) => e,
     );
-    expect(err.name).toBe("TollboothBindingMissingError");
+    expect(err.name).toBe("FaresealBindingMissingError");
     expect(err.binding).toBe("DATA_API");
     expect(err.message).toContain('binding "DATA_API" is not present');
     expect(globalCalls).toEqual([]); // zero network calls
@@ -56,7 +56,7 @@ describe("no global-fetch fallback", () => {
     });
     await expect(
       mw(ctx("/x", human(), { DATA_API: { notFetch: true } })),
-    ).rejects.toBeInstanceOf(TollboothBindingMissingError);
+    ).rejects.toBeInstanceOf(FaresealBindingMissingError);
   });
 
   it("outbound reporting configured with neither binding nor fetch throws, naming the fix", async () => {
@@ -65,7 +65,7 @@ describe("no global-fetch fallback", () => {
       snapshots: { url: "https://collector.example/v1/report" },
     });
     const err = await mw(ctx("/x", human(), seedEnv())).catch((e) => e);
-    expect(err).toBeInstanceOf(TollboothBindingMissingError);
+    expect(err).toBeInstanceOf(FaresealBindingMissingError);
     expect(err.binding).toBeNull();
     expect(err.message).toContain("no implicit global fetch");
   });
@@ -131,15 +131,15 @@ describe("no global-fetch fallback", () => {
       g.process = undefined; // what the Pages runtime looks like
       g.__vitest_worker__ = undefined;
       expect(testRunnerDetected()).toBe(false);
-      expect(tollboothEnvMarker({})).toBe("production");
-      expect(tollboothEnvMarker({ TOLLBOOTH_ENV: "production" })).toBe(
+      expect(faresealEnvMarker({})).toBe("production");
+      expect(faresealEnvMarker({ TOLLBOOTH_ENV: "production" })).toBe(
         "production",
       );
     } finally {
       g.process = savedProcess;
       g.__vitest_worker__ = savedWorker;
     }
-    expect(tollboothEnvMarker({})).toBe("test");
+    expect(faresealEnvMarker({})).toBe("test");
   });
 
   it("the authed report exposes the marker as a diagnostic header", async () => {
