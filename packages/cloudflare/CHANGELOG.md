@@ -4,6 +4,10 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- A rejected `X-PAYMENT` now gets its reason in the 402 body's `error`
+  (e.g. `wrong payTo`, `authorization expired`, `nonce already used`), from a
+  fixed table so no internal text reaches the payer. With no `X-PAYMENT`
+  header `error` stays `X-PAYMENT header is required`.
 - The settle verifier takes the transaction id from `data.transaction`, else
   `data.tx`, so a settle answering only `tx` no longer yields an empty
   `X-PAYMENT-RESPONSE.transaction`. A `settled: true` answer with neither now

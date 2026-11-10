@@ -213,6 +213,18 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     expect(b.settles.length).toBe(1);
   });
 
+  it("a replayed nonce's 402 says the nonce is already used", async () => {
+    const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
+    const mw = settlingMw();
+    const xp = freshPayment();
+    expect(
+      (await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)))).status,
+    ).toBe(200);
+    const replay = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)));
+    expect(replay.status).toBe(402);
+    expect((await replay.json()).error).toBe("nonce already used");
+  });
+
   it("a payer with repeated fresh failures gets a cooldown, not more facilitator calls", async () => {
     const b = settleBinding({ settled: false, reason: "insufficient_funds" });
     const mw = settlingMw();

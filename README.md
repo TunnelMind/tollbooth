@@ -254,7 +254,10 @@ With x402 enabled the same body also speaks [x402 v1](https://www.x402.org/):
 (`scheme`, `network`, `maxAmountRequired`, `resource` — the absolute request
 URL — `description`, `mimeType`, `payTo`, `maxTimeoutSeconds`, `asset`,
 `outputSchema`, `extra`). No key is shared, so an x402 client and an older
-Fareseal client each read their own fields. Every `402` is
+Fareseal client each read their own fields. When an `X-PAYMENT` header was
+sent and rejected, `error` carries the reason from a fixed list (e.g. `wrong
+payTo`, `authorization expired`, `nonce already used`); with no header it is
+`X-PAYMENT header is required`. Every `402` is
 `cache-control: no-store`. A paid response carries `X-PAYMENT-RESPONSE`:
 base64 JSON `{success, transaction, network, payer}` (`transaction` is `""`
 when only local verification ran, with no settle step).

@@ -589,6 +589,45 @@ async function bearerMatches(
   return got !== undefined && diff === 0;
 }
 
+// FR-004: the public text for a rejected X-PAYMENT, a fixed table so no
+// internal detail (URLs, transport errors) ever reaches the 402 body.
+const OPERATOR_FAULT =
+  "settlement unavailable (operator fault); retry the same payment";
+const PAYMENT_ERRORS: Record<string, string> = {
+  malformed: "malformed X-PAYMENT header",
+  "network-mismatch": "wrong network",
+  "wrong-recipient": "wrong payTo",
+  "insufficient-value": "amount too low",
+  expired: "authorization expired",
+  "not-yet-valid": "authorization not yet valid",
+  "window-too-long": "authorization validity window too long",
+  "bad-signature": "invalid signature (wrong signer or wrong asset)",
+  "signer-mismatch": "invalid signature (wrong signer or wrong asset)",
+  "already-settled": "nonce already used",
+  "payer-cooldown": "payer cooling down after repeated failures; retry later",
+  "no-transaction-id": "settle failed: no transaction id",
+  "settle-failed": "settle failed",
+  "settle-throttled": OPERATOR_FAULT,
+  "settlement-unconfigured": OPERATOR_FAULT,
+  "settlement-not-configured": OPERATOR_FAULT,
+  "settle-unreachable": OPERATOR_FAULT,
+  "settle-retryable": OPERATOR_FAULT,
+};
+
+export function paymentError(reason?: string): string {
+  if (reason === undefined) return "payment rejected";
+  if (Object.hasOwn(PAYMENT_ERRORS, reason))
+    return PAYMENT_ERRORS[reason] as string;
+  const status = /^(?:verify|settle)-failed\((\d{3})\)$/.exec(reason)?.[1];
+  if (status !== undefined)
+    return Number(status) < 500 ? "settle failed" : OPERATOR_FAULT;
+  // Facilitator transport errors and timeouts (FR-008) are the operator's.
+  if (/^(?:verify|settle)-error:/.test(reason)) return OPERATOR_FAULT;
+  if (/^[a-z0-9_]{1,64}$/.test(reason))
+    return `facilitator rejected: ${reason}`;
+  return "payment rejected";
+}
+
 export function fareseal(options: FaresealOptions): MiddlewareHandler {
   const cfg =
     typeof options.config === "string"
@@ -637,7 +676,11 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
     return `${url.origin}${url.pathname}${url.search}`;
   };
 
-  const offerResponse = (c: Context, body: OfferBody) => {
+  const offerResponse = (
+    c: Context,
+    body: OfferBody,
+    rejected?: X402VerifyResult,
+  ) => {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
     // option (AC-2.1). The body carries both dialects: x402 v1 clients read
@@ -651,7 +694,14 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
       if (requirement)
         x402Body = {
           x402Version: 1,
-          error: "X-PAYMENT header is required",
+          // FR-003: say why a presented X-PAYMENT failed; with no header
+          // the text stays the x402 v1 default.
+          error:
+            c.req.header("x-payment") !== undefined &&
+            rejected?.ok === false &&
+            rejected.reason !== undefined
+              ? paymentError(rejected.reason)
+              : "X-PAYMENT header is required",
           accepts: [requirement],
         };
     }
@@ -924,7 +974,8 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
         );
       return;
     }
-    if (decision.action === "offer") return offerResponse(c, decision.body);
+    if (decision.action === "offer")
+      return offerResponse(c, decision.body, payment);
     if (decision.action === "reject")
       return c.json(
         { v: 1 as const, error: `voucher ${decision.reason}` },
@@ -938,7 +989,7 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
       c.header("cache-control", "no-store");
       return c.redirect(`${cfg.maze.prefix}/`, 302);
     }
-    return offerResponse(c, buildOfferBody(cfg));
+    return offerResponse(c, buildOfferBody(cfg), payment);
   };
 
   // Fail open (Constitution II: never block on our own fault). A throw from
