@@ -144,4 +144,26 @@ describe("receipt emission wiring", () => {
     expect(report.receipts_queued).toBe(0);
     expect(report.receipts_dropped).toBe(0);
   });
+
+  it("/_fareseal/report returns what /_tollbooth/report returns", async () => {
+    const secret = generateSecretKey();
+    const app = new Hono();
+    app.use(
+      fareseal({
+        config: `report_token = "t"`,
+        siteKeys: { secret, pub: await publicKeyOf(secret) },
+        fetchDirectory: dirWith(),
+        nowS: () => NOW,
+      }),
+    );
+    const get = async (p: string) => {
+      const r = await app.request(`http://example.com${p}`, {
+        headers: { authorization: "Bearer t" },
+      });
+      return [r.status, await r.json()];
+    };
+    const fresh = await get("/_fareseal/report");
+    expect(fresh[0]).toBe(200);
+    expect(await get("/_tollbooth/report")).toEqual(fresh);
+  });
 });

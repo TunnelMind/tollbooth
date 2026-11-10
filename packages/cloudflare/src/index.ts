@@ -63,7 +63,8 @@ export {
   TollboothBindingMissingError,
 } from "./errors.js";
 
-const REPORT_PATH = "/_tollbooth/report";
+const REPORT_PATH = "/_fareseal/report";
+const LEGACY_REPORT_PATH = "/_tollbooth/report"; // alias, removed in 3.0.0
 const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
 export const ENV_HEADER = "x-tollbooth-env";
 
@@ -473,7 +474,7 @@ export function createPagesMiddleware(
   async function flushSnapshot(s: State, url: string): Promise<void> {
     if (!s.reporting || !s.siteKeys || !s.routedFetch) return;
     const resp = await s.app.fetch(
-      new Request(`https://tollbooth.internal${REPORT_PATH}`, {
+      new Request(`https://fareseal.internal${REPORT_PATH}`, {
         headers: { authorization: `Bearer ${s.cfg.report_token}` },
       }),
       { NEXT: () => new Response("", { status: 404 }) },
@@ -541,7 +542,10 @@ export function createPagesMiddleware(
       });
 
       const path = new URL(context.request.url).pathname;
-      if (path === REPORT_PATH && resp.status === 200) {
+      if (
+        (path === REPORT_PATH || path === LEGACY_REPORT_PATH) &&
+        resp.status === 200
+      ) {
         const out = new Response(resp.body, resp);
         out.headers.set("x-tollbooth-mode", s.cfg.mode);
         out.headers.set("x-tollbooth-reporting", String(s.reporting));
@@ -561,6 +565,7 @@ export function createPagesMiddleware(
         );
         const now = Date.now();
         if (
+          !path.startsWith("/_fareseal") &&
           !path.startsWith("/_tollbooth") &&
           !path.startsWith(s.cfg.maze.prefix) &&
           now - lastFlushMs >= interval

@@ -90,6 +90,34 @@ async function purchase(app: Hono, sessionId: string, agentPubkey: string) {
   return extractVoucher(await page.text());
 }
 
+describe("T006 webhook and voucher under the /_fareseal prefix", () => {
+  it("purchase and redeem work on /_fareseal/*; the legacy voucher URL is gone after one redeem", async () => {
+    const agent = await makeAgent();
+    const app = await setup(agent);
+    const body = checkoutEvent("cs_t006", agent.jwk.x);
+    const hook = await app.request(
+      "http://example.com/_fareseal/stripe-webhook",
+      {
+        method: "POST",
+        body,
+        headers: {
+          "stripe-signature": await stripeSign(body, WEBHOOK_SECRET, NOW),
+        },
+      },
+    );
+    expect(hook.status).toBe(200);
+    const page = await app.request(
+      "http://example.com/_fareseal/voucher/cs_t006",
+    );
+    expect(page.status).toBe(200);
+    expect(extractVoucher(await page.text())).toBeTruthy();
+    expect(
+      (await app.request("http://example.com/_tollbooth/voucher/cs_t006"))
+        .status,
+    ).toBe(404);
+  });
+});
+
 describe("US-3 end to end", () => {
   it("purchase -> redeem once -> spend with decrementing re-signs", async () => {
     const agent = await makeAgent();

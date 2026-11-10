@@ -100,7 +100,7 @@ interface CheckoutSession {
 }
 
 const PAGE_FOUND = (voucher: string) => `<!doctype html>
-<title>Your tollbooth voucher</title>
+<title>Your Fareseal voucher</title>
 <h1>Voucher &mdash; shown once</h1>
 <p>Send this on every request in the <code>Tollbooth-Voucher</code> header.
 It is stored nowhere else; save it now.</p>
@@ -118,7 +118,7 @@ export interface StripeAdapter {
     rawBody: string,
     stripeSignature: string | undefined,
   ): Promise<{ status: number; body: string }>;
-  /** GET handler for /_tollbooth/voucher/{CHECKOUT_SESSION_ID}. */
+  /** GET handler for /_fareseal/voucher/{CHECKOUT_SESSION_ID}. */
   redeem(sessionId: string): {
     status: number;
     body: string;

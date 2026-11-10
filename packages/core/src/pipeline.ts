@@ -159,7 +159,7 @@ const hasWba = (req: PipelineRequest): boolean =>
   req.signatureInput !== undefined ||
   req.signatureAgent !== undefined;
 
-// Exported for one caller outside decide(): the bindings' /_tollbooth/arrival
+// Exported for one caller outside decide(): the bindings' /_fareseal/arrival
 // route, which shows a requester their own identity. That route is a free
 // path, and decide() skips identify on free paths, so it calls this directly
 // with fetchDirectory only (no nonceCache: reading must not burn a replay),
@@ -254,7 +254,7 @@ export async function decide(
 ): Promise<Decision> {
   // Step 1: free paths pass unconditionally, before any other logic (AC-5.3) —
   // identity is not even computed. (The one exception is the bindings'
-  // /_tollbooth/arrival route, which calls identify() itself to show the
+  // /_fareseal/arrival route, which calls identify() itself to show the
   // requester their own reading.)
   if (isFreePath(req.path, cfg.free_paths))
     return { action: "pass", reason: "free-path", identity: null };

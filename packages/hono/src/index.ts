@@ -121,10 +121,13 @@ export interface FaresealOptions {
   clientIp?: (c: Context) => string | undefined;
 }
 
-const REPORT_PATH = "/_tollbooth/report";
-const WEBHOOK_PATH = "/_tollbooth/stripe-webhook";
-const VOUCHER_PATH_PREFIX = "/_tollbooth/voucher/";
-const ARRIVAL_PATH = "/_tollbooth/arrival";
+// Legacy /_tollbooth/* is an alias (removed in 3.0.0): the handler rewrites it
+// to /_fareseal/* once, so every route below sees one spelling.
+const LEGACY_PREFIX = "/_tollbooth/";
+const REPORT_PATH = "/_fareseal/report";
+const WEBHOOK_PATH = "/_fareseal/stripe-webhook";
+const VOUCHER_PATH_PREFIX = "/_fareseal/voucher/";
+const ARRIVAL_PATH = "/_fareseal/arrival";
 
 interface AgentStat {
   kind: "agent" | "anonymous-agent" | "spoofer";
@@ -660,7 +663,10 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
   };
 
   const handler = async (c: Context, next: () => Promise<void>) => {
-    if (c.req.path === REPORT_PATH && c.req.method === "GET") {
+    const routePath = c.req.path.startsWith(LEGACY_PREFIX)
+      ? `/_fareseal/${c.req.path.slice(LEGACY_PREFIX.length)}`
+      : c.req.path;
+    if (routePath === REPORT_PATH && c.req.method === "GET") {
       if (cfg.report_token === "") return c.text("Not Found", 404);
       if (
         !(await bearerMatches(
@@ -671,7 +677,7 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
         return c.text("Unauthorized", 401);
       return c.json(reportJson(stats, cfg, reporter));
     }
-    if (stripe && c.req.path === WEBHOOK_PATH && c.req.method === "POST") {
+    if (stripe && routePath === WEBHOOK_PATH && c.req.method === "POST") {
       const result = await stripe.handleWebhook(
         await c.req.text(),
         c.req.header("stripe-signature"),
@@ -684,9 +690,9 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
     if (
       stripe &&
       c.req.method === "GET" &&
-      c.req.path.startsWith(VOUCHER_PATH_PREFIX)
+      routePath.startsWith(VOUCHER_PATH_PREFIX)
     ) {
-      const page = stripe.redeem(c.req.path.slice(VOUCHER_PATH_PREFIX.length));
+      const page = stripe.redeem(routePath.slice(VOUCHER_PATH_PREFIX.length));
       return new Response(page.body, {
         status: page.status,
         headers: { "content-type": page.contentType },
@@ -701,7 +707,7 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
     // "HEAD", so a GET-only test let HEAD fall through to record() (A008).
     if (
       (c.req.method === "GET" || c.req.method === "HEAD") &&
-      c.req.path === ARRIVAL_PATH
+      routePath === ARRIVAL_PATH
     ) {
       const req = requestFromContext(c, options.clientIp);
       const nowS = options.nowS?.();

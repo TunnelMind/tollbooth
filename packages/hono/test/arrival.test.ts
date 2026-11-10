@@ -76,6 +76,27 @@ async function setup(
   return { app, reporter, batches, report };
 }
 
+describe("T006 /_fareseal/arrival and /_tollbooth/arrival are the same route", () => {
+  it("both spellings give the same free, unrecorded reading", async () => {
+    const { app, reporter, batches, report } = await setup();
+    const headers = { "user-agent": BROWSER_UA, accept: BROWSER_ACCEPT };
+    const [a, b] = await Promise.all([
+      app.request("http://example.com/_fareseal/arrival", { headers }),
+      app.request(URL_, { headers }),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(a.status);
+    expect(b.headers.get("cache-control")).toBe(a.headers.get("cache-control"));
+    expect(b.headers.get("vary")).toBe(a.headers.get("vary"));
+    const strip = (x: { rows: { name: string }[] }) =>
+      x.rows.filter((r) => r.name !== "path");
+    expect(strip(await b.json())).toEqual(strip(await a.json()));
+    await reporter.flush();
+    expect(batches).toEqual([]);
+    expect(await report()).toMatchObject({ free_path_hits: 0 });
+  });
+});
+
 describe("A002 GET /_tollbooth/arrival", () => {
   it("returns the browser's own reading: human, free-path, no bearer", async () => {
     const { app } = await setup();
