@@ -1,4 +1,6 @@
-# ADR 006 — `tollbooth verify` checks export lines and snapshots
+# ADR 006 — `fareseal verify` checks export lines and snapshots
+
+Tollbooth was renamed Fareseal on 2026-11-10.
 
 **Status:** Accepted (2026-11-07, coordinator on Josh's delegation)
 **Deviates from / extends:** spec 126 `plan.md`, "Where the change goes" and
@@ -17,7 +19,7 @@ is genuinely signed.
 
 **Decision:**
 
-1. **Three new inputs.** `tollbooth verify <file>` accepts a wrapped export
+1. **Three new inputs.** `fareseal verify <file>` accepts a wrapped export
    line, a file of lines (NDJSON: whole-file JSON first, else one document
    per non-blank line), and a snapshot, bare or wrapped. A plain receipt
    file keeps today's output byte for byte.
@@ -41,7 +43,7 @@ is genuinely signed.
 
 **Consequences:**
 
-- `verifySnapshot` is new public SDK surface in tollbooth-core.
+- `verifySnapshot` is new public SDK surface in fareseal-core.
 - `verifyReceipt`'s behaviour and reasons do not change; the refactor is
   pinned by a golden-output test written before it.
 - Anything core rejects FAILs in the CLI too, so the CLI is at least as

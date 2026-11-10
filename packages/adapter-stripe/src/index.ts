@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-adapter-stripe: webhook handling and voucher minting, mounted on
+// @tunnelmindai/fareseal-adapter-stripe: webhook handling and voucher minting, mounted on
 // the operator's own app with the operator's own keys - we host nothing
 // (Article I.3). No Stripe SDK: webhook signatures are HMAC-SHA256 over
 // `t.payload`, done with WebCrypto, so the adapter stays platform-free.
@@ -10,10 +10,7 @@
 // which renders it exactly once. Expired unredeemed -> the buyer contacts the
 // operator, who re-mints (`cli voucher mint`); Stripe is the record of
 // purchase. No customer table, ever (Article I.2).
-import {
-  mintVoucher,
-  type TollboothConfig,
-} from "@tunnelmindai/tollbooth-core";
+import { type FaresealConfig, mintVoucher } from "@tunnelmindai/fareseal-core";
 
 const encoder = new TextEncoder();
 
@@ -103,9 +100,9 @@ interface CheckoutSession {
 }
 
 const PAGE_FOUND = (voucher: string) => `<!doctype html>
-<title>Your tollbooth voucher</title>
+<title>Your Fareseal voucher</title>
 <h1>Voucher &mdash; shown once</h1>
-<p>Send this on every request in the <code>Tollbooth-Voucher</code> header.
+<p>Send this on every request in the <code>Fareseal-Voucher</code> header.
 It is stored nowhere else; save it now.</p>
 <p><code id="voucher">${voucher}</code></p>`;
 
@@ -121,7 +118,7 @@ export interface StripeAdapter {
     rawBody: string,
     stripeSignature: string | undefined,
   ): Promise<{ status: number; body: string }>;
-  /** GET handler for /_tollbooth/voucher/{CHECKOUT_SESSION_ID}. */
+  /** GET handler for /_fareseal/voucher/{CHECKOUT_SESSION_ID}. */
   redeem(sessionId: string): {
     status: number;
     body: string;
@@ -130,7 +127,7 @@ export interface StripeAdapter {
 }
 
 export function makeStripeAdapter(deps: {
-  cfg: TollboothConfig;
+  cfg: FaresealConfig;
   siteSecret: Uint8Array;
   nowS?: () => number;
 }): StripeAdapter {

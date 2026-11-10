@@ -1,8 +1,8 @@
-import { botRanges } from "@tunnelmindai/tollbooth-core";
+import { botRanges } from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { dirWith, NOW } from "../../core/test/fixtures/wba.js";
-import { type TollboothOptions, tollbooth } from "../src/index.js";
+import { type FaresealOptions, fareseal } from "../src/index.js";
 
 const CFG = `
 mode = "toll"
@@ -17,15 +17,15 @@ const GOOGLE_V4 = (
 const GOOGLEBOT =
   "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)";
 
-// The Workers-style trusted source, as @tunnelmindai/tollbooth-cloudflare wires it.
-const CF_IP: Partial<TollboothOptions> = {
+// The Workers-style trusted source, as @tunnelmindai/fareseal-cloudflare wires it.
+const CF_IP: Partial<FaresealOptions> = {
   clientIp: (c) => c.req.header("cf-connecting-ip"),
 };
 
-function appWith(config: string, extra: Partial<TollboothOptions> = {}) {
+function appWith(config: string, extra: Partial<FaresealOptions> = {}) {
   const app = new Hono();
   app.use(
-    tollbooth({ config, fetchDirectory: dirWith(), nowS: () => NOW, ...extra }),
+    fareseal({ config, fetchDirectory: dirWith(), nowS: () => NOW, ...extra }),
   );
   app.get("*", (c) => c.text("content"));
   return app;

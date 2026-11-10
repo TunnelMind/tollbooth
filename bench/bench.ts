@@ -5,13 +5,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { hrtime } from "node:process";
 import { fileURLToPath } from "node:url";
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
   generateSecretKey,
   mintVoucher,
   publicKeyOf,
-} from "@tunnelmindai/tollbooth-core";
-import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+} from "@tunnelmindai/fareseal-core";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
 const HUMAN = {
@@ -56,7 +56,7 @@ baseline.get("*", (c) => c.text("ok"));
 
 const tolled = new Hono();
 tolled.use(
-  tollbooth({
+  fareseal({
     config: TOLL,
     x402: { buildOffer, verifyProof },
     fetchDirectory: async () => ({ keys: [] }),
@@ -67,7 +67,7 @@ tolled.get("*", (c) => c.text("ok"));
 const siteSecret = generateSecretKey();
 const voucherApp = new Hono();
 voucherApp.use(
-  tollbooth({
+  fareseal({
     config: VOUCHER_CFG,
     siteKeys: { secret: siteSecret, pub: await publicKeyOf(siteSecret) },
     fetchDirectory: async () => ({ keys: [] }),
@@ -83,7 +83,7 @@ let voucher = await mintVoucher(
 const rows: Array<{ name: string; p50: number; p99: number }> = [];
 const scenarios: Array<[string, () => unknown]> = [
   [
-    "baseline app, no tollbooth",
+    "baseline app, no fareseal",
     () => baseline.request("http://x.test/a", { headers: HUMAN }),
   ],
   [
@@ -102,9 +102,12 @@ const scenarios: Array<[string, () => unknown]> = [
     "voucher spend + re-sign (ed25519 x2)",
     async () => {
       const resp = await voucherApp.request("http://x.test/a", {
-        headers: { ...CURL, "tollbooth-voucher": voucher },
+        headers: { ...CURL, "fareseal-voucher": voucher },
       });
-      voucher = resp.headers.get("tollbooth-voucher") ?? voucher;
+      voucher =
+        resp.headers.get("fareseal-voucher") ??
+        resp.headers.get("tollbooth-voucher") ?? // pre-rename alias
+        voucher;
     },
   ],
 ];

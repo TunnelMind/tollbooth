@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Node-only entry (@tunnelmindai/tollbooth-maze/node): lazy directory-backed corpus.
+// Node-only entry (@tunnelmindai/fareseal-maze/node): lazy directory-backed corpus.
 // Each request costs one readFile - nothing is preloaded, nothing is
 // generated (AC-4.3 O(file read)).
 import { readdir, readFile } from "node:fs/promises";
@@ -12,7 +12,7 @@ export async function loadCorpusDir(dir: string): Promise<MazeCorpus> {
   );
   if (names.size === 0)
     throw new Error(
-      `no maze pages in ${dir} - generate them: tollbooth corpus --out ${dir}`,
+      `no maze pages in ${dir} - generate them: fareseal corpus --out ${dir}`,
     );
   return {
     pageCount: names.size,

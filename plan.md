@@ -1,4 +1,5 @@
 # PLAN — tollbooth
+Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## 1. Architecture
 

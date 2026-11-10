@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-adapter-x402: x402 offer headers and payment-proof verification.
+// @tunnelmindai/fareseal-adapter-x402: x402 offer headers and payment-proof verification.
 // ALL chain specifics live inside this boundary (AC-2.3, D-7) - core never
 // imports a chain library, and this adapter is off the hot path for
 // non-paying traffic (Article I.1).
@@ -17,7 +17,7 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils.js";
-import type { TollboothConfig } from "@tunnelmindai/tollbooth-core";
+import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
 
 /**
  * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example
@@ -73,7 +73,7 @@ export interface X402Requirement {
   payTo: string;
   asset: string;
   maxTimeoutSeconds: number;
-  /** x402 v1 requires the key; tollbooth publishes no output schema. */
+  /** x402 v1 requires the key; fareseal publishes no output schema. */
   outputSchema: null;
   extra: { name: string; version: string };
 }
@@ -178,7 +178,7 @@ export const MAX_TIMEOUT_SECONDS = 300;
  * is deprecated - kept for one cycle, removed in the next minor.
  */
 export function buildOffer(
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   resource: string,
 ): { headers: Record<string, string>; requirement: X402Requirement } {
   const net = networkOf(cfg.toll.x402.network);
@@ -188,7 +188,7 @@ export function buildOffer(
     maxAmountRequired: usdToAtomic(cfg.toll.price_usd).toString(),
     resource,
     // ponytail: fixed text; the toll does not know what the page holds.
-    description: "Paid access to this resource (tollbooth toll)",
+    description: "Paid access to this resource (fareseal toll)",
     mimeType: "application/json",
     payTo: cfg.toll.x402.pay_to,
     asset: net.asset,
@@ -205,7 +205,7 @@ export function buildOffer(
 /** AC-2.2: local verification of an X-PAYMENT header. Never throws. */
 export function verifyProof(
   xPayment: string,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   opts: { nowS?: number } = {},
 ): VerifyResult {
   const fail = (reason: string): VerifyResult => ({

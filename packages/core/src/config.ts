@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// tollbooth.toml -> TollboothConfig, the one config every binding reads.
+// fareseal.toml -> FaresealConfig, the one config every binding reads.
 // The operator writes the file, so it is trusted for intent but not for
 // shape: every table is a zod strictObject (an unknown or misspelled key is
 // an error, never ignored), durations and paths are validated, and
@@ -77,10 +77,20 @@ const tollSchema = z
   })
   .prefault({});
 
+/** Pre-rename maze prefix: still served, noindex, and Disallowed (GATE 0 Q2). Removed in 3.0.0. */
+export const LEGACY_MAZE_PREFIX = "/.well-known/tollbooth-maze";
+
+/** Every prefix the maze answers on: the configured one plus the legacy alias. */
+export function mazePrefixes(prefix: string): string[] {
+  return prefix === LEGACY_MAZE_PREFIX
+    ? [prefix]
+    : [prefix, LEGACY_MAZE_PREFIX];
+}
+
 const mazeSchema = z
   .strictObject({
     enabled: z.boolean().prefault(true),
-    prefix: absolutePath.prefault("/.well-known/tollbooth-maze"),
+    prefix: absolutePath.prefault("/.well-known/fareseal-maze"),
     corpus_path: z.string().min(1).prefault("./maze-corpus"),
     maze_delay_ms: z.number().int().nonnegative().prefault(800),
     page_bytes_max: z.number().int().positive().prefault(4096),
@@ -97,7 +107,7 @@ const limitsSchema = z
 
 const configSchema = z.strictObject({
   mode: z.enum(["observe", "toll"]).prefault("observe"),
-  site_key_path: z.string().min(1).prefault("./tollbooth.key"),
+  site_key_path: z.string().min(1).prefault("./fareseal.key"),
   free_paths: z.array(absolutePath).prefault(["/robots.txt", "/favicon.ico"]),
   /** B009 opt-in pass for verified crawlers; empty (the default) is OFF.
    *  "search": Googlebot/bingbot from the vendored operator IP ranges.
@@ -119,10 +129,12 @@ const configSchema = z.strictObject({
 });
 
 /** Validated config. All duration keys hold milliseconds after parsing. */
-export type TollboothConfig = z.output<typeof configSchema>;
+export type FaresealConfig = z.output<typeof configSchema>;
+/** @deprecated Renamed FaresealConfig on 2026-11-10; removed in 3.0.0. */
+export type TollboothConfig = FaresealConfig;
 
 /** Cross-field rules zod's per-key schema cannot express; same key-naming contract. */
-function tollModeProblems(cfg: TollboothConfig): string[] {
+function tollModeProblems(cfg: FaresealConfig): string[] {
   if (cfg.mode !== "toll") return [];
   const problems: string[] = [];
   if (!cfg.toll.x402.enabled && !cfg.toll.stripe.enabled)
@@ -147,7 +159,7 @@ function tollModeProblems(cfg: TollboothConfig): string[] {
  * offending key (AC-1.3); returns the complete config with plan §5 defaults
  * applied for every omitted key (FR-10).
  */
-export function parseConfig(source: string): TollboothConfig {
+export function parseConfig(source: string): FaresealConfig {
   let raw: unknown;
   try {
     raw = parseToml(source);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The arrival reading: for one request, every field tollbooth read, what it
+// The arrival reading: for one request, every field fareseal read, what it
 // read it for, and whether anything of it is kept. It is the requester's own
 // data shown back to them, so it is pure — no clock, no counters, no I/O —
 // and the same request always reads the same.
@@ -7,7 +7,7 @@ import type { Decision, Identity, PipelineRequest } from "./pipeline.js";
 
 /**
  * Every header name the bindings' request parser reads (`requestFromContext`
- * in @tunnelmindai/tollbooth-hono). It lives here because hono and cloudflare both depend
+ * in @tunnelmindai/fareseal-hono). It lives here because hono and cloudflare both depend
  * on core; hono's parser test checks its `header("…")` reads against this
  * list, and the arrival test checks each name has exactly one row — so the
  * reading cannot drift from what is actually parsed.
@@ -22,7 +22,8 @@ export const REQUEST_HEADERS_READ = [
   "signature-input",
   "signature-agent",
   "x-payment",
-  "tollbooth-voucher",
+  "fareseal-voucher",
+  "tollbooth-voucher", // pre-rename alias, read until 3.0.0
 ] as const;
 
 // "counter only": a verified search/preview pass bumps its own counter and
@@ -39,7 +40,7 @@ export interface ArrivalRow {
   read: "value" | "presence only" | "not read";
   used_for: string;
   kept: ArrivalKept;
-  /** Whether this request sent the field — the presence tollbooth observed. */
+  /** Whether this request sent the field — the presence fareseal observed. */
   present: boolean;
 }
 
@@ -69,7 +70,7 @@ export const ARRIVAL_KEPT_SCOPE =
   "an ordinary request like this one; this arrival request itself is never recorded";
 
 /**
- * What record() in @tunnelmindai/tollbooth-hono keeps for a request with this decision, in
+ * What record() in @tunnelmindai/fareseal-hono keeps for a request with this decision, in
  * record()'s own branch order. record() gates its agent ledger on this, so the
  * reading and the ledger cannot drift. Takes any Decision; the arrival route
  * also passes `{ identity }` alone for "identified, not a verified pass".
@@ -192,6 +193,8 @@ export function arrivalReading(
       "Web Bot Auth key directory lookup",
     ),
     secret("x-payment", "x402 payment verification", req.payment !== undefined),
+    secret("fareseal-voucher", "voucher spend", req.voucher !== undefined),
+    // pre-rename alias, still read until 3.0.0
     secret("tollbooth-voucher", "voucher spend", req.voucher !== undefined),
     valueRow(
       "client_ip",

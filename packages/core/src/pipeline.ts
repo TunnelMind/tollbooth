@@ -4,7 +4,7 @@
 // only state it touches is injected: the offer ledger (D-3) and the jti
 // replay cache (AC-3.3).
 import { botRanges, ipInRanges } from "./botranges.js";
-import type { TollboothConfig } from "./config.js";
+import type { FaresealConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
 import type { JtiCache } from "./jti.js";
 import type { OfferLedger } from "./ledger.js";
@@ -27,7 +27,7 @@ export interface PipelineRequest {
   signatureAgent?: string;
   /** X-PAYMENT header, verbatim, when the client is retrying with proof. */
   payment?: string;
-  /** Tollbooth-Voucher header, verbatim. */
+  /** Fareseal-Voucher header, verbatim. */
   voucher?: string;
   /** Client IP from a source the binding trusts; absent when it has none. */
   clientIp?: string;
@@ -54,7 +54,7 @@ export type OfferOption =
       method: "stripe-voucher";
       payment_link: string;
       credits: number;
-      voucher_header: "Tollbooth-Voucher";
+      voucher_header: "Fareseal-Voucher";
     };
 
 export type Decision =
@@ -133,7 +133,7 @@ const isHtmlPageRequest = (req: PipelineRequest): boolean =>
   !NON_HTML_EXT.test(req.path);
 
 /** Every enabled payment option, with enough data to complete each (AC-7.2). */
-export function buildOfferBody(cfg: TollboothConfig): OfferBody {
+export function buildOfferBody(cfg: FaresealConfig): OfferBody {
   const options: OfferOption[] = [];
   if (cfg.toll.x402.enabled) {
     options.push({
@@ -148,7 +148,7 @@ export function buildOfferBody(cfg: TollboothConfig): OfferBody {
       method: "stripe-voucher",
       payment_link: cfg.toll.stripe.payment_link,
       credits: cfg.toll.stripe.credits_per_purchase,
-      voucher_header: "Tollbooth-Voucher",
+      voucher_header: "Fareseal-Voucher",
     });
   }
   return { v: 1, price_usd: cfg.toll.price_usd, options };
@@ -159,7 +159,7 @@ const hasWba = (req: PipelineRequest): boolean =>
   req.signatureInput !== undefined ||
   req.signatureAgent !== undefined;
 
-// Exported for one caller outside decide(): the bindings' /_tollbooth/arrival
+// Exported for one caller outside decide(): the bindings' /_fareseal/arrival
 // route, which shows a requester their own identity. That route is a free
 // path, and decide() skips identify on free paths, so it calls this directly
 // with fetchDirectory only (no nonceCache: reading must not burn a replay),
@@ -167,7 +167,7 @@ const hasWba = (req: PipelineRequest): boolean =>
 // all (see the hono route), so no directory fetch and no replay burn.
 export async function identify(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   deps: PipelineDeps,
 ): Promise<Identity> {
   if (hasWba(req)) {
@@ -228,7 +228,7 @@ export async function identify(
  */
 export function verifiedPass(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
 ): Decision | null {
   if (cfg.pass_verified.length === 0 || hasWba(req)) return null;
   if (
@@ -249,12 +249,12 @@ export function verifiedPass(
 
 export async function decide(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   deps: PipelineDeps,
 ): Promise<Decision> {
   // Step 1: free paths pass unconditionally, before any other logic (AC-5.3) —
   // identity is not even computed. (The one exception is the bindings'
-  // /_tollbooth/arrival route, which calls identify() itself to show the
+  // /_fareseal/arrival route, which calls identify() itself to show the
   // requester their own reading.)
   if (isFreePath(req.path, cfg.free_paths))
     return { action: "pass", reason: "free-path", identity: null };

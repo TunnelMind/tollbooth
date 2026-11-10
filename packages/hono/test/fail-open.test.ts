@@ -1,6 +1,6 @@
 // B008: fail open on our own fault, never on the origin's; and a verify-only
 // x402 adapter is refused at startup on mainnet.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,7 +9,7 @@ import {
   PAY_TO,
   payment,
 } from "../../adapter-x402/test/fixtures/payment.js";
-import { tollbooth, type X402Adapter } from "../src/index.js";
+import { fareseal, type X402Adapter } from "../src/index.js";
 
 const toll = (network: string) => `
 mode = "toll"
@@ -22,7 +22,7 @@ const curl = { "user-agent": "curl/8.7.1", accept: "*/*" };
 function app(x402: X402Adapter, origin = () => new Response("content")) {
   const a = new Hono();
   let originCalls = 0;
-  a.use(tollbooth({ config: toll("base-sepolia"), x402, nowS: () => NOW }));
+  a.use(fareseal({ config: toll("base-sepolia"), x402, nowS: () => NOW }));
   a.get("*", () => {
     originCalls += 1;
     return origin();
@@ -33,19 +33,19 @@ function app(x402: X402Adapter, origin = () => new Response("content")) {
 describe("B008 - verify-only adapter refused on mainnet", () => {
   it("throws at construction for a verify-only adapter on base", () => {
     expect(() =>
-      tollbooth({ config: toll("base"), x402: { buildOffer, verifyProof } }),
+      fareseal({ config: toll("base"), x402: { buildOffer, verifyProof } }),
     ).toThrow(/verify-only x402 adapter refused on mainnet/);
   });
 
   it("allows verify-only on base-sepolia, and a settling adapter on base", () => {
     expect(() =>
-      tollbooth({
+      fareseal({
         config: toll("base-sepolia"),
         x402: { buildOffer, verifyProof },
       }),
     ).not.toThrow();
     expect(() =>
-      tollbooth({
+      fareseal({
         config: toll("base"),
         x402: { buildOffer, verifyProof, settles: true },
       }),
@@ -66,7 +66,7 @@ describe("B008 - fail open on an internal error", () => {
     expect(r.status).toBe(402);
   });
 
-  it("a throw inside tollbooth's own logic hands the request to the origin once", async () => {
+  it("a throw inside fareseal's own logic hands the request to the origin once", async () => {
     const { a, calls } = app({
       buildOffer,
       verifyProof: () => {

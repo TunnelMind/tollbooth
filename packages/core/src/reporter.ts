@@ -91,7 +91,12 @@ export class ReceiptReporter {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(this.domain ? { "x-tollbooth-domain": this.domain } : {}),
+            ...(this.domain
+              ? {
+                  "x-fareseal-domain": this.domain,
+                  "x-tollbooth-domain": this.domain, // alias, removed in 3.0.0
+                }
+              : {}),
           },
           body: JSON.stringify({
             v: 1,

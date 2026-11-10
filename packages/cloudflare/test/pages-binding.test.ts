@@ -1,9 +1,9 @@
 // Spec 088 (TunnelMind estate hardening S2): the middleware never falls back to
 // the global fetch. A named-but-absent binding throws a named error before any
 // request is issued; outbound reporting with no route at all throws too; an
-// explicit `fetch` option works; every outbound write carries x-tollbooth-env,
+// explicit `fetch` option works; every outbound write carries x-fareseal-env,
 // which reads `test` under vitest and `production` when nothing says otherwise.
-import { generateSecretKey, toBase64Url } from "@tunnelmindai/tollbooth-core";
+import { generateSecretKey, toBase64Url } from "@tunnelmindai/fareseal-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   makeAuth,
@@ -13,9 +13,10 @@ import {
 import {
   createPagesMiddleware,
   ENV_HEADER,
-  TollboothBindingMissingError,
+  ENV_HEADER_LEGACY,
+  FaresealBindingMissingError,
+  faresealEnvMarker,
   testRunnerDetected,
-  tollboothEnvMarker,
 } from "../src/index.js";
 import { agent, ctx, human, toml } from "./helpers.js";
 
@@ -39,11 +40,11 @@ describe("no global-fetch fallback", () => {
     });
     await expect(
       mw(ctx("/research", agent(), { ...seedEnv(), OTHER: 1 })),
-    ).rejects.toBeInstanceOf(TollboothBindingMissingError);
+    ).rejects.toBeInstanceOf(FaresealBindingMissingError);
     const err = await mw(ctx("/research", agent(), { ...seedEnv() })).catch(
       (e) => e,
     );
-    expect(err.name).toBe("TollboothBindingMissingError");
+    expect(err.name).toBe("FaresealBindingMissingError");
     expect(err.binding).toBe("DATA_API");
     expect(err.message).toContain('binding "DATA_API" is not present');
     expect(globalCalls).toEqual([]); // zero network calls
@@ -56,7 +57,7 @@ describe("no global-fetch fallback", () => {
     });
     await expect(
       mw(ctx("/x", human(), { DATA_API: { notFetch: true } })),
-    ).rejects.toBeInstanceOf(TollboothBindingMissingError);
+    ).rejects.toBeInstanceOf(FaresealBindingMissingError);
   });
 
   it("outbound reporting configured with neither binding nor fetch throws, naming the fix", async () => {
@@ -65,7 +66,7 @@ describe("no global-fetch fallback", () => {
       snapshots: { url: "https://collector.example/v1/report" },
     });
     const err = await mw(ctx("/x", human(), seedEnv())).catch((e) => e);
-    expect(err).toBeInstanceOf(TollboothBindingMissingError);
+    expect(err).toBeInstanceOf(FaresealBindingMissingError);
     expect(err.binding).toBeNull();
     expect(err.message).toContain("no implicit global fetch");
   });
@@ -77,9 +78,15 @@ describe("no global-fetch fallback", () => {
   });
 
   it("an explicit fetch option carries the snapshot with the environment marker", async () => {
-    const posts: { url: string; env: string | null }[] = [];
+    const posts: { url: string; env: string | null; legacy: string | null }[] =
+      [];
     const recorder = async (url: string, init?: RequestInit) => {
-      posts.push({ url, env: new Headers(init?.headers).get(ENV_HEADER) });
+      const h = new Headers(init?.headers);
+      posts.push({
+        url,
+        env: h.get(ENV_HEADER),
+        legacy: h.get(ENV_HEADER_LEGACY),
+      });
       return new Response("{}", { status: 200 });
     };
     const flushed: Promise<unknown>[] = [];
@@ -94,13 +101,16 @@ describe("no global-fetch fallback", () => {
       (p) => p.url === "https://collector.example/v1/report",
     );
     expect(snap?.env).toBe("test"); // vitest is detectable → test, refused by the collector
+    expect(snap?.legacy).toBe(snap?.env); // old collectors still read x-tollbooth-env
   });
 
   it("a binding fetch also carries the marker, and TOLLBOOTH_ENV overrides it verbatim", async () => {
     const seen: (string | null)[] = [];
+    const seenLegacy: (string | null)[] = [];
     const binding = {
       fetch: async (req: Request) => {
         seen.push(req.headers.get(ENV_HEADER));
+        seenLegacy.push(req.headers.get(ENV_HEADER_LEGACY));
         return new Response("{}", { status: 200 });
       },
     };
@@ -120,6 +130,7 @@ describe("no global-fetch fallback", () => {
     );
     await Promise.all(flushed);
     expect(seen).toContain("staging");
+    expect(seenLegacy).toContain("staging");
   });
 
   it("the marker is production when no test runner is detectable and TOLLBOOTH_ENV is unset", () => {
@@ -131,15 +142,15 @@ describe("no global-fetch fallback", () => {
       g.process = undefined; // what the Pages runtime looks like
       g.__vitest_worker__ = undefined;
       expect(testRunnerDetected()).toBe(false);
-      expect(tollboothEnvMarker({})).toBe("production");
-      expect(tollboothEnvMarker({ TOLLBOOTH_ENV: "production" })).toBe(
+      expect(faresealEnvMarker({})).toBe("production");
+      expect(faresealEnvMarker({ TOLLBOOTH_ENV: "production" })).toBe(
         "production",
       );
     } finally {
       g.process = savedProcess;
       g.__vitest_worker__ = savedWorker;
     }
-    expect(tollboothEnvMarker({})).toBe("test");
+    expect(faresealEnvMarker({})).toBe("test");
   });
 
   it("the authed report exposes the marker as a diagnostic header", async () => {
@@ -148,6 +159,7 @@ describe("no global-fetch fallback", () => {
       ctx("/_tollbooth/report", { authorization: "Bearer report-token-5" }, {}),
     );
     expect(r.headers.get("x-tollbooth-env")).toBe("test");
+    expect(r.headers.get("x-fareseal-env")).toBe("test");
   });
 });
 

@@ -1,12 +1,12 @@
 // US-4 through a real Hono app: grace offers, then the maze; spoofers
 // straight to the maze; payment redeems (AC-4.1/4.2/4.4).
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
-import { parseConfig } from "@tunnelmindai/tollbooth-core";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
 import {
   corpusFromMap,
   generateCorpus,
   makeMazeHandler,
-} from "@tunnelmindai/tollbooth-maze";
+} from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -20,7 +20,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const CFG_TOML = `
 mode = "toll"
@@ -38,7 +38,7 @@ function makeApp(...directoryAgents: TestAgent[]) {
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG_TOML,
       x402: { buildOffer, verifyProof },
       maze,
@@ -80,6 +80,17 @@ describe("US-4 - the consequence, wired", () => {
     expect(page.status).toBe(200);
     expect(page.headers.get("x-robots-tag")).toBe("noindex, nofollow");
     expect(await page.text()).toContain("<h1>");
+  });
+
+  it("serves the pre-rename maze prefix with noindex", async () => {
+    const agent = await makeAgent();
+    const app = makeApp(agent);
+    const page = await app.request(
+      "http://example.com/.well-known/tollbooth-maze/",
+      { headers: await wbaHeaders(agent) },
+    );
+    expect(page.status).toBe(200);
+    expect(page.headers.get("x-robots-tag")).toBe("noindex, nofollow");
   });
 
   it("AC-4.2: a spoofed signature goes to the maze immediately, no offers", async () => {

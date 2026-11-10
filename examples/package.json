@@ -1,14 +1,14 @@
 {
-  "name": "tollbooth-examples",
+  "name": "fareseal-examples",
   "private": true,
   "type": "module",
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "@noble/curves": "^2.3.0",
     "@noble/hashes": "^2.3.0",
-    "@tunnelmindai/tollbooth-adapter-x402": "workspace:*",
-    "@tunnelmindai/tollbooth-core": "workspace:*",
-    "@tunnelmindai/tollbooth-hono": "workspace:*",
+    "@tunnelmindai/fareseal-adapter-x402": "workspace:*",
+    "@tunnelmindai/fareseal-core": "workspace:*",
+    "@tunnelmindai/fareseal-hono": "workspace:*",
     "hono": "^4.13.7"
   }
 }

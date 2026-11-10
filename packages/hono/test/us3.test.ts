@@ -2,14 +2,14 @@
 // spends the voucher. Purchase (mocked webhook) -> render-once redemption ->
 // key-bound spends with decrementing re-signs -> mismatch 403 -> soft replay
 // damping. Everything crosses a real Hono app.
-import { makeStripeAdapter } from "@tunnelmindai/tollbooth-adapter-stripe";
+import { makeStripeAdapter } from "@tunnelmindai/fareseal-adapter-stripe";
 import {
   decodeVoucher,
   generateSecretKey,
   parseConfig,
   publicKeyOf,
   type SiteKeyPair,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -24,7 +24,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const WEBHOOK_SECRET = "whsec_integration";
 
@@ -48,7 +48,7 @@ async function setup(...directoryAgents: TestAgent[]) {
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG,
       siteKeys: site,
       stripe,
@@ -89,6 +89,34 @@ async function purchase(app: Hono, sessionId: string, agentPubkey: string) {
   expect(page.status).toBe(200);
   return extractVoucher(await page.text());
 }
+
+describe("T006 webhook and voucher under the /_fareseal prefix", () => {
+  it("purchase and redeem work on /_fareseal/*; the legacy voucher URL is gone after one redeem", async () => {
+    const agent = await makeAgent();
+    const app = await setup(agent);
+    const body = checkoutEvent("cs_t006", agent.jwk.x);
+    const hook = await app.request(
+      "http://example.com/_fareseal/stripe-webhook",
+      {
+        method: "POST",
+        body,
+        headers: {
+          "stripe-signature": await stripeSign(body, WEBHOOK_SECRET, NOW),
+        },
+      },
+    );
+    expect(hook.status).toBe(200);
+    const page = await app.request(
+      "http://example.com/_fareseal/voucher/cs_t006",
+    );
+    expect(page.status).toBe(200);
+    expect(extractVoucher(await page.text())).toBeTruthy();
+    expect(
+      (await app.request("http://example.com/_tollbooth/voucher/cs_t006"))
+        .status,
+    ).toBe(404);
+  });
+});
 
 describe("US-3 end to end", () => {
   it("purchase -> redeem once -> spend with decrementing re-signs", async () => {
@@ -134,6 +162,42 @@ describe("US-3 end to end", () => {
     expect(
       decodeVoucher(second.headers.get("tollbooth-voucher") ?? "").credits,
     ).toBe(4998);
+  });
+
+  // T007: `fareseal-voucher` is the new request header; `tollbooth-voucher`
+  // stays accepted and emitted until 3.0.0.
+  it("T007: voucher header rename, compat window", async () => {
+    const agent = await makeAgent();
+    const app = await setup(agent);
+    const voucher = await purchase(app, "cs_t007", agent.jwk.x);
+    const spend = async (h: Record<string, string>) =>
+      app.request("http://example.com/article", {
+        headers: { ...wbaHeaders(await signedRequest(agent)), ...h },
+      });
+
+    // New header alone spends; the response carries both, same value.
+    const viaNew = await spend({ "fareseal-voucher": voucher });
+    expect(viaNew.status).toBe(200);
+    const successor = viaNew.headers.get("fareseal-voucher");
+    if (!successor) throw new Error("no successor voucher on response");
+    expect(viaNew.headers.get("tollbooth-voucher")).toBe(successor);
+    expect(decodeVoucher(successor).credits).toBe(4999);
+
+    // Old header alone still spends.
+    const viaOld = await spend({ "tollbooth-voucher": successor });
+    expect(viaOld.status).toBe(200);
+    const next = viaOld.headers.get("fareseal-voucher") ?? "";
+    expect(decodeVoucher(next).credits).toBe(4998);
+
+    // Both present, different values: the new header wins (old one is junk).
+    const both = await spend({
+      "fareseal-voucher": next,
+      "tollbooth-voucher": "not-a-voucher",
+    });
+    expect(both.status).toBe(200);
+    expect(
+      decodeVoucher(both.headers.get("fareseal-voucher") ?? "").credits,
+    ).toBe(4997);
   });
 
   it("AC-3.4: another verified agent spending the voucher gets 403", async () => {

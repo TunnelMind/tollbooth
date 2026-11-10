@@ -1,6 +1,6 @@
-# Vendoring tollbooth
+# Vendoring Fareseal
 
-Template for downstream projects that vendor tollbooth packages instead of
+Template for downstream projects that vendor Fareseal packages instead of
 installing them from npm. Copy this file next to the vendored tarballs and fill
 it in, so anyone can rebuild from the same commit and check they got the same
 bytes.
@@ -13,13 +13,13 @@ From a clean checkout of the commit you are vendoring:
 git rev-parse HEAD                      # build commit SHA
 pnpm install --frozen-lockfile
 pnpm build                              # tsc -b; pack ships dist/, so build first
-pnpm -r --filter='!@tunnelmindai/tollbooth-cli' --filter='!@tunnelmindai/tollbooth-adapter-stripe' pack --pack-destination ./vendor
+pnpm -r --filter='!@tunnelmindai/fareseal-cli' --filter='!@tunnelmindai/fareseal-adapter-stripe' pack --pack-destination ./vendor
 cd vendor && sha256sum *.tgz            # one line per package tarball
 ```
 
 `pnpm -r pack` skips examples and bench (they have no version field) but still
 packs the private cli and adapter-stripe, so the filters above drop them.
-`vendor/` then holds exactly the five published `@tunnelmindai/tollbooth-*`
+`vendor/` then holds exactly the five published `@tunnelmindai/fareseal-*`
 packages: core, hono, maze, adapter-x402 and cloudflare. A different Node or
 pnpm version can change the tarball bytes, so record both.
 
@@ -34,11 +34,11 @@ pnpm version can change the tarball bytes, so record both.
 
 | package tarball | sha256 |
 |---|---|
-| `tunnelmindai-tollbooth-adapter-x402-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-cloudflare-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-core-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-hono-<version>.tgz` | `<sha256>` |
-| `tunnelmindai-tollbooth-maze-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-adapter-x402-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-cloudflare-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-core-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-hono-<version>.tgz` | `<sha256>` |
+| `tunnelmindai-fareseal-maze-<version>.tgz` | `<sha256>` |
 
 To check a vendored copy later: `cd vendor && sha256sum -c` against the lines
 above (as `sha256sum` printed them).

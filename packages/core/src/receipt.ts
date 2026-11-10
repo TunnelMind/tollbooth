@@ -177,7 +177,7 @@ async function verifySigned(
   const fail = (reason: string) => ({ ok: false, reason });
   const { sig, ...unsigned } = doc;
   // Canonical form before the signature, the order the docstring gives and
-  // `tollbooth verify` reports in. canonicalize refuses a lone surrogate,
+  // `fareseal verify` reports in. canonicalize refuses a lone surrogate,
   // which any string field of a hostile document can carry: a failed check,
   // not a rejected promise.
   let message: string;

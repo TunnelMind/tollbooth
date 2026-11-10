@@ -3,7 +3,7 @@
 // on-chain failure, garbage, missing configuration — stays 402. Facilitator
 // damping: an exact payment already seen is never relayed twice, and a payer
 // with repeated fresh failures is cooled down locally (ADR-004).
-import { parseConfig } from "@tunnelmindai/tollbooth-core";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
 import { describe, expect, it, vi } from "vitest";
 import {
   makeAuth,

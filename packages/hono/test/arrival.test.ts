@@ -14,7 +14,7 @@ import {
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -23,7 +23,7 @@ import {
   NOW,
   signedRequest,
 } from "../../core/test/fixtures/wba.js";
-import { type TollboothOptions, tollbooth } from "../src/index.js";
+import { type FaresealOptions, fareseal } from "../src/index.js";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -42,7 +42,7 @@ pay_to = "0x0000000000000000000000000000000000000001"
 `;
 
 async function setup(
-  fetchDirectory: TollboothOptions["fetchDirectory"] = dirWith(),
+  fetchDirectory: FaresealOptions["fetchDirectory"] = dirWith(),
 ) {
   const secret = generateSecretKey();
   const batches: Receipt[][] = [];
@@ -58,7 +58,7 @@ async function setup(
   });
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: CFG,
       siteKeys: { secret, pub: await publicKeyOf(secret) },
       reporter,
@@ -75,6 +75,27 @@ async function setup(
     ).json();
   return { app, reporter, batches, report };
 }
+
+describe("T006 /_fareseal/arrival and /_tollbooth/arrival are the same route", () => {
+  it("both spellings give the same free, unrecorded reading", async () => {
+    const { app, reporter, batches, report } = await setup();
+    const headers = { "user-agent": BROWSER_UA, accept: BROWSER_ACCEPT };
+    const [a, b] = await Promise.all([
+      app.request("http://example.com/_fareseal/arrival", { headers }),
+      app.request(URL_, { headers }),
+    ]);
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(a.status);
+    expect(b.headers.get("cache-control")).toBe(a.headers.get("cache-control"));
+    expect(b.headers.get("vary")).toBe(a.headers.get("vary"));
+    const strip = (x: { rows: { name: string }[] }) =>
+      x.rows.filter((r) => r.name !== "path");
+    expect(strip(await b.json())).toEqual(strip(await a.json()));
+    await reporter.flush();
+    expect(batches).toEqual([]);
+    expect(await report()).toMatchObject({ free_path_hits: 0 });
+  });
+});
 
 describe("A002 GET /_tollbooth/arrival", () => {
   it("returns the browser's own reading: human, free-path, no bearer", async () => {
@@ -207,7 +228,8 @@ describe("A002 GET /_tollbooth/arrival", () => {
     const secrets = {
       cookie: "session=COOKIE-SECRET-123",
       "x-payment": "PAYMENT-SECRET-456",
-      "tollbooth-voucher": "VOUCHER-SECRET-789",
+      "fareseal-voucher": "VOUCHER-SECRET-789",
+      "tollbooth-voucher": "VOUCHER-SECRET-OLD",
       signature: "sig1=:SIGNATURE-SECRET-abc:",
       "signature-input": "sig1=(INPUT-SECRET-def)",
     };
@@ -220,6 +242,7 @@ describe("A002 GET /_tollbooth/arrival", () => {
       "COOKIE-SECRET-123",
       "PAYMENT-SECRET-456",
       "VOUCHER-SECRET-789",
+      "VOUCHER-SECRET-OLD",
       "SIGNATURE-SECRET-abc",
       "INPUT-SECRET-def",
     ])
@@ -325,11 +348,11 @@ const SLACKBOT = "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)";
 
 function verifiedApp(keys: unknown[] = []) {
   const app = new Hono();
-  const options: Partial<TollboothOptions> = {
+  const options: Partial<FaresealOptions> = {
     clientIp: (c) => c.req.header("x-test-ip"),
   };
   app.use(
-    tollbooth({
+    fareseal({
       config: VERIFIED_CFG,
       fetchDirectory: dirWith(...keys),
       nowS: () => NOW,

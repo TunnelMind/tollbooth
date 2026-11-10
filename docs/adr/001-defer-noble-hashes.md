@@ -1,5 +1,7 @@
 # ADR 001 — defer @noble/hashes; noble async API over WebCrypto SHA-512
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 **Deviates from:** plan §3 stack table, which lists `@noble/ed25519 + @noble/hashes`.
 
 Noble's *sync* API needs an externally supplied SHA-512 — that is the only

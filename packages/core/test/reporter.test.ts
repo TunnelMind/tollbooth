@@ -127,8 +127,8 @@ it("domain claim rides on the batch wrapper and a header, never inside a receipt
     receipts: unknown[];
   };
   expect(body.domain).toBe("example.org");
-  expect(new Headers(first.init?.headers).get("x-tollbooth-domain")).toBe(
-    "example.org",
-  );
+  const sent = new Headers(first.init?.headers);
+  expect(sent.get("x-fareseal-domain")).toBe("example.org");
+  expect(sent.get("x-tollbooth-domain")).toBe("example.org");
   expect(JSON.stringify(body.receipts)).not.toContain("example.org");
 });

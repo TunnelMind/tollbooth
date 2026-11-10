@@ -1,6 +1,6 @@
 # Security
 
-tollbooth handles payment authorizations and signing keys, so we want to
+Fareseal handles payment authorizations and signing keys, so we want to
 hear about vulnerabilities quickly and quietly.
 
 **Report privately** via GitHub's private vulnerability reporting on this

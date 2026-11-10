@@ -2,7 +2,7 @@
 // core's REQUEST_HEADERS_READ (which the arrival reading has one row for). A
 // header added to the parser without a row in the reading fails here.
 import { readFileSync } from "node:fs";
-import { REQUEST_HEADERS_READ } from "@tunnelmindai/tollbooth-core";
+import { REQUEST_HEADERS_READ } from "@tunnelmindai/fareseal-core";
 import { expect, it } from "vitest";
 
 it("requestFromContext reads exactly REQUEST_HEADERS_READ", () => {

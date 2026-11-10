@@ -6,7 +6,7 @@ import {
   NOW,
   signedRequest,
 } from "../../core/test/fixtures/wba.js";
-import { type TollboothOptions, tollbooth } from "../src/index.js";
+import { type FaresealOptions, fareseal } from "../src/index.js";
 
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -16,10 +16,10 @@ const BROWSER_ACCEPT =
 const browserHeaders = { "user-agent": BROWSER_UA, accept: BROWSER_ACCEPT };
 const curlHeaders = { "user-agent": "curl/8.7.1", accept: "*/*" };
 
-function appWith(config: string, extra: Partial<TollboothOptions> = {}) {
+function appWith(config: string, extra: Partial<FaresealOptions> = {}) {
   const app = new Hono();
   app.use(
-    tollbooth({ config, fetchDirectory: dirWith(), nowS: () => NOW, ...extra }),
+    fareseal({ config, fetchDirectory: dirWith(), nowS: () => NOW, ...extra }),
   );
   app.get("*", (c) => c.text("content"));
   return app;

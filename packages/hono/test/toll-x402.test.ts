@@ -1,6 +1,6 @@
-// The T-010 milestone: a usable x402 tollbooth end to end. An agent with a
+// The T-010 milestone: a usable x402 fareseal end to end. An agent with a
 // valid payment passes; an unpaid one gets 402s with actionable headers.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -14,7 +14,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const TOLL = `
 mode = "toll"
@@ -27,7 +27,7 @@ const curlHeaders = { "user-agent": "curl/8.7.1", accept: "*/*" };
 function app(...directoryAgents: TestAgent[]) {
   const a = new Hono();
   a.use(
-    tollbooth({
+    fareseal({
       config: TOLL,
       x402: { buildOffer, verifyProof },
       fetchDirectory: dirWith(...directoryAgents.map((a) => a.jwk)),
@@ -38,7 +38,7 @@ function app(...directoryAgents: TestAgent[]) {
   return a;
 }
 
-describe("T-010 milestone - usable x402 tollbooth", () => {
+describe("T-010 milestone - usable x402 fareseal", () => {
   it("an unpaid agent gets 402 with the adapter's payment-required header", async () => {
     const resp = await app().request("http://example.com/article", {
       headers: curlHeaders,
@@ -92,7 +92,7 @@ describe("T-010 milestone - usable x402 tollbooth", () => {
     expect(req.outputSchema).toBeNull();
     expect(typeof req.extra.name).toBe("string");
     expect(typeof req.extra.version).toBe("string");
-    // The pre-x402 tollbooth offer is unchanged alongside.
+    // The pre-x402 fareseal offer is unchanged alongside.
     expect(body.v).toBe(1);
     expect(body.price_usd).toBe("0.001");
     expect(body.options[0]).toEqual({

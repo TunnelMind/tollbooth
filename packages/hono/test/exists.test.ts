@@ -1,6 +1,6 @@
 // E001: the optional `exists` check. A missing page is answered 404 before
 // any offer or payment check, so nobody is charged for nothing.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,7 +8,7 @@ import {
   PAY_TO,
   validPayment,
 } from "../../adapter-x402/test/fixtures/payment.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 const TOLL = `
 mode = "toll"
@@ -23,7 +23,7 @@ function app(exists: (path: string) => Promise<boolean>) {
   const verify = vi.fn(verifyProof);
   const a = new Hono();
   a.use(
-    tollbooth({
+    fareseal({
       config: TOLL,
       x402: { buildOffer, verifyProof: verify },
       exists,

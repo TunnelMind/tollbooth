@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// @tunnelmindai/tollbooth-hono: thin binding of core's decide() to Hono. One package
+// @tunnelmindai/fareseal-hono: thin binding of core's decide() to Hono. One package
 // covers Node, Bun and Workers, so nothing here may import node builtins at
 // load time (the one node:dns use is a dynamic import behind a Node check).
 // Observe mode computes the decision and records it but always passes -
@@ -10,6 +10,7 @@ import {
   buildReceipt,
   type Decision,
   decide,
+  type FaresealConfig,
   type FetchDirectory,
   type Identity,
   identify,
@@ -17,6 +18,7 @@ import {
   JtiCache,
   keptFor,
   LEDGER,
+  mazePrefixes,
   NonceCache,
   type OfferBody,
   OfferLedger,
@@ -28,24 +30,23 @@ import {
   receiptFactsFor,
   SIGNATURE_UNVERIFIED,
   type SiteKeyPair,
-  type TollboothConfig,
   verifiedPass,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import type { Context, MiddlewareHandler } from "hono";
 
 /**
  * The x402 adapter is injected, never imported: operators who only use
- * Stripe never pull chain libraries (D-7, AC-2.3). @tunnelmindai/tollbooth-adapter-x402
+ * Stripe never pull chain libraries (D-7, AC-2.3). @tunnelmindai/fareseal-adapter-x402
  * satisfies this shape structurally.
  */
 export interface X402Adapter {
   buildOffer(
-    cfg: TollboothConfig,
+    cfg: FaresealConfig,
     resource: string,
   ): { headers: Record<string, string>; requirement?: object };
   verifyProof(
     xPayment: string,
-    cfg: TollboothConfig,
+    cfg: FaresealConfig,
     opts?: {
       nowS?: number;
       /**
@@ -70,12 +71,12 @@ export interface X402VerifyResult {
   transaction?: string;
 }
 
-/** @tunnelmindai/tollbooth-maze's makeMazeHandler satisfies this structurally. */
+/** @tunnelmindai/fareseal-maze's makeMazeHandler satisfies this structurally. */
 export type MazeHandler = (
   path: string,
 ) => Promise<{ status: number; body: string; headers: Record<string, string> }>;
 
-/** @tunnelmindai/tollbooth-adapter-stripe's makeStripeAdapter satisfies this structurally. */
+/** @tunnelmindai/fareseal-adapter-stripe's makeStripeAdapter satisfies this structurally. */
 export interface StripeRoutes {
   handleWebhook(
     rawBody: string,
@@ -88,12 +89,12 @@ export interface StripeRoutes {
   };
 }
 
-export interface TollboothOptions {
+export interface FaresealOptions {
   /** Parsed config, or TOML source (parsed with the same fail-hard rules). */
-  config: TollboothConfig | string;
-  /** Site keypair for voucher verify/re-sign (load via @tunnelmindai/tollbooth-core/node). */
+  config: FaresealConfig | string;
+  /** Site keypair for voucher verify/re-sign (load via @tunnelmindai/fareseal-core/node). */
   siteKeys?: SiteKeyPair;
-  /** The x402 payment adapter (pass @tunnelmindai/tollbooth-adapter-x402's exports). */
+  /** The x402 payment adapter (pass @tunnelmindai/fareseal-adapter-x402's exports). */
   x402?: X402Adapter;
   /** The maze handler; serves the prefix and receives consequence redirects. */
   maze?: MazeHandler;
@@ -115,16 +116,19 @@ export interface TollboothOptions {
   /**
    * Trusted client IP for `pass_verified = ["search"]`. No default: without
    * it the search pass fails closed. Supply a source you trust (e.g. the
-   * socket address on Node or Bun); @tunnelmindai/tollbooth-cloudflare wires
+   * socket address on Node or Bun); @tunnelmindai/fareseal-cloudflare wires
    * cf-connecting-ip itself.
    */
   clientIp?: (c: Context) => string | undefined;
 }
 
-const REPORT_PATH = "/_tollbooth/report";
-const WEBHOOK_PATH = "/_tollbooth/stripe-webhook";
-const VOUCHER_PATH_PREFIX = "/_tollbooth/voucher/";
-const ARRIVAL_PATH = "/_tollbooth/arrival";
+// Legacy /_tollbooth/* is an alias (removed in 3.0.0): the handler rewrites it
+// to /_fareseal/* once, so every route below sees one spelling.
+const LEGACY_PREFIX = "/_tollbooth/";
+const REPORT_PATH = "/_fareseal/report";
+const WEBHOOK_PATH = "/_fareseal/stripe-webhook";
+const VOUCHER_PATH_PREFIX = "/_fareseal/voucher/";
+const ARRIVAL_PATH = "/_fareseal/arrival";
 
 interface AgentStat {
   kind: "agent" | "anonymous-agent" | "spoofer";
@@ -292,7 +296,7 @@ export function makeDirectoryFetcher(
       const resp = await fetchImpl(url, {
         redirect: "manual",
         signal: AbortSignal.timeout(5000),
-        headers: { "user-agent": "tollbooth-wba-verifier/0.0" },
+        headers: { "user-agent": "fareseal-wba-verifier/0.0" },
       });
       if (!resp.ok) {
         await resp.body?.cancel();
@@ -425,10 +429,12 @@ function requestFromContext(
   // No default source: headers like cf-connecting-ip or x-forwarded-for are
   // client-forgeable unless a known edge sets them, so only the caller can
   // say which is trustworthy. Without options.clientIp the search pass fails
-  // closed; @tunnelmindai/tollbooth-cloudflare passes cf-connecting-ip explicitly.
+  // closed; @tunnelmindai/fareseal-cloudflare passes cf-connecting-ip explicitly.
   const clientIp = clientIpOf?.(c);
   const url = new URL(c.req.url);
   const header = (name: string) => c.req.header(name);
+  const voucherHeader =
+    header("fareseal-voucher") ?? header("tollbooth-voucher");
   return {
     // Raw (still %-encoded) pathname: c.req.path is decoded, which would break
     // a WBA "@path" signature made over the wire bytes and free-path matching.
@@ -456,9 +462,9 @@ function requestFromContext(
     ...(header("x-payment") !== undefined
       ? { payment: header("x-payment") as string }
       : {}),
-    ...(header("tollbooth-voucher") !== undefined
-      ? { voucher: header("tollbooth-voucher") as string }
-      : {}),
+    // `tollbooth-voucher` is the pre-rename name, read until 3.0.0; the new
+    // header wins when both are present.
+    ...(voucherHeader !== undefined ? { voucher: voucherHeader } : {}),
     ...(clientIp !== undefined ? { clientIp } : {}),
   };
 }
@@ -535,7 +541,7 @@ function evictOldest(stats: Stats): void {
 
 function reportJson(
   stats: Stats,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   reporter?: ReceiptReporter,
 ) {
   const price = Number(cfg.toll.price_usd);
@@ -583,7 +589,7 @@ async function bearerMatches(
   return got !== undefined && diff === 0;
 }
 
-export function tollbooth(options: TollboothOptions): MiddlewareHandler {
+export function fareseal(options: FaresealOptions): MiddlewareHandler {
   const cfg =
     typeof options.config === "string"
       ? parseConfig(options.config)
@@ -635,7 +641,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     // The adapter owns the x402 payment-required headers (D-7); this layer
     // owns the machine-readable body and the Link header to the Stripe
     // option (AC-2.1). The body carries both dialects: x402 v1 clients read
-    // x402Version/error/accepts, older tollbooth clients read v/price_usd/
+    // x402Version/error/accepts, older pre-rename clients read v/price_usd/
     // options - no key is shared, so each ignores the other's fields.
     let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
@@ -660,7 +666,10 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   };
 
   const handler = async (c: Context, next: () => Promise<void>) => {
-    if (c.req.path === REPORT_PATH && c.req.method === "GET") {
+    const routePath = c.req.path.startsWith(LEGACY_PREFIX)
+      ? `/_fareseal/${c.req.path.slice(LEGACY_PREFIX.length)}`
+      : c.req.path;
+    if (routePath === REPORT_PATH && c.req.method === "GET") {
       if (cfg.report_token === "") return c.text("Not Found", 404);
       if (
         !(await bearerMatches(
@@ -671,7 +680,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
         return c.text("Unauthorized", 401);
       return c.json(reportJson(stats, cfg, reporter));
     }
-    if (stripe && c.req.path === WEBHOOK_PATH && c.req.method === "POST") {
+    if (stripe && routePath === WEBHOOK_PATH && c.req.method === "POST") {
       const result = await stripe.handleWebhook(
         await c.req.text(),
         c.req.header("stripe-signature"),
@@ -684,9 +693,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     if (
       stripe &&
       c.req.method === "GET" &&
-      c.req.path.startsWith(VOUCHER_PATH_PREFIX)
+      routePath.startsWith(VOUCHER_PATH_PREFIX)
     ) {
-      const page = stripe.redeem(c.req.path.slice(VOUCHER_PATH_PREFIX.length));
+      const page = stripe.redeem(routePath.slice(VOUCHER_PATH_PREFIX.length));
       return new Response(page.body, {
         status: page.status,
         headers: { "content-type": page.contentType },
@@ -701,7 +710,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     // "HEAD", so a GET-only test let HEAD fall through to record() (A008).
     if (
       (c.req.method === "GET" || c.req.method === "HEAD") &&
-      c.req.path === ARRIVAL_PATH
+      routePath === ARRIVAL_PATH
     ) {
       const req = requestFromContext(c, options.clientIp);
       const nowS = options.nowS?.();
@@ -738,8 +747,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
 
     if (
       maze &&
-      (c.req.path === cfg.maze.prefix ||
-        c.req.path.startsWith(`${cfg.maze.prefix}/`))
+      mazePrefixes(cfg.maze.prefix).some(
+        (p) => c.req.path === p || c.req.path.startsWith(`${p}/`),
+      )
     ) {
       const page = await maze(c.req.path);
       return new Response(page.body, {
@@ -892,8 +902,11 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
 
     if (cfg.mode === "observe") return next();
     if (decision.action === "pass") {
-      if (decision.voucher !== undefined)
+      if (decision.voucher !== undefined) {
+        c.header("fareseal-voucher", decision.voucher);
+        // Old name emitted too until 3.0.0, so un-migrated agents keep the chain.
         c.header("tollbooth-voucher", decision.voucher);
+      }
       await next();
       // x402 v1 settlement receipt. A local-only verifier has no on-chain
       // transaction, so `transaction` is "" there.
@@ -929,7 +942,7 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
   };
 
   // Fail open (Constitution II: never block on our own fault). A throw from
-  // tollbooth's own logic (decide, verify, record, receipts, offers) hands
+  // fareseal's own logic (decide, verify, record, receipts, offers) hands
   // the request to the origin instead of a 500. Errors from the origin, i.e.
   // after next() was called, propagate as before - and next() runs once.
   return async (c, next) => {
@@ -946,3 +959,9 @@ export function tollbooth(options: TollboothOptions): MiddlewareHandler {
     }
   };
 }
+
+/** @deprecated renamed fareseal on 2026-11-10; removed in 3.0.0 */
+export const tollbooth = fareseal;
+
+/** @deprecated renamed FaresealOptions on 2026-11-10; removed in 3.0.0 */
+export type TollboothOptions = FaresealOptions;

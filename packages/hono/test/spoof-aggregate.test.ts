@@ -1,14 +1,14 @@
 // B007: SPOOF receipts can't frame a key. Anyone can send junk signatures
 // naming any key, so spoofs aggregate per claimed key per 60 s window into
 // ONE receipt carrying a count, and the attacker-chosen strings are capped.
-import { buildOffer, verifyProof } from "@tunnelmindai/tollbooth-adapter-x402";
+import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
   generateSecretKey,
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
   verifyReceipt,
-} from "@tunnelmindai/tollbooth-core";
+} from "@tunnelmindai/fareseal-core";
 import { Hono } from "hono";
 import { describe, expect, it, vi } from "vitest";
 import { NOW, PAY_TO } from "../../adapter-x402/test/fixtures/payment.js";
@@ -18,7 +18,7 @@ import {
   signedRequest,
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
-import { tollbooth } from "../src/index.js";
+import { fareseal } from "../src/index.js";
 
 async function setup(...agents: TestAgent[]) {
   const secret = generateSecretKey();
@@ -34,7 +34,7 @@ async function setup(...agents: TestAgent[]) {
   const clock = { now: NOW };
   const app = new Hono();
   app.use(
-    tollbooth({
+    fareseal({
       config: `mode = "toll"\nreport = true\nreport_url = "https://log.test/ingest"\n[toll.x402]\npay_to = "${PAY_TO}"\n`,
       siteKeys: site,
       reporter,

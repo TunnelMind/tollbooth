@@ -4,8 +4,8 @@ import {
   generateSecretKey,
   mintVoucher,
   publicKeyOf,
-} from "@tunnelmindai/tollbooth-core";
-import { tollbooth } from "@tunnelmindai/tollbooth-hono";
+} from "@tunnelmindai/fareseal-core";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { fetchPaying } from "../agent-client.js";
@@ -69,7 +69,7 @@ describe("agent-client (AC-7.1)", () => {
     const site = { secret, pub: await publicKeyOf(secret) };
     const vApp = new Hono();
     vApp.use(
-      tollbooth({
+      fareseal({
         config: `
 mode = "toll"
 [toll.x402]
@@ -96,6 +96,7 @@ bearer = true
     });
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe("paid content");
-    expect(resp.headers.get("tollbooth-voucher")).toBeTruthy(); // the successor rides back
+    expect(resp.headers.get("fareseal-voucher")).toBeTruthy();
+    expect(resp.headers.get("tollbooth-voucher")).toBeTruthy(); // old name, until 3.0.0 // the successor rides back
   });
 });

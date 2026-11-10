@@ -1,5 +1,7 @@
 # ADR 003 — base mainnet is a known network, never a default
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 **Relates to:** Constitution V.15, plan D-7.
 
 x402's whole point is real settlement, and operators who want it need the

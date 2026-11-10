@@ -1,6 +1,8 @@
 // Spec 123 A003: GET /_tollbooth/arrival through the Pages middleware. The
 // route lives in the hono layer (A002) that createPagesMiddleware wraps, so
 // cf-connecting-ip is the only edge-supplied input and request.cf is never read.
+import { readFileSync } from "node:fs";
+import { generateSecretKey, toBase64Url } from "@tunnelmindai/fareseal-core";
 import { describe, expect, it } from "vitest";
 import { createPagesMiddleware } from "../src/index.js";
 import { agent, ctx, human, toml } from "./helpers.js";
@@ -110,5 +112,61 @@ describe("GET /_tollbooth/arrival on Pages", () => {
       "x-tollbooth-env",
     ])
       expect(resp.headers.get(h)).toBeNull();
+  });
+});
+
+describe("T006 /_fareseal prefix on Pages", () => {
+  it("/_fareseal/arrival answers like /_tollbooth/arrival", async () => {
+    const mw = createPagesMiddleware({ config: toml() });
+    const a = await mw(ctx("/_fareseal/arrival", human(), {}));
+    const b = await mw(ctx(PATH, human(), {}));
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.headers.get("cache-control")).toBe("no-store");
+    expect(((await a.json()) as Body).identity.kind).toBe(
+      ((await b.json()) as Body).identity.kind,
+    );
+  });
+
+  it("neither prefix triggers a snapshot flush; an ordinary path does", async () => {
+    const posts: string[] = [];
+    const flush = async (path: string) => {
+      const before = posts.length;
+      const pending: Promise<unknown>[] = [];
+      const mw = createPagesMiddleware({
+        config: toml("rt"),
+        snapshots: {
+          url: "https://collector.example/v1/report",
+          intervalMs: 0,
+        },
+        fetch: async (url: string) => {
+          posts.push(url);
+          return new Response("{}", { status: 200 });
+        },
+      });
+      await mw(
+        ctx(
+          path,
+          human(),
+          { FARESEAL_SITE_KEY: toBase64Url(generateSecretKey()) },
+          (p) => pending.push(p),
+        ),
+      );
+      await Promise.all(pending);
+      return posts.length - before;
+    };
+    expect(await flush("/_fareseal/arrival")).toBe(0);
+    expect(await flush("/_tollbooth/arrival")).toBe(0);
+    expect(await flush("/research")).toBeGreaterThan(0);
+  });
+
+  it("the internal flush request targets https://fareseal.internal/_fareseal/report", () => {
+    const src = readFileSync(
+      new URL("../src/index.ts", import.meta.url),
+      "utf8",
+    );
+    expect(src).toContain("`https://fareseal.internal${REPORT_PATH}`");
+    expect(src).toContain('REPORT_PATH = "/_fareseal/report"');
+    expect(src).not.toContain("tollbooth.internal");
   });
 });

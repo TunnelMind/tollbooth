@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { parseConfig } from "@tunnelmindai/tollbooth-core";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
 import { describe, expect, it } from "vitest";
 import { buildOffer, NETWORKS } from "../src/index.js";
 

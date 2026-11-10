@@ -35,7 +35,7 @@ pnpm lint       # biome
 ```
 
 `dist/` is only produced by `tsc -b`, so **build before anything that imports a
-package by its `@tunnelmindai/tollbooth-*` name** — cross-package tests resolve to `dist/`,
+package by its `@tunnelmindai/fareseal-*` name** — cross-package tests resolve to `dist/`,
 not `src/`. `pnpm test` builds for you (via `pretest`); if you run vitest
 directly, `pnpm build` first or those cross-package suites go red on a clean
 clone.
@@ -44,5 +44,5 @@ Vendoring the packages instead of installing from npm? Fill in
 [vendoring.md](vendoring.md): the build commit plus a sha256 per packed tarball.
 
 ## Order of operations
-Phase 1 alone yields a working x402 tollbooth (T-010 milestone). Ship value before the maze exists — the offer must predate the consequence in the codebase, same as in the pipeline.
+Phase 1 alone yields a working x402 Fareseal (T-010 milestone). Ship value before the maze exists — the offer must predate the consequence in the codebase, same as in the pipeline.
 

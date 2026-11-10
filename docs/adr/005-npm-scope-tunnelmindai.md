@@ -1,5 +1,7 @@
 # ADR 005 — npm scope @tunnelmindai; publish five packages, not seven
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 **Narrows:** spec 094's "all seven" packages (`.github/workflows/publish.yml:1`).
 **Decision:** D3, decided 2026-11-04 (record: vault
 `TunnelMind/session-notes/2026-11-04-decisions-debate.md`).
