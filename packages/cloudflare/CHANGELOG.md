@@ -2,6 +2,14 @@
 
 Tollbooth was renamed Fareseal on 2026-11-10.
 
+## Unreleased
+
+- The settle verifier takes the transaction id from `data.transaction`, else
+  `data.tx`, so a settle answering only `tx` no longer yields an empty
+  `X-PAYMENT-RESPONSE.transaction`. A `settled: true` answer with neither now
+  stays 402 with reason `no-transaction-id`; that payment is never settled
+  again and the payer is not damped.
+
 ## 2.2.0
 
 - Renamed the npm packages from `@tunnelmindai/tollbooth-*` to

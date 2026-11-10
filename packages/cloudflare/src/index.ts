@@ -277,15 +277,29 @@ export function makeSettlingVerify(
           ((await resp.json()) as { data?: Record<string, unknown> })?.data ??
           {};
         if (data.settled === true) {
+          // Settle routes name the on-chain id `transaction` or `tx`;
+          // `transaction` wins when both are present.
+          const txId =
+            typeof data.transaction === "string" && data.transaction !== ""
+              ? data.transaction
+              : typeof data.tx === "string" && data.tx !== ""
+                ? data.tx
+                : null;
+          if (txId === null) {
+            // A settle we cannot point the payer at is not proof of payment.
+            // Remember it (the nonce may be spent; never settle it twice), but
+            // leave payerFails alone: a malformed answer is not the payer's
+            // fault.
+            remember(seenPayments, key, "no-transaction-id");
+            return { ok: false, payer: null, reason: "no-transaction-id" };
+          }
           remember(seenPayments, key, "already-settled"); // EIP-3009 nonces are single-use
           payerFails.delete(payer);
           return {
             ok: true,
             payer: typeof data.payer === "string" ? data.payer : payer,
             // Surfaced to the payer in X-PAYMENT-RESPONSE.
-            ...(typeof data.transaction === "string"
-              ? { transaction: data.transaction }
-              : {}),
+            transaction: txId,
           };
         }
         const reason =

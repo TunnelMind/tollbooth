@@ -21,7 +21,10 @@ function fakeFetch() {
     calls.push(url);
     if (url === SETTLE_URL)
       return new Response(
-        JSON.stringify({ ok: true, data: { settled: true, payer: "0xabc" } }),
+        JSON.stringify({
+          ok: true,
+          data: { settled: true, payer: "0xabc", tx: "0xTX" },
+        }),
       );
     return new Response("{}");
   };
