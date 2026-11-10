@@ -18,6 +18,7 @@ import {
   JtiCache,
   keptFor,
   LEDGER,
+  mazePrefixes,
   NonceCache,
   type OfferBody,
   OfferLedger,
@@ -295,7 +296,7 @@ export function makeDirectoryFetcher(
       const resp = await fetchImpl(url, {
         redirect: "manual",
         signal: AbortSignal.timeout(5000),
-        headers: { "user-agent": "tollbooth-wba-verifier/0.0" },
+        headers: { "user-agent": "fareseal-wba-verifier/0.0" },
       });
       if (!resp.ok) {
         await resp.body?.cancel();
@@ -746,8 +747,9 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
 
     if (
       maze &&
-      (c.req.path === cfg.maze.prefix ||
-        c.req.path.startsWith(`${cfg.maze.prefix}/`))
+      mazePrefixes(cfg.maze.prefix).some(
+        (p) => c.req.path === p || c.req.path.startsWith(`${p}/`),
+      )
     ) {
       const page = await maze(c.req.path);
       return new Response(page.body, {

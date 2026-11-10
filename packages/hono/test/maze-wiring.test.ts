@@ -82,6 +82,17 @@ describe("US-4 - the consequence, wired", () => {
     expect(await page.text()).toContain("<h1>");
   });
 
+  it("serves the pre-rename maze prefix with noindex", async () => {
+    const agent = await makeAgent();
+    const app = makeApp(agent);
+    const page = await app.request(
+      "http://example.com/.well-known/tollbooth-maze/",
+      { headers: await wbaHeaders(agent) },
+    );
+    expect(page.status).toBe(200);
+    expect(page.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
   it("AC-4.2: a spoofed signature goes to the maze immediately, no offers", async () => {
     const agent = await makeAgent();
     const app = makeApp(agent);

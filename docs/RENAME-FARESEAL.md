@@ -19,3 +19,16 @@ Tollbooth was renamed Fareseal on 2026-11-10. One row per renamed surface.
 | Request/response header `tollbooth-voucher` | `tollbooth-voucher` | `fareseal-voucher` | Yes: the old header is read as a fallback (new wins when both are sent) and emitted alongside the new one | 3.0.0 |
 
 `PRICE_USD` and `LEAK_REPLAY` do not exist on origin/main: `git grep -n 'PRICE_USD\|LEAK_REPLAY'` finds nothing (only the lower-case `price_usd` settle-body field, which is not an env var), so there is nothing to alias.
+
+## T008: headers, markers, user agent, maze
+
+| Surface | Old | New | Old still works? | Removed in |
+| --- | --- | --- | --- | --- |
+| Env marker header on every outbound write | `x-tollbooth-env` | `x-fareseal-env` (`ENV_HEADER`) | Yes: sent beside the new one; exported as `ENV_HEADER_LEGACY` | 3.0.0 |
+| `/_fareseal/report` response headers | `x-tollbooth-mode`, `-reporting`, `-settling`, `-env` | `x-fareseal-*` of the same names | Yes: both sets emitted | 3.0.0 |
+| Report POST domain header (cloudflare snapshots, core `ReceiptReporter`) | `x-tollbooth-domain` | `x-fareseal-domain` | Yes: both sent | 3.0.0 |
+| WBA directory fetch user agent | `tollbooth-wba-verifier/0.0` | `fareseal-wba-verifier/0.0` | No alias (outbound only) | n/a |
+| Maze prefix default (GATE 0 Q2) | `/.well-known/tollbooth-maze` | `/.well-known/fareseal-maze` | Yes: the handler and the hono route still serve the old prefix with `noindex, nofollow`, and `robotsFragment` Disallows both (`LEGACY_MAZE_PREFIX`, `mazePrefixes()` in core) | 3.0.0 |
+| Log prefixes, robots comment, node maze message | `tollbooth …` | `fareseal …` | n/a | n/a |
+
+The signed snapshot `kind` stays `tollbooth-observe-snapshot` (Q4), and the corpus seed and Commons fixtures are untouched.

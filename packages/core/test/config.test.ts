@@ -74,7 +74,7 @@ describe("FR-10 — documented defaults for every key (plan §5)", () => {
     expect(c.toll.stripe.bearer).toBe(false);
 
     expect(c.maze.enabled).toBe(true);
-    expect(c.maze.prefix).toBe("/.well-known/tollbooth-maze");
+    expect(c.maze.prefix).toBe("/.well-known/fareseal-maze");
     expect(c.maze.corpus_path).toBe("./maze-corpus");
     expect(c.maze.maze_delay_ms).toBe(800);
     expect(c.maze.page_bytes_max).toBe(4096);

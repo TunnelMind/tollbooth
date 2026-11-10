@@ -23,7 +23,7 @@ export const toml = (reportToken = "", price = "0.001") =>
     ``,
     `[maze]`,
     `enabled = true`,
-    `prefix = "/.well-known/tollbooth-maze"`,
+    `prefix = "/.well-known/fareseal-maze"`,
   ].join("\n");
 
 export function ctx(

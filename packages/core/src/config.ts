@@ -77,10 +77,20 @@ const tollSchema = z
   })
   .prefault({});
 
+/** Pre-rename maze prefix: still served, noindex, and Disallowed (GATE 0 Q2). Removed in 3.0.0. */
+export const LEGACY_MAZE_PREFIX = "/.well-known/tollbooth-maze";
+
+/** Every prefix the maze answers on: the configured one plus the legacy alias. */
+export function mazePrefixes(prefix: string): string[] {
+  return prefix === LEGACY_MAZE_PREFIX
+    ? [prefix]
+    : [prefix, LEGACY_MAZE_PREFIX];
+}
+
 const mazeSchema = z
   .strictObject({
     enabled: z.boolean().prefault(true),
-    prefix: absolutePath.prefault("/.well-known/tollbooth-maze"),
+    prefix: absolutePath.prefault("/.well-known/fareseal-maze"),
     corpus_path: z.string().min(1).prefault("./maze-corpus"),
     maze_delay_ms: z.number().int().nonnegative().prefault(800),
     page_bytes_max: z.number().int().positive().prefault(4096),

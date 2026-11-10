@@ -15,7 +15,7 @@
  *     before any request is issued. There is no implicit global fetch — the
  *     1.x fallback posted test-suite snapshots into production.
  *   - the environment marker. Every outbound write carries
- *     `x-tollbooth-env`: `production` unless a test runner is detectable
+ *     `x-fareseal-env` (and the legacy `x-tollbooth-env`): `production` unless a test runner is detectable
  *     (VITEST / NODE_ENV=test / a vitest worker) or FARESEAL_ENV says
  *     otherwise. A collector refuses anything but `production`.
  *
@@ -37,6 +37,7 @@ import {
   canonicalize,
   type FaresealConfig,
   fromBase64Url,
+  mazePrefixes,
   parseConfig,
   publicKeyOf,
   ReceiptReporter,
@@ -66,7 +67,9 @@ export {
 const REPORT_PATH = "/_fareseal/report";
 const LEGACY_REPORT_PATH = "/_tollbooth/report"; // alias, removed in 3.0.0
 const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
-export const ENV_HEADER = "x-tollbooth-env";
+export const ENV_HEADER = "x-fareseal-env";
+/** Pre-rename marker header, sent beside ENV_HEADER; removed in 3.0.0. */
+export const ENV_HEADER_LEGACY = "x-tollbooth-env";
 
 // Facilitator damping (ADR-004): signing a well-formed payment costs an
 // attacker nothing, relaying it costs the operator facilitator quota. Capped
@@ -185,6 +188,7 @@ function tagged(fetchFn: FetchLike, marker: string): FetchLike {
   return (url, init) => {
     const headers = new Headers(init?.headers);
     headers.set(ENV_HEADER, marker);
+    headers.set(ENV_HEADER_LEGACY, marker);
     return fetchFn(url, { ...init, headers });
   };
 }
@@ -506,7 +510,10 @@ export function createPagesMiddleware(
       headers: {
         "content-type": "application/json",
         ...(s.cfg.report_domain
-          ? { "x-tollbooth-domain": s.cfg.report_domain }
+          ? {
+              "x-fareseal-domain": s.cfg.report_domain,
+              "x-tollbooth-domain": s.cfg.report_domain, // alias, 3.0.0
+            }
           : {}),
       },
       body: JSON.stringify({ ...unsigned, sig }),
@@ -547,9 +554,13 @@ export function createPagesMiddleware(
         resp.status === 200
       ) {
         const out = new Response(resp.body, resp);
+        out.headers.set("x-fareseal-mode", s.cfg.mode);
         out.headers.set("x-tollbooth-mode", s.cfg.mode);
+        out.headers.set("x-fareseal-reporting", String(s.reporting));
         out.headers.set("x-tollbooth-reporting", String(s.reporting));
+        out.headers.set("x-fareseal-settling", String(s.settling));
         out.headers.set("x-tollbooth-settling", String(s.settling));
+        out.headers.set("x-fareseal-env", s.envMarker);
         out.headers.set("x-tollbooth-env", s.envMarker);
         return out;
       }
@@ -567,14 +578,14 @@ export function createPagesMiddleware(
         if (
           !path.startsWith("/_fareseal") &&
           !path.startsWith("/_tollbooth") &&
-          !path.startsWith(s.cfg.maze.prefix) &&
+          !mazePrefixes(s.cfg.maze.prefix).some((p) => path.startsWith(p)) &&
           now - lastFlushMs >= interval
         ) {
           lastFlushMs = now;
           const url = opts.snapshots.url;
           context.waitUntil(
             flushSnapshot(s, url).catch((e) =>
-              console.error("tollbooth snapshot flush failed:", e),
+              console.error("fareseal snapshot flush failed:", e),
             ),
           );
         }
@@ -585,7 +596,7 @@ export function createPagesMiddleware(
       // it must surface (a red suite, a failed request), never serve the
       // site untolled and post nowhere in silence.
       if (err instanceof FaresealBindingMissingError) throw err;
-      console.error("tollbooth middleware failed open:", err);
+      console.error("fareseal middleware failed open:", err);
       return context.next();
     }
   };

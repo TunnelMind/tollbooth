@@ -11,7 +11,7 @@ import {
 } from "../src/index.js";
 import { loadCorpusDir } from "../src/node.js";
 
-const CFG = parseConfig(""); // maze defaults: prefix /.well-known/tollbooth-maze, 800ms, 4096B
+const CFG = parseConfig(""); // maze defaults: prefix /.well-known/fareseal-maze, 800ms, 4096B
 const PREFIX = CFG.maze.prefix;
 const pages = generateCorpus({ seed: "maze-test", pages: 20 });
 
@@ -79,6 +79,14 @@ describe("VI.18 - robots.txt fragment", () => {
     const fragment = robotsFragment(PREFIX);
     expect(fragment).toContain("User-agent: *");
     expect(fragment).toContain(`Disallow: ${PREFIX}/`);
+    expect(fragment).toContain("Disallow: /.well-known/tollbooth-maze/");
+  });
+
+  it("still serves the pre-rename prefix, noindex (GATE 0 Q2)", async () => {
+    const resp = await handler()("/.well-known/tollbooth-maze/page-0001.html");
+    expect(resp.status).toBe(200);
+    expect(resp.body).toBe(pages.get("page-0001.html"));
+    expect(resp.headers["x-robots-tag"]).toBe("noindex, nofollow");
   });
 });
 
@@ -97,6 +105,6 @@ describe("node corpus loader - O(file read) serving", () => {
 
   it("an empty corpus directory fails loudly with the fix", async () => {
     const dir = await mkdtemp(join(tmpdir(), "tollbooth-empty-"));
-    await expect(loadCorpusDir(dir)).rejects.toThrow(/tollbooth corpus/);
+    await expect(loadCorpusDir(dir)).rejects.toThrow(/fareseal corpus/);
   });
 });

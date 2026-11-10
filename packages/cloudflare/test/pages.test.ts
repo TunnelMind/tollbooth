@@ -81,6 +81,12 @@ describe("createPagesMiddleware — core behaviors", () => {
     expect(authed.headers.get("x-tollbooth-mode")).toBe("toll");
     expect(authed.headers.get("x-tollbooth-reporting")).toBe("false");
     expect(authed.headers.get("x-tollbooth-settling")).toBe("false");
+    expect(authed.headers.get("x-fareseal-mode")).toBe("toll");
+    expect(authed.headers.get("x-fareseal-reporting")).toBe("false");
+    expect(authed.headers.get("x-fareseal-settling")).toBe("false");
+    expect(authed.headers.get("x-fareseal-env")).toBe(
+      authed.headers.get("x-tollbooth-env"),
+    );
     const unauthed = await mw(ctx("/_tollbooth/report", {}, {}));
     expect(unauthed.status).toBe(401); // token IS set; 404 is only for an unset token (T-008)
     expect(unauthed.headers.get("x-tollbooth-mode")).toBeNull();
@@ -168,8 +174,13 @@ describe("createPagesMiddleware — core behaviors", () => {
       config: toml(),
       corpus: { seed: "test-maze", pages: 8 },
     });
-    const m = await mw(ctx("/.well-known/tollbooth-maze", agent(), {}));
-    expect(m.status).toBe(200);
-    expect(m.headers.get("x-robots-tag")).toContain("noindex");
+    for (const p of [
+      "/.well-known/fareseal-maze",
+      "/.well-known/tollbooth-maze",
+    ]) {
+      const m = await mw(ctx(p, agent(), {}));
+      expect(m.status).toBe(200);
+      expect(m.headers.get("x-robots-tag")).toContain("noindex");
+    }
   });
 });

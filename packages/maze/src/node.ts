@@ -12,7 +12,7 @@ export async function loadCorpusDir(dir: string): Promise<MazeCorpus> {
   );
   if (names.size === 0)
     throw new Error(
-      `no maze pages in ${dir} - generate them: tollbooth corpus --out ${dir}`,
+      `no maze pages in ${dir} - generate them: fareseal corpus --out ${dir}`,
     );
   return {
     pageCount: names.size,

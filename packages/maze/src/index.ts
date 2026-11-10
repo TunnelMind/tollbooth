@@ -5,7 +5,7 @@
 // carries X-Robots-Tag and no-store: the maze must never leak into search
 // indexes or CDN caches (VI.18 - poisoning the operator's SEO is a
 // release-blocking bug).
-import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
+import { type FaresealConfig, mazePrefixes } from "@tunnelmindai/fareseal-core";
 import { fnv1a, pageName } from "./corpus.js";
 
 export type { CorpusOptions } from "./corpus.js";
@@ -34,7 +34,10 @@ export const PAGE_NAME_RE = /^page-\d{4}\.html$/;
 
 /** The robots.txt lines the operator appends: keep every crawler out (VI.18). */
 export function robotsFragment(prefix: string): string {
-  return `# tollbooth maze - decoy pages, worthless to index\nUser-agent: *\nDisallow: ${prefix}/\n`;
+  const disallow = mazePrefixes(prefix)
+    .map((p) => `Disallow: ${p}/\n`)
+    .join("");
+  return `# fareseal maze - decoy pages, worthless to index\nUser-agent: *\n${disallow}`;
 }
 
 export function makeMazeHandler(deps: {
@@ -46,11 +49,11 @@ export function makeMazeHandler(deps: {
   const { corpus, cfg } = deps;
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
-  const prefix = cfg.maze.prefix;
+  const prefixes = mazePrefixes(cfg.maze.prefix);
 
   return async (path): Promise<MazeResponse> => {
-    if (path !== prefix && !path.startsWith(`${prefix}/`))
-      return { status: 404, body: "", headers: {} };
+    const prefix = prefixes.find((p) => path === p || path.startsWith(`${p}/`));
+    if (prefix === undefined) return { status: 404, body: "", headers: {} };
 
     await sleep(cfg.maze.maze_delay_ms);
 

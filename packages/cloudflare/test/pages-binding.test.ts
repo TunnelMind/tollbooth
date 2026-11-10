@@ -13,6 +13,7 @@ import {
 import {
   createPagesMiddleware,
   ENV_HEADER,
+  ENV_HEADER_LEGACY,
   FaresealBindingMissingError,
   faresealEnvMarker,
   testRunnerDetected,
@@ -77,9 +78,15 @@ describe("no global-fetch fallback", () => {
   });
 
   it("an explicit fetch option carries the snapshot with the environment marker", async () => {
-    const posts: { url: string; env: string | null }[] = [];
+    const posts: { url: string; env: string | null; legacy: string | null }[] =
+      [];
     const recorder = async (url: string, init?: RequestInit) => {
-      posts.push({ url, env: new Headers(init?.headers).get(ENV_HEADER) });
+      const h = new Headers(init?.headers);
+      posts.push({
+        url,
+        env: h.get(ENV_HEADER),
+        legacy: h.get(ENV_HEADER_LEGACY),
+      });
       return new Response("{}", { status: 200 });
     };
     const flushed: Promise<unknown>[] = [];
@@ -94,13 +101,16 @@ describe("no global-fetch fallback", () => {
       (p) => p.url === "https://collector.example/v1/report",
     );
     expect(snap?.env).toBe("test"); // vitest is detectable → test, refused by the collector
+    expect(snap?.legacy).toBe(snap?.env); // old collectors still read x-tollbooth-env
   });
 
   it("a binding fetch also carries the marker, and TOLLBOOTH_ENV overrides it verbatim", async () => {
     const seen: (string | null)[] = [];
+    const seenLegacy: (string | null)[] = [];
     const binding = {
       fetch: async (req: Request) => {
         seen.push(req.headers.get(ENV_HEADER));
+        seenLegacy.push(req.headers.get(ENV_HEADER_LEGACY));
         return new Response("{}", { status: 200 });
       },
     };
@@ -120,6 +130,7 @@ describe("no global-fetch fallback", () => {
     );
     await Promise.all(flushed);
     expect(seen).toContain("staging");
+    expect(seenLegacy).toContain("staging");
   });
 
   it("the marker is production when no test runner is detectable and TOLLBOOTH_ENV is unset", () => {
@@ -148,6 +159,7 @@ describe("no global-fetch fallback", () => {
       ctx("/_tollbooth/report", { authorization: "Bearer report-token-5" }, {}),
     );
     expect(r.headers.get("x-tollbooth-env")).toBe("test");
+    expect(r.headers.get("x-fareseal-env")).toBe("test");
   });
 });
 
