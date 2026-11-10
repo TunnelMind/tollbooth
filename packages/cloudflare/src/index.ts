@@ -16,16 +16,17 @@
  *     1.x fallback posted test-suite snapshots into production.
  *   - the environment marker. Every outbound write carries
  *     `x-tollbooth-env`: `production` unless a test runner is detectable
- *     (VITEST / NODE_ENV=test / a vitest worker) or TOLLBOOTH_ENV says
+ *     (VITEST / NODE_ENV=test / a vitest worker) or FARESEAL_ENV says
  *     otherwise. A collector refuses anything but `production`.
  *
  * Env contract (read at state build; a changed value rebuilds the state):
- *   TOLLBOOTH_SITE_KEY      base64url ed25519 seed — signs receipts and
+ *   (each also read under its pre-rename TOLLBOOTH_ name; FARESEAL_ wins)
+ *   FARESEAL_SITE_KEY      base64url ed25519 seed — signs receipts and
  *                           snapshots; reporting is off without it.
- *   TOLLBOOTH_SETTLE_TOKEN  bearer for the settle endpoint; settlement is
+ *   FARESEAL_SETTLE_TOKEN  bearer for the settle endpoint; settlement is
  *                           off (payments fail closed) without it.
- *   TOLLBOOTH_FLUSH_INTERVAL_MS  optional snapshot cadence override.
- *   TOLLBOOTH_ENV           optional explicit environment marker; anything
+ *   FARESEAL_FLUSH_INTERVAL_MS  optional snapshot cadence override.
+ *   FARESEAL_ENV           optional explicit environment marker; anything
  *                           other than "production" is sent verbatim and
  *                           refused by the collector.
  * Your `config` builder may read any further vars of its own (report
@@ -38,6 +39,7 @@ import {
   parseConfig,
   publicKeyOf,
   ReceiptReporter,
+  readEnv,
   type SiteKeyPair,
   sign,
   type TollboothConfig,
@@ -138,9 +140,6 @@ interface State {
   settling: boolean;
 }
 
-const str = (env: Record<string, unknown>, key: string): string =>
-  typeof env[key] === "string" ? (env[key] as string).trim() : "";
-
 const remember = <K, V>(map: Map<K, V>, k: K, v: V, cap = DAMP_CAP): void => {
   map.set(k, v);
   if (map.size > cap) {
@@ -172,7 +171,7 @@ export function testRunnerDetected(): boolean {
  * production — open ingest survives — while every vitest run is refused.
  */
 export function tollboothEnvMarker(env: Record<string, unknown>): string {
-  const explicit = str(env, "TOLLBOOTH_ENV");
+  const explicit = readEnv(env, "ENV");
   if (explicit !== "") return explicit;
   return testRunnerDetected() ? "test" : "production";
 }
@@ -375,8 +374,8 @@ export function createPagesMiddleware(
     toml: string,
   ): Promise<State> {
     const cfg = parseConfig(toml);
-    const seed = str(env, "TOLLBOOTH_SITE_KEY");
-    const settleToken = str(env, "TOLLBOOTH_SETTLE_TOKEN");
+    const seed = readEnv(env, "SITE_KEY");
+    const settleToken = readEnv(env, "SETTLE_TOKEN");
     const envMarker = tollboothEnvMarker(env);
 
     let siteKeys: SiteKeyPair | null = null;
@@ -519,10 +518,10 @@ export function createPagesMiddleware(
           : opts.config(context.env);
       const key = [
         toml,
-        str(context.env, "TOLLBOOTH_SITE_KEY") ? "k" : "",
-        str(context.env, "TOLLBOOTH_SETTLE_TOKEN") ? "s" : "",
+        readEnv(context.env, "SITE_KEY") ? "k" : "",
+        readEnv(context.env, "SETTLE_TOKEN") ? "s" : "",
         opts.binding !== undefined && context.env[opts.binding] ? "b" : "",
-        str(context.env, "TOLLBOOTH_ENV"),
+        readEnv(context.env, "ENV"),
       ].join("|");
       if (state === null || stateKey !== key) {
         state = await buildState(context.env, toml);
@@ -555,7 +554,7 @@ export function createPagesMiddleware(
         typeof context.waitUntil === "function"
       ) {
         const interval = Number(
-          str(context.env, "TOLLBOOTH_FLUSH_INTERVAL_MS") ||
+          readEnv(context.env, "FLUSH_INTERVAL_MS") ||
             (opts.snapshots.intervalMs ?? DEFAULT_FLUSH_INTERVAL_MS),
         );
         const now = Date.now();

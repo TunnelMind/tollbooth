@@ -122,6 +122,47 @@ describe("createPagesMiddleware — core behaviors", () => {
     ).toBe(true);
   });
 
+  it("FARESEAL_SITE_KEY alone signs snapshots; with TOLLBOOTH_SITE_KEY also set the new one wins", async () => {
+    for (const bothSet of [false, true]) {
+      const seed = generateSecretKey();
+      const sitePub = await publicKeyOf(seed);
+      const posts: Record<string, unknown>[] = [];
+      const binding = {
+        fetch: async (req: Request) => {
+          posts.push((await req.json()) as Record<string, unknown>);
+          return new Response("{}", { status: 200 });
+        },
+      };
+      const flushed: Promise<unknown>[] = [];
+      const mw = createPagesMiddleware({
+        config: toml("report-token-new"),
+        snapshots: {
+          url: "https://collector.example/v1/report",
+          intervalMs: 0,
+        },
+        binding: "DATA_API",
+      });
+      const env = {
+        FARESEAL_SITE_KEY: toBase64Url(seed),
+        ...(bothSet && {
+          TOLLBOOTH_SITE_KEY: toBase64Url(generateSecretKey()),
+        }),
+        DATA_API: binding,
+      };
+      await mw(ctx("/research", agent(), env, (p) => flushed.push(p)));
+      await Promise.all(flushed);
+      const snap = posts.find((b) => b.kind === "tollbooth-observe-snapshot");
+      if (!snap) throw new Error("no snapshot was posted");
+      const { sig, ...unsigned } = snap as Record<string, unknown> & {
+        sig: string;
+      };
+      expect(unsigned.site).toBe(toBase64Url(sitePub));
+      expect(
+        await verify(fromBase64Url(sig), canonicalize(unsigned), sitePub),
+      ).toBe(true);
+    }
+  });
+
   it("maze consequence stays inside the configured prefix", async () => {
     const mw = createPagesMiddleware({
       config: toml(),

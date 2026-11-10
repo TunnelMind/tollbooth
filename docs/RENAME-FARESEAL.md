@@ -6,3 +6,6 @@ Tollbooth was renamed Fareseal on 2026-11-10. One row per renamed surface.
 | --- | --- | --- | --- | --- |
 | npm package names | `@tunnelmindai/tollbooth-*` | `@tunnelmindai/fareseal-*` | Old names stay published, deprecated; no code alias | never unpublished |
 | Repo slug | `TunnelMind/tollbooth` | `TunnelMind/fareseal` (after N007; until then the slug and the `repository` URLs stay) | GitHub redirects after the rename | n/a |
+| Env vars (`SITE_KEY`, `SETTLE_TOKEN`, `ENV`, `FLUSH_INTERVAL_MS`, `EXAMPLE_SERVE`, `REPORT_TOKEN`) | `TOLLBOOTH_<X>` | `FARESEAL_<X>` | Yes: `readEnv()` in core reads `FARESEAL_` first, falls back to `TOLLBOOTH_`; a blank new value falls back. `REPORT_TOKEN` is read by the site's own config builder (`env.FARESEAL_REPORT_TOKEN ?? env.TOLLBOOTH_REPORT_TOKEN`) | not scheduled |
+
+`PRICE_USD` and `LEAK_REPLAY` do not exist on origin/main: `git grep -n 'PRICE_USD\|LEAK_REPLAY'` finds nothing (only the lower-case `price_usd` settle-body field, which is not an env var), so there is nothing to alias.

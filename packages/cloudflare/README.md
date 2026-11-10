@@ -13,7 +13,7 @@ const toml = (env) => `
 mode = "toll"
 report = true
 report_url = "https://collector.example/v1/receipts"
-report_token = "${env.TOLLBOOTH_REPORT_TOKEN ?? ""}"
+report_token = "${env.FARESEAL_REPORT_TOKEN ?? env.TOLLBOOTH_REPORT_TOKEN ?? ""}"
 free_paths = ["/robots.txt", "/api/"]
 
 [toll]
@@ -39,13 +39,13 @@ export const onRequest = createPagesMiddleware({
 
 Behavior, in one paragraph: humans and `free_paths` always pass. Agents get
 a genuine `402` offer; a payment passes **only after it settles** through
-your `settle.url` (bearer `TOLLBOOTH_SETTLE_TOKEN`; no settlement configured
+your `settle.url` (bearer `FARESEAL_SETTLE_TOKEN`, or the older `TOLLBOOTH_SETTLE_TOKEN`; no settlement configured
 means payments fail closed). The settle POST body is
 `{ payment, price_usd, resource }`, where `resource` is the requested URL
 (origin, path and query); the data-api settle route ignores it and pins the
 resource until the adr-x402v2 follow-up. Agents that ignore the offer past the grace
 window meet the decoy maze. Receipts and snapshots are signed with
-`TOLLBOOTH_SITE_KEY` (base64url ed25519 seed) and reported through the
+`FARESEAL_SITE_KEY` (or the older `TOLLBOOTH_SITE_KEY`; base64url ed25519 seed) and reported through the
 service binding when one is named. The middleware itself fails **open**:
 any thrown error serves your site untolled.
 

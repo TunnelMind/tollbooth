@@ -2,6 +2,7 @@
 // values only - the operator sets real ones (Constitution V.15).
 import { serve } from "@hono/node-server";
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
+import { readEnv } from "@tunnelmindai/fareseal-core";
 import { tollbooth } from "@tunnelmindai/fareseal-hono";
 import { Hono } from "hono";
 
@@ -20,7 +21,7 @@ app.use(tollbooth({ config, x402: { buildOffer, verifyProof } }));
 app.get("/", (c) => c.text("welcome, human"));
 app.get("/article", (c) => c.text("the article"));
 
-if (process.env.TOLLBOOTH_EXAMPLE_SERVE) {
+if (readEnv(process.env, "EXAMPLE_SERVE")) {
   serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 8787) }, (info) =>
     console.log(`tollbooth node example listening on :${info.port}`),
   );
