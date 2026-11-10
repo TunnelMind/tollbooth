@@ -4,7 +4,7 @@
 // only state it touches is injected: the offer ledger (D-3) and the jti
 // replay cache (AC-3.3).
 import { botRanges, ipInRanges } from "./botranges.js";
-import type { TollboothConfig } from "./config.js";
+import type { FaresealConfig } from "./config.js";
 import { agentHeuristics } from "./heuristics.js";
 import type { JtiCache } from "./jti.js";
 import type { OfferLedger } from "./ledger.js";
@@ -133,7 +133,7 @@ const isHtmlPageRequest = (req: PipelineRequest): boolean =>
   !NON_HTML_EXT.test(req.path);
 
 /** Every enabled payment option, with enough data to complete each (AC-7.2). */
-export function buildOfferBody(cfg: TollboothConfig): OfferBody {
+export function buildOfferBody(cfg: FaresealConfig): OfferBody {
   const options: OfferOption[] = [];
   if (cfg.toll.x402.enabled) {
     options.push({
@@ -167,7 +167,7 @@ const hasWba = (req: PipelineRequest): boolean =>
 // all (see the hono route), so no directory fetch and no replay burn.
 export async function identify(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   deps: PipelineDeps,
 ): Promise<Identity> {
   if (hasWba(req)) {
@@ -228,7 +228,7 @@ export async function identify(
  */
 export function verifiedPass(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
 ): Decision | null {
   if (cfg.pass_verified.length === 0 || hasWba(req)) return null;
   if (
@@ -249,7 +249,7 @@ export function verifiedPass(
 
 export async function decide(
   req: PipelineRequest,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   deps: PipelineDeps,
 ): Promise<Decision> {
   // Step 1: free paths pass unconditionally, before any other logic (AC-5.3) —

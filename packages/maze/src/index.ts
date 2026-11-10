@@ -5,7 +5,7 @@
 // carries X-Robots-Tag and no-store: the maze must never leak into search
 // indexes or CDN caches (VI.18 - poisoning the operator's SEO is a
 // release-blocking bug).
-import type { TollboothConfig } from "@tunnelmindai/fareseal-core";
+import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
 import { fnv1a, pageName } from "./corpus.js";
 
 export type { CorpusOptions } from "./corpus.js";
@@ -39,7 +39,7 @@ export function robotsFragment(prefix: string): string {
 
 export function makeMazeHandler(deps: {
   corpus: MazeCorpus;
-  cfg: TollboothConfig;
+  cfg: FaresealConfig;
   /** Injectable throttle timer; defaults to setTimeout. */
   sleep?: (ms: number) => Promise<void>;
 }): (path: string) => Promise<MazeResponse> {

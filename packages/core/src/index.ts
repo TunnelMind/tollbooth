@@ -10,7 +10,7 @@ export {
 } from "./arrival.js";
 export { botRanges, ipInRanges } from "./botranges.js";
 export { canonicalize } from "./canonicalize.js";
-export type { TollboothConfig } from "./config.js";
+export type { FaresealConfig, TollboothConfig } from "./config.js";
 export { ConfigError, parseConfig } from "./config.js";
 export { readEnv } from "./env.js";
 export type { HeuristicResult, HeuristicSignals } from "./heuristics.js";

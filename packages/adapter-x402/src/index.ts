@@ -17,7 +17,7 @@ import {
   hexToBytes,
   utf8ToBytes,
 } from "@noble/hashes/utils.js";
-import type { TollboothConfig } from "@tunnelmindai/fareseal-core";
+import type { FaresealConfig } from "@tunnelmindai/fareseal-core";
 
 /**
  * Known EIP-712 asset domains. base-sepolia is the DEFAULT and every example
@@ -178,7 +178,7 @@ export const MAX_TIMEOUT_SECONDS = 300;
  * is deprecated - kept for one cycle, removed in the next minor.
  */
 export function buildOffer(
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   resource: string,
 ): { headers: Record<string, string>; requirement: X402Requirement } {
   const net = networkOf(cfg.toll.x402.network);
@@ -205,7 +205,7 @@ export function buildOffer(
 /** AC-2.2: local verification of an X-PAYMENT header. Never throws. */
 export function verifyProof(
   xPayment: string,
-  cfg: TollboothConfig,
+  cfg: FaresealConfig,
   opts: { nowS?: number } = {},
 ): VerifyResult {
   const fail = (reason: string): VerifyResult => ({

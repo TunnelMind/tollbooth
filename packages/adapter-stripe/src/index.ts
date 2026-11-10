@@ -10,7 +10,7 @@
 // which renders it exactly once. Expired unredeemed -> the buyer contacts the
 // operator, who re-mints (`cli voucher mint`); Stripe is the record of
 // purchase. No customer table, ever (Article I.2).
-import { mintVoucher, type TollboothConfig } from "@tunnelmindai/fareseal-core";
+import { type FaresealConfig, mintVoucher } from "@tunnelmindai/fareseal-core";
 
 const encoder = new TextEncoder();
 
@@ -127,7 +127,7 @@ export interface StripeAdapter {
 }
 
 export function makeStripeAdapter(deps: {
-  cfg: TollboothConfig;
+  cfg: FaresealConfig;
   siteSecret: Uint8Array;
   nowS?: () => number;
 }): StripeAdapter {
