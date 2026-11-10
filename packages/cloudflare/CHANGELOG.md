@@ -4,6 +4,11 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- Operator-side settle failures (settle HTTP non-2xx, `retryable: true`,
+  `settlement-not-configured`, `network-mismatch`, `verify-error:` /
+  `settle-error:`, `(verify|settle)-failed(5xx)`) now return
+  `settle-retryable`: the payment is not cached and does not count toward
+  the payer's cooldown, so the same `X-PAYMENT` can be retried.
 - `[toll.x402] skew_tolerance` (default `"60s"`) absorbs client clock drift:
   a proof is `not-yet-valid` only when `validAfter` is past now + skew, and
   `window-too-long` only when `validBefore` is more than 300 s + skew away, so

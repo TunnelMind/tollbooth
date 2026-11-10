@@ -389,6 +389,115 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   });
 });
 
+// T004: an operator-side settle failure (our config, our facilitator, our
+// 5xx) must not burn the payer's nonce or count toward their cooldown.
+const OPERATOR_FAULT =
+  "settlement unavailable (operator fault); retry the same payment";
+
+/** A settle endpoint answering `status` with `body` verbatim. */
+function rawSettleBinding(status: number, body: unknown) {
+  const b = {
+    settles: 0,
+    fetch: async (req: Request) => {
+      if (req.url === SETTLE_URL) {
+        b.settles += 1;
+        // A string body is sent raw (e.g. a proxy's HTML error page).
+        const text = typeof body === "string" ? body : JSON.stringify(body);
+        return new Response(text, { status });
+      }
+      return new Response("{}", { status: 200 });
+    },
+  };
+  return b;
+}
+
+describe("makeSettlingVerify — operator-side settle failures (T004)", () => {
+  const classes: [string, number, unknown][] = [
+    ["HTTP 401 {ok:false,error}", 401, { ok: false, error: "bad token" }],
+    ["HTTP 503", 503, { ok: false, error: "down" }],
+    ["HTTP 502 non-JSON body", 502, "<html>Bad Gateway</html>"],
+    [
+      "retryable:true",
+      200,
+      { ok: true, data: { settled: false, retryable: true } },
+    ],
+    [
+      "settlement-not-configured",
+      200,
+      {
+        ok: true,
+        data: { settled: false, reason: "settlement-not-configured" },
+      },
+    ],
+    [
+      "verify-error: timeout",
+      200,
+      { ok: true, data: { settled: false, reason: "verify-error: timeout" } },
+    ],
+    [
+      "settle-error: boom",
+      200,
+      { ok: true, data: { settled: false, reason: "settle-error: boom" } },
+    ],
+    [
+      "settle-failed(502)",
+      200,
+      { ok: true, data: { settled: false, reason: "settle-failed(502)" } },
+    ],
+  ];
+  for (const [name, status, body] of classes) {
+    it(`${name}: retryable, not cached, no cooldown, operator-fault 402`, async () => {
+      const b = rawSettleBinding(status, body);
+      const verify = makeSettlingVerify(
+        (url, init) => b.fetch(new Request(url, init)),
+        SETTLE_URL,
+        "settle-secret",
+      );
+      const cfg = parseConfig(toml());
+      const xp = freshPayment();
+      expect(await verify(xp, cfg)).toMatchObject({
+        ok: false,
+        reason: "settle-retryable",
+      });
+      expect(await verify(xp, cfg)).toMatchObject({
+        reason: "settle-retryable",
+      });
+      expect(b.settles).toBe(2);
+      // Same payer, fresh nonces: still no cooldown after four more.
+      for (let i = 0; i < 4; i++) await verify(freshPayment(), cfg);
+      expect((await verify(freshPayment(), cfg)).reason).toBe(
+        "settle-retryable",
+      );
+      expect(b.settles).toBe(7);
+      // Through the middleware, the payer is told it is our fault.
+      const r = await settlingMw()(
+        ctx("/r", agent({ "x-payment": freshPayment() }), envOf(b)),
+      );
+      expect(r.status).toBe(402);
+      expect((await r.json()).error).toBe(OPERATOR_FAULT);
+    });
+  }
+
+  it("payer-side insufficient_funds is still cached and still cools down", async () => {
+    const b = rawSettleBinding(200, {
+      ok: true,
+      data: { settled: false, reason: "insufficient_funds" },
+    });
+    const verify = makeSettlingVerify(
+      (url, init) => b.fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const cfg = parseConfig(toml());
+    const xp = freshPayment();
+    expect((await verify(xp, cfg)).reason).toBe("insufficient_funds");
+    expect((await verify(xp, cfg)).reason).toBe("insufficient_funds");
+    expect(b.settles).toBe(1);
+    for (let i = 0; i < 4; i++) await verify(freshPayment(), cfg);
+    expect((await verify(freshPayment(), cfg)).reason).toBe("payer-cooldown");
+  });
+});
+
 describe("createPagesMiddleware — settle carries the resource (E003)", () => {
   it("the settle body carries origin+pathname+search, no fragment", async () => {
     const b = settleBinding({ settled: true, payer: "0xabc", tx: "0xTX" });
