@@ -97,7 +97,7 @@ const limitsSchema = z
 
 const configSchema = z.strictObject({
   mode: z.enum(["observe", "toll"]).prefault("observe"),
-  site_key_path: z.string().min(1).prefault("./tollbooth.key"),
+  site_key_path: z.string().min(1).prefault("./fareseal.key"),
   free_paths: z.array(absolutePath).prefault(["/robots.txt", "/favicon.ico"]),
   /** B009 opt-in pass for verified crawlers; empty (the default) is OFF.
    *  "search": Googlebot/bingbot from the vendored operator IP ranges.

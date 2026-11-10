@@ -16,17 +16,34 @@ export interface SiteKey {
   created: boolean;
 }
 
+export const DEFAULT_SITE_KEY_PATH = "./fareseal.key";
+// Pre-rename default. Read-only fallback, removed in 3.0.0 (docs/RENAME-FARESEAL.md).
+const LEGACY_SITE_KEY_PATH = "./tollbooth.key";
+
 /**
  * Load the site key from `path`, or generate one and write it with mode 0600.
  * A malformed existing file throws rather than being overwritten: silently
  * replacing a site key would orphan every receipt it ever signed.
+ * When `path` is the default and absent but the legacy ./tollbooth.key exists,
+ * that file is loaded (one warning) and no new key is ever written.
  */
 export async function loadOrCreateSiteKey(path: string): Promise<SiteKey> {
-  let text: string | undefined;
-  try {
-    text = await readFile(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  const read = async (p: string) => {
+    try {
+      return await readFile(p, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  };
+  let text = await read(path);
+  if (text === undefined && path === DEFAULT_SITE_KEY_PATH) {
+    text = await read(LEGACY_SITE_KEY_PATH);
+    if (text !== undefined) {
+      path = LEGACY_SITE_KEY_PATH;
+      console.warn(
+        `fareseal: using legacy ${LEGACY_SITE_KEY_PATH}; rename it to ${DEFAULT_SITE_KEY_PATH}`,
+      );
+    }
   }
   if (text !== undefined) {
     let secretKey: Uint8Array;

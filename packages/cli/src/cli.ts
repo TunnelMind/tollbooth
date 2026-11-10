@@ -27,7 +27,10 @@ import {
   verifyReceipt,
   verifySnapshot,
 } from "@tunnelmindai/fareseal-core";
-import { loadOrCreateSiteKey } from "@tunnelmindai/fareseal-core/node";
+import {
+  DEFAULT_SITE_KEY_PATH,
+  loadOrCreateSiteKey,
+} from "@tunnelmindai/fareseal-core/node";
 import { corpusHash, generateCorpus } from "@tunnelmindai/fareseal-maze";
 
 const USAGE = `usage:
@@ -320,7 +323,7 @@ async function voucherCmd(args: string[]): Promise<number> {
       console.error("voucher mint: --agent <pubkey> or --bearer required");
       return 64;
     }
-    const keyPath = flag(rest, "key") ?? "./tollbooth.key";
+    const keyPath = flag(rest, "key") ?? DEFAULT_SITE_KEY_PATH;
     const credits = Number(flag(rest, "credits") ?? 5000);
     const ttlDays = Number(flag(rest, "ttl-days") ?? 30);
     if (!Number.isInteger(credits) || credits < 1 || !(ttlDays > 0)) {

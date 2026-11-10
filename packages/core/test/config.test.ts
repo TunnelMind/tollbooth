@@ -52,7 +52,7 @@ describe("FR-10 — documented defaults for every key (plan §5)", () => {
   it("an empty config yields the full default surface", () => {
     const c = parseConfig("");
     expect(c.mode).toBe("observe");
-    expect(c.site_key_path).toBe("./tollbooth.key");
+    expect(c.site_key_path).toBe("./fareseal.key");
     expect(c.free_paths).toEqual(["/robots.txt", "/favicon.ico"]);
     expect(c.report).toBe(false);
     expect(c.report_url).toBeUndefined();

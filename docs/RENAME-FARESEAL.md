@@ -11,5 +11,6 @@ Tollbooth was renamed Fareseal on 2026-11-10. One row per renamed surface.
 | Hono middleware | `tollbooth()`, `TollboothOptions` | `fareseal()`, `FaresealOptions` | Yes: `const`/type aliases marked `@deprecated` (same function) | 3.0.0 |
 | Cloudflare options and env marker | `CloudflareTollboothOptions`, `tollboothEnvMarker` | `CloudflareFaresealOptions`, `faresealEnvMarker` | Yes: aliases marked `@deprecated` | 3.0.0 |
 | Binding error | `TollboothBindingMissingError` (`name`, message prefix `tollbooth:`) | `FaresealBindingMissingError` (`name`, message prefix `fareseal:`) | Yes: same class object, so `instanceof` works under both names; the `name` and message text changed | 3.0.0 |
+| Site key file default | `./tollbooth.key` | `./fareseal.key` (config `site_key_path`, `fareseal voucher mint --key`) | Yes: when the default is absent and `./tollbooth.key` exists, it is loaded with one `console.warn` and no new key is written; if both exist the new file wins; explicit paths have no fallback | 3.0.0 |
 
 `PRICE_USD` and `LEAK_REPLAY` do not exist on origin/main: `git grep -n 'PRICE_USD\|LEAK_REPLAY'` finds nothing (only the lower-case `price_usd` settle-body field, which is not an env var), so there is nothing to alias.
