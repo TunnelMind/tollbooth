@@ -1,5 +1,7 @@
 # Commons export fixtures
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 Real lines from the live Conduct Log Commons export, copied verbatim, never
 edit; tampered copies are made in tests.
 

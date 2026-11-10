@@ -21,7 +21,7 @@ const human = await fetch(`${base}/`, {
 const agent = await fetch(`${base}/article`, {
   headers: { "user-agent": "curl/8.7.1", accept: "*/*" },
 });
-const arrival = await fetch(`${base}/_tollbooth/arrival`);
+const arrival = await fetch(`${base}/_fareseal/arrival`);
 const arrivalOk =
   arrival.status === 200 &&
   Array.isArray(((await arrival.json()) as { rows?: unknown }).rows);

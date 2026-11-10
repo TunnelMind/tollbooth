@@ -28,7 +28,7 @@ that parses as one JSON document, such as a one-row page, is that document, no p
 
 Exit 0 PASS, 1 FAIL, 64 usage.
 
-Part of [tollbooth](https://github.com/TunnelMind/tollbooth) - pay the toll or meet
+Part of [Fareseal](https://github.com/TunnelMind/tollbooth) - pay the toll or meet
 the maze: self-hosted middleware that offers crawlers paid access, passes
 humans untouched, and leaves offline-verifiable conduct receipts. The
 [main README](https://github.com/TunnelMind/tollbooth#readme) has the full

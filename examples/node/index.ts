@@ -1,4 +1,4 @@
-// Node example: the tollbooth on @hono/node-server (ADR 002). Testnet
+// Node example: the Fareseal door on @hono/node-server (ADR 002). Testnet
 // values only - the operator sets real ones (Constitution V.15).
 import { serve } from "@hono/node-server";
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
@@ -23,6 +23,6 @@ app.get("/article", (c) => c.text("the article"));
 
 if (readEnv(process.env, "EXAMPLE_SERVE")) {
   serve({ fetch: app.fetch, port: Number(process.env.PORT ?? 8787) }, (info) =>
-    console.log(`tollbooth node example listening on :${info.port}`),
+    console.log(`fareseal node example listening on :${info.port}`),
   );
 }

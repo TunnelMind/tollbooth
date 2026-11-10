@@ -1,5 +1,7 @@
 # Architecture Decision Records
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 Any decision that contradicts `plan.md` gets an ADR here **before** the code
 that depends on it (Constitution VII.24). Number sequentially
 (`001-short-title.md`), state the plan section being deviated from, the

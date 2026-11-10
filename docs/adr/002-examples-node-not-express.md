@@ -1,5 +1,7 @@
 # ADR 002 — examples/node replaces examples/express-node
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 **Deviates from:** plan §2 repo layout, which lists `examples/express-node`.
 
 The middleware is Hono-native by design — plan §3 chose Hono precisely so one

@@ -1,6 +1,6 @@
 # @tunnelmindai/fareseal-cloudflare
 
-Batteries-included [tollbooth](https://github.com/TunnelMind/tollbooth) for
+Batteries-included [Fareseal](https://github.com/TunnelMind/tollbooth) for
 Cloudflare Pages: one import, config in, tolling out. Wires the maze,
 receipt reporting, signed traffic snapshots, and settle-then-serve x402 so
 your `functions/_middleware.js` is nothing but policy.
@@ -56,9 +56,9 @@ offer, settle, maze or receipt. `free_paths` are never checked, and observe
 mode skips it. If the `HEAD` throws, the request gets the normal `402` offer
 (it never serves free) and nothing is cached. Answers are cached per isolate,
 bounded at 1024 paths (oldest out) and cleared when the middleware rebuilds
-its state (a config or tollbooth env change).
+its state (a config or Fareseal env change).
 With the option set and no `ASSETS.fetch`, construction throws
-`TollboothBindingMissingError`, which is rethrown like a missing `binding`
+`FaresealBindingMissingError`, which is rethrown like a missing `binding`
 rather than failing open.
 
 Facilitator damping is built in (ADR-004): an exact payment already seen —

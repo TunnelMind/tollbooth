@@ -1,5 +1,7 @@
 # ADR 004 — @tunnelmindai/fareseal-cloudflare is batteries-included
 
+Tollbooth was renamed Fareseal on 2026-11-10.
+
 **Relates to:** plan D-7, AC-2.3, Constitution I (zero-infra), V.15.
 
 D-7 keeps @tunnelmindai/fareseal-hono injection-only so operators who use only Stripe
