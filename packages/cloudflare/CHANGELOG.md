@@ -4,6 +4,7 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- A settled response now needs a tx id (`transaction`, else `tx`) that is a `0x` + 64-hex hash once trimmed; anything else is `settle failed: no transaction id` (402, `no-transaction-id`), remembered and not counted toward the payer's cooldown.
 - An `X-PAYMENT` header longer than 8192 characters is refused as `malformed X-PAYMENT header` (402) before decoding or settling.
 - A misspelled `[toll.x402] network` is now a startup/config error:
   `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the

@@ -284,14 +284,13 @@ export function makeSettlingVerify(
         } | null;
         const data = body?.data ?? {};
         if (data.settled === true) {
-          // Settle routes name the on-chain id `transaction` or `tx`;
-          // `transaction` wins when both are present.
+          // Settle routes name the on-chain id `transaction` or `tx`. Only a
+          // 32-byte hex hash (0x + 64 hex, surrounding whitespace trimmed)
+          // counts; `transaction` wins when valid, else a valid `tx` serves.
           const txId =
-            typeof data.transaction === "string" && data.transaction !== ""
-              ? data.transaction
-              : typeof data.tx === "string" && data.tx !== ""
-                ? data.tx
-                : null;
+            [data.transaction, data.tx]
+              .map((v) => (typeof v === "string" ? v.trim() : ""))
+              .find((v) => /^0x[0-9a-fA-F]{64}$/.test(v)) ?? null;
           if (txId === null) {
             // A settle we cannot point the payer at is not proof of payment.
             // Remember it (the nonce may be spent; never settle it twice), but

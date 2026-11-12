@@ -181,7 +181,7 @@ function strictBinding() {
         return new Response(
           JSON.stringify({
             ok: true,
-            data: { settled: true, payer: "0xabc", tx: "0xTX" },
+            data: { settled: true, payer: "0xabc", tx: `0x${"ab".repeat(32)}` },
           }),
           { status: 200 },
         );
