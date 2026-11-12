@@ -132,7 +132,6 @@ pay_to = "0xabc"
 
   it.each([
     "settle-retryable",
-    "settle-throttled",
     "settlement-unconfigured",
     "settle-unreachable",
     "settle-failed(503)",
@@ -144,6 +143,17 @@ pay_to = "0xabc"
       actions.push((await decide(req, CFG, deps)).action);
     expect(actions).toEqual(["offer", "offer", "offer", "offer"]);
     expect(ledger.get(agent.jwk.x as string)).toBeUndefined();
+  });
+
+  // R004 (second review 2 L-a): changed from no-offer. Any client can empty
+  // our settle bucket, so settle-throttled records an offer as on main.
+  it("settle-throttled now records an offer: offer x3, then the consequence", async () => {
+    const { agent, ledger, req, deps } = await setup("settle-throttled");
+    const actions: string[] = [];
+    for (let i = 0; i < 4; i++)
+      actions.push((await decide(req, CFG, deps)).action);
+    expect(actions).toEqual(["offer", "offer", "offer", "consequence"]);
+    expect(ledger.get(agent.jwk.x as string)).toBeDefined();
   });
 
   // R002 L3/L7: the payer may have paid (settled, unusable tx id; or a
@@ -163,12 +173,30 @@ pay_to = "0xabc"
   it("isNoOfferFault: operator faults plus the two maybe-paid reasons, not payer faults", () => {
     for (const r of [
       "settle-retryable",
+      "settlement-unconfigured",
+      "settlement-not-configured",
+      "settle-unreachable",
+      "settle-failed(503)",
+      "settle-failed(401)",
+      "verify-failed(429)",
+      "verify-error: boom",
       "no-transaction-id",
       "settle-unconfirmed",
     ])
       expect(isNoOfferFault(r)).toBe(true);
-    for (const r of [undefined, "expired", "settle-failed"])
+    // R004: settle-throttled (a client can cause it) and the first
+    // not-yet-valid (it reached the facilitator) record an offer; the held
+    // repeat keeps the consequence (its ledger skip is in decide).
+    for (const r of [
+      "not-yet-valid-held",
+      undefined,
+      "expired",
+      "settle-failed",
+      "settle-throttled",
+      "not-yet-valid",
+    ])
       expect(isNoOfferFault(r)).toBe(false);
+    expect(isOperatorFault("settle-throttled")).toBe(true); // hono text unchanged
     // The operator set itself is unchanged (hono's "retry" text keys off it).
     expect(isOperatorFault("no-transaction-id")).toBe(false);
     expect(isOperatorFault("settle-unconfirmed")).toBe(false);
@@ -193,6 +221,26 @@ pay_to = "0xabc"
       "settle-failed(500)\n",
     ])
       expect(isOperatorFault(r)).toBe(false);
+  });
+
+  // R004 L-b (rework): the held repeat skips only the ledger write. Below the
+  // grace it is an offer and the count is unchanged; once exhausted it is
+  // the consequence, so repeating a held payment cannot dodge the maze.
+  it("not-yet-valid-held under the grace: the offer, ledger count unchanged", async () => {
+    const { agent, ledger, req, deps } = await setup("not-yet-valid-held");
+    const key = agent.jwk.x as string;
+    for (let i = 0; i < 2; i++) ledger.recordOffer(key, NOW * 1000, 600_000);
+    for (let i = 0; i < 4; i++)
+      expect((await decide(req, CFG, deps)).action).toBe("offer");
+    expect(ledger.get(key)?.offersSent).toBe(2);
+  });
+
+  it("not-yet-valid-held with 3 offers ledgered: the consequence", async () => {
+    const { agent, ledger, req, deps } = await setup("not-yet-valid-held");
+    const key = agent.jwk.x as string;
+    for (let i = 0; i < 3; i++) ledger.recordOffer(key, NOW * 1000, 600_000);
+    expect((await decide(req, CFG, deps)).action).toBe("consequence");
+    expect(ledger.get(key)?.offersSent).toBe(3);
   });
 
   it("an already-exhausted agent with an operator-fault payment gets the offer", async () => {

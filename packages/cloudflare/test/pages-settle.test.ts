@@ -16,6 +16,7 @@ import {
 import { Hono } from "hono";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  freshKeyPayment,
   makeAuth,
   payment,
   signAuth,
@@ -50,6 +51,15 @@ function freshPayment(priceUsd = "0.001", nonceHex?: string): string {
     nonce: `0x${nonceHex ?? (crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
   });
   return payment(auth, signAuth(auth));
+}
+
+/** A plain payment (validAfter 0) from a new payer each call, as an
+ * attacker rotating free keys would send. */
+function rotatingPayerPayment(): string {
+  return freshKeyPayment({
+    validBefore: String(Math.floor(Date.now() / 1000) + 300),
+    nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+  });
 }
 
 /** Same payment and signature, nonce field rewritten to `nonce`. */
@@ -944,15 +954,26 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     expect(t.s.calls).toBe(2); // not cached: the retry reached settle
   });
 
-  it("row 5 (AC-3.3): valid_after → not-yet-valid, payer null, not cached, not counted", async () => {
+  // R004 (second review 2 M1): changed from "not counted". Counted as on
+  // main, so fresh early nonces from one payer meet the cooldown.
+  it("row 5 (AC-3.3, R004 M1): valid_after → not-yet-valid, payer null, not cached, now counted toward the cooldown", async () => {
     const t = table(200, settledFalse(VALID_AFTER));
-    expect(await t.verify(freshPayment(), t.cfg)).toEqual({
+    const xp = freshPayment(); // validAfter 0: already past, so never held
+    expect(await t.verify(xp, t.cfg)).toEqual({
       ok: false,
       payer: null,
       reason: "not-yet-valid",
     });
-    // Four rejects for one payer, then a fresh payment still reaches settle.
-    await expectOperator(t, "not-yet-valid");
+    expect((await t.verify(xp, t.cfg)).reason).toBe("not-yet-valid");
+    expect(t.s.calls).toBe(2); // not cached: the retry reached settle
+    expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+      "not-yet-valid",
+    );
+    // Three counted rejects: the 4th payment is cooled down, no settle call.
+    expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+      "payer-cooldown",
+    );
+    expect(t.s.calls).toBe(3);
   });
 
   it("row 5 guard: a valid_after reason on HTTP 503 → settle-retryable (row 4 wins)", async () => {
@@ -1230,22 +1251,222 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
-  it("fresh early nonces from one payer: not counted toward the cooldown, bounded by the settle bucket", async () => {
+  /** Facilitator stub on the mocked clock: valid_after while a payment is
+   * early, then settled for a `funded` X-PAYMENT, else insufficient_funds. */
+  function facilitator(funded = new Set<string>()) {
+    const s = { calls: 0 };
+    const fetch = async (req: Request) => {
+      if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
+      s.calls += 1;
+      const xp = ((await req.json()) as { payment: string }).payment;
+      const { validAfter } = JSON.parse(atob(xp)).payload.authorization;
+      const data =
+        Number(validAfter) > Date.now() / 1000
+          ? NYV.data
+          : funded.has(xp)
+            ? { settled: true, tx: TX }
+            : { settled: false, reason: "insufficient_funds" };
+      return new Response(JSON.stringify({ ok: true, data }), { status: 200 });
+    };
+    const verify = makeSettlingVerify(
+      (url, init) => fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    return { s, verify, cfg: parseConfig(toml()) };
+  }
+
+  /** The hono pipeline over `verify` (offer_grace 3, maze on), on the mocked clock. */
+  async function mazeApp(verify: ReturnType<typeof makeSettlingVerify>) {
+    const cfg = parseConfig(toml());
+    const a = new Hono();
+    a.use(
+      fareseal({
+        config: cfg,
+        x402: { buildOffer, verifyProof: verify, settles: true },
+        maze: makeMazeHandler({
+          corpus: corpusFromMap(generateCorpus({ seed: "r004", pages: 10 })),
+          cfg,
+          sleep: async () => {},
+        }),
+        fetchDirectory: dirWith(bot.jwk),
+        nowS: () => Math.floor(Date.now() / 1000),
+      }),
+    );
+    a.get("*", (c) => c.text("content"));
+    const wba = await signedRequest(bot, { expires: T0 + 300 });
+    const verified: Record<string, string> = {
+      ...agent(),
+      signature: wba.signature,
+      "signature-input": wba.signatureInput,
+      "signature-agent": wba.signatureAgent,
+    };
+    const send = (xp: string, headers = verified) =>
+      a.request("http://example.com/article", {
+        headers: { ...headers, "x-payment": xp },
+      });
+    return { send, anon: agent() as Record<string, string> };
+  }
+
+  // R004 (second review 2 M1) replaces "fresh early nonces from one payer:
+  // not counted toward the cooldown, bounded by the settle bucket".
+  it("M1: fresh early nonces from one payer, burst of 30 → 3 settle calls, then payer-cooldown (as on main)", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
     try {
-      const t = stubbed();
+      const t = facilitator();
       const reasons: (string | undefined)[] = [];
       for (let i = 0; i < 30; i++)
         reasons.push((await t.verify(earlyPayment(T0), t.cfg)).reason);
-      // Pinned: row 5 is not counted (AC-3.3), so the bucket is the bound —
-      // SETTLE_BUCKET_CAP calls, then settle-throttled, no payer-cooldown.
-      expect(t.s.calls).toBe(SETTLE_BUCKET_CAP);
-      expect(reasons.filter((r) => r === "not-yet-valid").length).toBe(
-        SETTLE_BUCKET_CAP,
+      expect(t.s.calls).toBe(3); // 9c5c489: SETTLE_BUCKET_CAP
+      expect(reasons).toEqual([
+        ...Array(3).fill("not-yet-valid"),
+        ...Array(27).fill("payer-cooldown"),
+      ]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("M1: fresh early nonces from one payer, 10 rps for 60 s → 3 settle calls, then payer-cooldown", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const t = facilitator();
+      let last: string | undefined;
+      for (let i = 0; i < 600; i++, ms += 100)
+        last = (await t.verify(earlyPayment(Math.floor(ms / 1000)), t.cfg))
+          .reason;
+      expect(t.s.calls).toBe(3); // 9c5c489: 319
+      expect(last).toBe("payer-cooldown");
+    } finally {
+      clock.mockRestore();
+    }
+  }, 30_000); // hundreds of secp256k1 signatures: slow on a loaded host
+
+  it("M1: the same early payment at 10 rps → 1 settle call before validAfter, exactly 1 more after, served once", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const xp = earlyPayment(T0);
+      const t = facilitator(new Set([xp]));
+      const reasons = new Set<string | undefined>();
+      for (; ms < (T0 + 55) * 1000; ms += 100)
+        reasons.add((await t.verify(xp, t.cfg)).reason);
+      expect(t.s.calls).toBe(1);
+      expect([...reasons]).toEqual(["not-yet-valid", "not-yet-valid-held"]);
+      expect(await t.verify(xp, t.cfg)).toMatchObject({ ok: true });
+      for (let i = 0; i < 5; i++)
+        expect((await t.verify(xp, t.cfg)).reason).toBe("already-settled");
+      expect(t.s.calls).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("M1: the same early payment repeated is counted once: two more failures cool the payer down", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const xp = earlyPayment(T0);
+      for (let i = 0; i < 30; i++) await t.verify(xp, t.cfg);
+      expect(t.s.calls).toBe(1);
+      for (let i = 0; i < 2; i++)
+        expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+          "insufficient_funds",
+        );
+      // Counted once (not 30 times, not zero): the 4th failure cools down.
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "payer-cooldown",
       );
-      expect(reasons.filter((r) => r === "settle-throttled").length).toBe(
-        30 - SETTLE_BUCKET_CAP,
-      );
+      expect(t.s.calls).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const xp = earlyPayment(T0, 30); // its clock says T0+30 is "now"
+      const t = facilitator(new Set([xp]));
+      const { send } = await mazeApp(t.verify);
+      const statuses: number[] = [];
+      const errors = new Set<string>();
+      for (let s = 0; s <= 30; s += 5) {
+        ms = (T0 + s) * 1000;
+        const r = await send(xp);
+        statuses.push(r.status);
+        if (r.status === 402) errors.add((await r.json()).error);
+      }
+      // 9c5c489: 402,402,402,302,302,302,200 (held repeats recorded offers).
+      expect(statuses).toEqual([402, 402, 402, 402, 402, 402, 200]);
+      // The held answer keeps the payer's text.
+      expect([...errors]).toEqual(["authorization not yet valid"]);
+      expect(t.s.calls).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // R004 (second review 2 L-a): settle-throttled now records an offer, so a
+  // drained bucket no longer keeps a verified agent out of the maze.
+  it("L-a: a drain of fresh early nonces from one payer, then the verified agent with fresh unfunded payments → 302 from the 4th (as on main)", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const { send, anon } = await mazeApp(t.verify);
+      for (let i = 0; i < 30; i++) await send(earlyPayment(T0), anon);
+      expect(t.s.calls).toBe(3); // 9c5c489: 20, the bucket drained
+      const statuses: number[] = [];
+      for (let i = 0; i < 8; i++)
+        statuses.push((await send(freshPayment())).status);
+      expect(statuses).toEqual([402, 402, 402, 302, 302, 302, 302, 302]);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // R004 rework (QA: L-b reopened the dodge): a held repeat skips only the
+  // ledger write, never the consequence, so a mazed agent stays mazed.
+  it("L-b: an agent already mazed stays mazed while repeating one held early payment (302 x10, 3 settle calls)", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const { send } = await mazeApp(t.verify);
+      const early = [earlyPayment(T0), earlyPayment(T0), earlyPayment(T0)];
+      const statuses: number[] = [];
+      for (const xp of early) statuses.push((await send(xp)).status);
+      for (let i = 0; i < 2; i++)
+        statuses.push((await send(freshPayment())).status);
+      expect(statuses).toEqual([402, 402, 402, 302, 302]);
+      const held: number[] = [];
+      for (let i = 0; i < 10; i++)
+        held.push((await send(early[2] as string)).status);
+      expect(held).toEqual(Array(10).fill(302)); // 9c5c489 diff: 402 x10
+      expect((await send(freshPayment())).status).toBe(302);
+      expect(t.s.calls).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("L-a: a bucket drain by rotating unfunded payers, then the verified agent with fresh unfunded payments → 302 from the 4th (settle-throttled now records an offer)", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const { send, anon } = await mazeApp(t.verify);
+      for (let i = 0; i < 30; i++) await send(rotatingPayerPayment(), anon);
+      expect(t.s.calls).toBe(SETTLE_BUCKET_CAP); // drained: keys are free
+      const reasons = new Set<string | undefined>();
+      const statuses: number[] = [];
+      for (let i = 0; i < 8; i++) {
+        const xp = freshPayment();
+        reasons.add((await t.verify(xp, t.cfg)).reason); // not cached
+        statuses.push((await send(xp)).status);
+      }
+      expect([...reasons]).toEqual(["settle-throttled"]);
+      expect(statuses).toEqual([402, 402, 402, 302, 302, 302, 302, 302]);
     } finally {
       clock.mockRestore();
     }
@@ -1253,7 +1474,9 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
 
   it("the remembered map is capped like the nonce cache (oldest evicted past 512)", async () => {
     // The validAfter check reads opts.nowS (pinned), while Date.now advances
-    // 200 ms per call so the bucket refills one token each time.
+    // past the payer cooldown per call (R004 M1: row 5 is now counted), so
+    // the one payer is never cooled down and the bucket refills each time.
+    const STEP = 600_001;
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
     try {
@@ -1261,20 +1484,20 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
       const opts = { nowS: T0 };
       const xps = Array.from({ length: 513 }, () => earlyPayment(T0));
       for (const xp of xps) {
-        ms += 200;
+        ms += STEP;
         await t.verify(xp, t.cfg, opts);
       }
       expect(t.s.calls).toBe(513);
-      ms += 200;
+      ms += STEP;
       await t.verify(xps[512] ?? "", t.cfg, opts); // newest: still local
       expect(t.s.calls).toBe(513);
-      ms += 200;
+      ms += STEP;
       await t.verify(xps[0] ?? "", t.cfg, opts); // oldest: evicted, reaches settle
       expect(t.s.calls).toBe(514);
     } finally {
       clock.mockRestore();
     }
-  });
+  }, 30_000); // hundreds of secp256k1 signatures: slow on a loaded host
 
   it("L6: an anonymous drain with one early payment no longer keeps a verified agent out of the maze (302 as on main)", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);

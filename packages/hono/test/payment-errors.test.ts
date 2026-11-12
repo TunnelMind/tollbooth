@@ -75,6 +75,8 @@ const TABLE: [string, string][] = [
   ["insufficient-value", "amount too low"],
   ["expired", "authorization expired"],
   ["not-yet-valid", "authorization not yet valid"],
+  // R004 L-b: the local repeat while held shows the payer the same text.
+  ["not-yet-valid-held", "authorization not yet valid"],
   ["window-too-long", "authorization validity window too long"],
   ["bad-signature", "invalid signature (wrong signer or wrong asset)"],
   ["signer-mismatch", "invalid signature (wrong signer or wrong asset)"],

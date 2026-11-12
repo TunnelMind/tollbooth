@@ -242,8 +242,10 @@ export function makeSettlingVerify(
     const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
     const early = notYetValid.get(key);
     if (early !== undefined) {
+      // Its own reason so core records no offer for it (R004 L-b); hono
+      // shows the payer the same "not yet valid" text.
       if (nowS < early)
-        return { ok: false, payer: null, reason: "not-yet-valid" };
+        return { ok: false, payer: null, reason: "not-yet-valid-held" };
       notYetValid.delete(key);
     }
     const pending = inflight.get(key);
@@ -355,18 +357,24 @@ export function makeSettlingVerify(
         )
           return { ok: false, payer: null, reason: "settle-retryable" };
         // Row 5: the authorization is not valid yet (payer clock ahead of
-        // the chain's). Transient, so not cached and not counted: the same
-        // X-PAYMENT may be retried once valid_after has passed; until then
-        // the retry is answered locally (R001, second review L2).
-        // L4 decision: not-yet-valid still records an offer in core (it is
-        // not an isOperatorFault reason). Making it no-offer would let a
-        // verified agent attach a fresh early unfunded payment to every
-        // request and never be mazed (L6). Known cost: an honest agent whose
-        // clock runs ahead and who retries as told is mazed on the 4th try.
+        // the chain's). Not cached: the same X-PAYMENT may be retried once
+        // valid_after has passed; until then the retry is answered locally
+        // (R001, second review L2). Counted toward the payer's cooldown, as
+        // on main (R004, second review 2 M1): otherwise fresh early nonces
+        // from one payer cost a settle call each. The hold means one count
+        // per payment while it is early, and a later successful settle
+        // clears the count, so an honest early payment still settles.
+        // Offers: this answer records one in core (else a verified agent
+        // could attach a fresh early unfunded payment to every request and
+        // never be mazed, L6); the held repeats above record none (L-b).
         if (reason.includes("valid_after")) {
           // ponytail: a validAfter already past (facilitator clock behind
-          // ours) is not held, so each retry settles; the bucket bounds it.
+          // ours) is not held, so each retry settles; the cooldown bounds it.
           remember(notYetValid, key, BigInt(validAfter));
+          remember(payerFails, payer, {
+            n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
+            untilMs: now + PAYER_COOLDOWN_MS,
+          });
           return { ok: false, payer: null, reason: "not-yet-valid" };
         }
         // Row 6 (2xx settled:false) and row 7 (any other non-2xx: a 4xx the
