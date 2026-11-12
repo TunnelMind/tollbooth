@@ -97,3 +97,65 @@ describe("D-3 ledger wiring", () => {
     expect(ledger.size).toBe(0);
   });
 });
+
+describe("FR-006 - no maze for a payment we failed", () => {
+  // offer_grace 3, maze enabled: the defaults. Skew pinned as in
+  // pipeline-consequence so one signed request stays valid for all attempts.
+  const CFG = parseConfig(`
+mode = "toll"
+wba_skew_tolerance = "300s"
+[toll.x402]
+pay_to = "0xabc"
+`);
+
+  async function setup(reason: string) {
+    const agent = await makeAgent();
+    const ledger = new OfferLedger(10);
+    const req = {
+      ...crawler,
+      ...(await signedRequest(agent, { expires: NOW + 300 })),
+      payment: "xp",
+    };
+    const deps: PipelineDeps = {
+      fetchDirectory: dirWith(agent.jwk),
+      nowS: NOW,
+      ledger,
+      verifyPayment: () => ({ ok: false, payer: null, reason }),
+    };
+    return { agent, ledger, req, deps };
+  }
+
+  it.each([
+    "settle-retryable",
+    "settle-throttled",
+    "settlement-unconfigured",
+    "settle-unreachable",
+    "settle-failed(503)",
+    "verify-failed(429)",
+  ])("%s: four attempts are four offers, nothing ledgered", async (reason) => {
+    const { agent, ledger, req, deps } = await setup(reason);
+    const actions: string[] = [];
+    for (let i = 0; i < 4; i++)
+      actions.push((await decide(req, CFG, deps)).action);
+    expect(actions).toEqual(["offer", "offer", "offer", "offer"]);
+    expect(ledger.get(agent.jwk.x as string)).toBeUndefined();
+  });
+
+  it("an already-exhausted agent with an operator-fault payment gets the offer", async () => {
+    const { agent, ledger, req, deps } = await setup("settle-retryable");
+    const key = agent.jwk.x as string;
+    for (let i = 0; i < 3; i++) ledger.recordOffer(key, NOW * 1000, 600_000);
+    expect(ledger.exhausted(key, NOW * 1000, 600_000, 3)).toBe(true);
+    expect((await decide(req, CFG, deps)).action).toBe("offer");
+    expect(ledger.get(key)?.offersSent).toBe(3);
+  });
+
+  it("a payer fault (expired) keeps the consequence after the grace", async () => {
+    const { agent, ledger, req, deps } = await setup("expired");
+    const actions: string[] = [];
+    for (let i = 0; i < 4; i++)
+      actions.push((await decide(req, CFG, deps)).action);
+    expect(actions).toEqual(["offer", "offer", "offer", "consequence"]);
+    expect(ledger.get(agent.jwk.x as string)?.offersSent).toBe(3);
+  });
+});

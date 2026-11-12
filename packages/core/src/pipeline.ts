@@ -90,8 +90,29 @@ export type Decision =
 export type VerifyPayment = (
   payment: string,
 ) =>
-  | { ok: boolean; payer: string | null }
-  | Promise<{ ok: boolean; payer: string | null }>;
+  | { ok: boolean; payer: string | null; reason?: string }
+  | Promise<{ ok: boolean; payer: string | null; reason?: string }>;
+
+const OPERATOR_FAULTS = new Set([
+  "settle-retryable",
+  "settle-throttled",
+  "settlement-unconfigured",
+  "settlement-not-configured",
+  "settle-unreachable",
+]);
+
+/**
+ * FR-006: a rejected payment the operator failed, not the payer: our
+ * facilitator down, rate-limited, refusing our credentials, or unconfigured.
+ * Such a payment never counts toward, or triggers, the maze; the payer did
+ * what was asked. Hono's paymentError uses the same predicate for its 402 text.
+ */
+export function isOperatorFault(reason?: string): boolean {
+  if (reason === undefined) return false;
+  if (OPERATOR_FAULTS.has(reason)) return true;
+  if (/^(?:verify|settle)-error:/.test(reason)) return true;
+  return /^(?:verify|settle)-failed\((?:5\d\d|401|403|429)\)$/.test(reason);
+}
 
 export interface PipelineDeps {
   fetchDirectory: FetchDirectory;
@@ -327,6 +348,9 @@ export async function decide(
         deps.ledger?.recordPaid(identity.agentKey, nowMs);
       return { action: "pass", reason: "paid", identity };
     }
+    // FR-006: our fault, so the offer again - no consequence check, no ledger.
+    if (isOperatorFault(paid.reason))
+      return { action: "offer", identity, body: buildOfferBody(cfg) };
   }
 
   // Step 7: grace offers ignored within the window -> the consequence

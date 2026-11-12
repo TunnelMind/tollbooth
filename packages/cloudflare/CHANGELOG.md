@@ -9,6 +9,7 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 - `settled: true` on a non-2xx settle response is no longer accepted as payment: the origin is not served (402); a 5xx stays `settle-retryable`.
 - A settled response now needs a tx id (`transaction`, else `tx`) that is a `0x` + 64-hex hash once trimmed; anything else is `settle failed: no transaction id` (402, `no-transaction-id`), remembered and not counted toward the payer's cooldown.
 - An `X-PAYMENT` header longer than 8192 characters is refused as `malformed X-PAYMENT header` (402) before decoding or settling.
+- A payment rejected for an operator fault (`isOperatorFault`, now exported from core: `settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, `(verify|settle)-error:*`, `(verify|settle)-failed(5xx|401|403|429)`) no longer counts toward or triggers the maze: a verified agent gets the 402 offer again and no offer is ledgered. Payer faults (e.g. `expired`) still count.
 - A misspelled `[toll.x402] network` is now a startup/config error:
   `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the
   supported networks (`base-sepolia`, `base`), and the Pages middleware

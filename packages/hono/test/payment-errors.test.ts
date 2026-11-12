@@ -5,6 +5,12 @@ import {
   type TransferAuthorization,
   verifyProof,
 } from "@tunnelmindai/fareseal-adapter-x402";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -205,5 +211,52 @@ describe("the no-maze consequence fallback 402 carries the reason too", () => {
       });
     expect(r.status).toBe(402);
     expect((await r.json()).error).toBe("authorization expired");
+  });
+});
+
+describe("FR-006 - no maze for a payment we failed", () => {
+  it("a verified agent whose settle is retryable gets four 402s, no 302", async () => {
+    const agent = await makeAgent();
+    const maze = makeMazeHandler({
+      corpus: corpusFromMap(generateCorpus({ seed: "fr006", pages: 10 })),
+      cfg: parseConfig(TOLL),
+      sleep: async () => {},
+    });
+    const a = new Hono();
+    // offer_grace 3 and maze enabled are the defaults; the maze is wired.
+    a.use(
+      fareseal({
+        config: TOLL,
+        x402: { buildOffer, verifyProof: stub("settle-retryable") },
+        maze,
+        fetchDirectory: dirWith(agent.jwk),
+        nowS: () => NOW,
+      }),
+    );
+    a.get("*", (c) => c.text("content"));
+    const wba = await signedRequest(agent, { expires: NOW + 300 });
+    const headers = {
+      ...curl,
+      signature: wba.signature,
+      "signature-input": wba.signatureInput,
+      "signature-agent": wba.signatureAgent,
+    };
+    const statuses: number[] = [];
+    for (let i = 0; i < 4; i++)
+      statuses.push(
+        (
+          await a.request("http://example.com/article", {
+            headers: { ...headers, "x-payment": "anything" },
+          })
+        ).status,
+      );
+    expect(statuses).toEqual([402, 402, 402, 402]);
+    // Control: the same agent without a payment is mazed after the grace,
+    // so the agent is verified and the maze is live.
+    for (let i = 0; i < 3; i++)
+      await a.request("http://example.com/article", { headers });
+    expect(
+      (await a.request("http://example.com/article", { headers })).status,
+    ).toBe(302);
   });
 });
