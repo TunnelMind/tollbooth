@@ -168,6 +168,24 @@ describe("createPagesMiddleware — settle-then-serve", () => {
     expect(b.settles.length).toBe(0);
   });
 
+  it("an X-PAYMENT over 8192 chars is malformed and never settled (T002 F2)", async () => {
+    // A fresh valid payment padded with an extra field: still decodes and
+    // verifies, but is longer than MAX_X_PAYMENT_CHARS.
+    const p = JSON.parse(atob(freshPayment()));
+    p.pad = "x".repeat(6200);
+    const big = btoa(JSON.stringify(p));
+    expect(big.length).toBeGreaterThan(8192);
+    for (const xp of [big, "A".repeat(8193)]) {
+      const b = settleBinding({ settled: true, tx: "0xTX" });
+      const r = await settlingMw()(
+        ctx("/research", agent({ "x-payment": xp }), envOf(b)),
+      );
+      expect(r.status).toBe(402);
+      expect((await r.json()).error).toBe("malformed X-PAYMENT header");
+      expect(b.settles.length).toBe(0);
+    }
+  });
+
   it("no settle token → a valid payment fails closed", async () => {
     const b = settleBinding({ settled: true, tx: "0xTX" });
     const mw = settlingMw();

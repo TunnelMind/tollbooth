@@ -209,6 +209,10 @@ export function buildOffer(
   };
 }
 
+/** Longest X-PAYMENT accepted: a real payment is ~1 KB of base64, so anything
+ * longer is refused before atob/JSON.parse spend work on it (F2). */
+export const MAX_X_PAYMENT_CHARS = 8192;
+
 /** AC-2.2: local verification of an X-PAYMENT header. Never throws. */
 export function verifyProof(
   xPayment: string,
@@ -221,6 +225,7 @@ export function verifyProof(
     reason,
   });
 
+  if (xPayment.length > MAX_X_PAYMENT_CHARS) return fail("malformed");
   let payload: PaymentPayload;
   try {
     payload = JSON.parse(atob(xPayment)) as PaymentPayload;

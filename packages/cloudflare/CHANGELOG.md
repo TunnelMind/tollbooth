@@ -4,6 +4,7 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- An `X-PAYMENT` header longer than 8192 characters is refused as `malformed X-PAYMENT header` (402) before decoding or settling.
 - A misspelled `[toll.x402] network` is now a startup/config error:
   `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the
   supported networks (`base-sepolia`, `base`), and the Pages middleware
