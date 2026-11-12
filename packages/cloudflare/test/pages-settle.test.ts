@@ -890,4 +890,40 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       "facilitator rejected: bad_payload",
     );
   });
+
+  // T006 F3, row 5: a not-yet-valid authorization is the payer's clock, and
+  // transient. Not cached and not counted, so the same X-PAYMENT can be
+  // retried once valid_after has passed.
+  const VALID_AFTER = "invalid_exact_evm_payload_authorization_valid_after";
+
+  it("row 5 (AC-3.1/3.2): valid_after reject → 402 authorization not yet valid; the same X-PAYMENT retried later serves", async () => {
+    const t = table(200, settledFalse(VALID_AFTER));
+    const mw = settlingMw();
+    const xp = freshPayment();
+    const r1 = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+    expect(r1.status).toBe(402);
+    expect((await r1.json()).error).toBe("authorization not yet valid");
+    t.s.body = { ok: true, data: { settled: true, tx: TX } };
+    const r2 = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+    expect(r2.status).toBe(200);
+    expect(t.s.calls).toBe(2); // not cached: the retry reached settle
+  });
+
+  it("row 5 (AC-3.3): valid_after → not-yet-valid, payer null, not cached, not counted", async () => {
+    const t = table(200, settledFalse(VALID_AFTER));
+    expect(await t.verify(freshPayment(), t.cfg)).toEqual({
+      ok: false,
+      payer: null,
+      reason: "not-yet-valid",
+    });
+    // Four rejects for one payer, then a fresh payment still reaches settle.
+    await expectOperator(t, "not-yet-valid");
+  });
+
+  it("row 5 guard: a valid_after reason on HTTP 503 → settle-retryable (row 4 wins)", async () => {
+    await expectOperator(
+      table(503, settledFalse(VALID_AFTER)),
+      "settle-retryable",
+    );
+  });
 });

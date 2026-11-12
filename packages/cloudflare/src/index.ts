@@ -310,7 +310,7 @@ export function makeSettlingVerify(
         }
         const reason =
           typeof data.reason === "string" ? data.reason : "settle-failed";
-        // FR-001 (spec 003), rows 3 → 4 → 6/7, first match wins. An operator
+        // FR-001 (spec 003), rows 3 → 4 → 5 → 6/7, first match wins. An operator
         // fault must not burn the payer's nonce or cooldown: not cached, not
         // counted, so the same X-PAYMENT can be retried once we are healthy.
         // Row 3: the settle route says it is ours (its config, or the
@@ -329,6 +329,11 @@ export function makeSettlingVerify(
         // rate, whatever the body says.
         if (resp.status >= 500 || [401, 403, 429].includes(resp.status))
           return { ok: false, payer: null, reason: "settle-retryable" };
+        // Row 5: the authorization is not valid yet (payer clock ahead of
+        // the chain's). Transient, so not cached and not counted: the same
+        // X-PAYMENT may be retried once valid_after has passed.
+        if (reason.includes("valid_after"))
+          return { ok: false, payer: null, reason: "not-yet-valid" };
         // Row 6 (2xx settled:false) and row 7 (any other non-2xx: a 4xx the
         // client caused, e.g. an oversize or malformed payment) are the
         // payer's: cached for the nonce and counted toward the cooldown.
