@@ -131,7 +131,9 @@ const configSchema = z.strictObject({
     .regex(/^https?:\/\//, "must be an http(s) URL")
     .optional(),
   report_token: z.string().prefault(""),
-  /** The domain that vouches for this site key via /.well-known/tollbooth-site.json.
+  /** The domain that vouches for this site key via /.well-known/fareseal-site.json.
+   *  The old /.well-known/tollbooth-site.json is tried only when fareseal-site.json returns 404, until 3.0.0;
+   *  any other failure of the fareseal file throws.
    *  Sent as a CLAIM with every report; a commons only believes it after fetching the file. */
   report_domain: z.string().prefault(""),
   wba_skew_tolerance: duration("60s"),

@@ -2,5 +2,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 coverage/
+fareseal.key
 tollbooth.key
 maze-corpus/
