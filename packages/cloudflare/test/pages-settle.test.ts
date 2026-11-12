@@ -3,13 +3,27 @@
 // on-chain failure, garbage, missing configuration — stays 402. Facilitator
 // damping: an exact payment already seen is never relayed twice, and a payer
 // with repeated fresh failures is cooled down locally (ADR-004).
+import { buildOffer } from "@tunnelmindai/fareseal-adapter-x402";
 import { parseConfig } from "@tunnelmindai/fareseal-core";
-import { describe, expect, it, vi } from "vitest";
+import { fareseal } from "@tunnelmindai/fareseal-hono";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tunnelmindai/fareseal-maze";
+import { Hono } from "hono";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import {
   makeAuth,
   payment,
   signAuth,
 } from "../../adapter-x402/test/fixtures/payment.js";
+import {
+  dirWith,
+  makeAgent,
+  signedRequest,
+  type TestAgent,
+} from "../../core/test/fixtures/wba.js";
 import {
   createPagesMiddleware,
   makeSettlingVerify,
@@ -925,5 +939,213 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       table(503, settledFalse(VALID_AFTER)),
       "settle-retryable",
     );
+  });
+});
+
+// R001 (second review L2/L6/L4): a facilitator `valid_after` reject is
+// remembered per payment until its validAfter, and answered locally, so one
+// early authorization cannot drain the settle bucket or the facilitator's
+// verify quota, and cannot be used to keep a verified agent out of the maze.
+describe("makeSettlingVerify — not-yet-valid is answered locally until validAfter (R001)", () => {
+  const T0 = 1_800_000_000; // epoch seconds; also the WBA fixtures' NOW
+  const VALID_AFTER = "invalid_exact_evm_payload_authorization_valid_after";
+  let bot: TestAgent;
+  beforeAll(async () => {
+    bot = await makeAgent();
+  });
+  const NYV = {
+    ok: true,
+    data: { settled: false, reason: VALID_AFTER },
+  };
+
+  /** Signed, unfunded-or-not, valid `ahead` seconds after `nowS` (local skew is 60 s). */
+  function earlyPayment(nowS: number, ahead = 55): string {
+    const auth = makeAuth({
+      value: "1000",
+      validAfter: String(nowS + ahead),
+      validBefore: String(nowS + 300),
+      nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+    });
+    return payment(auth, signAuth(auth));
+  }
+
+  function stubbed(body: unknown = NYV) {
+    const s = { calls: 0, body };
+    const fetch = async (req: Request) => {
+      if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
+      s.calls += 1;
+      return new Response(JSON.stringify(s.body), { status: 200 });
+    };
+    const verify = makeSettlingVerify(
+      (url, init) => fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    return { s, fetch, verify, cfg: parseConfig(toml()) };
+  }
+
+  it("the same early payment x30 → at most 1 settle call, every answer 402 authorization not yet valid", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const mw = settlingMw();
+      const xp = earlyPayment(T0);
+      for (let i = 0; i < 30; i++) {
+        const r = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+        expect(r.status).toBe(402);
+        expect((await r.json()).error).toBe("authorization not yet valid");
+      }
+      expect(t.s.calls).toBe(1); // main: 20
+      // The local answer spent no bucket token: a fresh payment still settles.
+      t.s.body = { ok: true, data: { settled: true, tx: TX } };
+      expect(
+        (await mw(ctx("/r", agent({ "x-payment": freshPayment() }), envOf(t))))
+          .status,
+      ).toBe(200);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("after validAfter exactly one settle attempt is allowed, served once, replay 402", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const mw = settlingMw();
+      const xp = earlyPayment(T0, 30);
+      await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+      clock.mockReturnValue((T0 + 29) * 1000); // one second short
+      await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+      expect(t.s.calls).toBe(1);
+      clock.mockReturnValue((T0 + 30) * 1000); // now >= validAfter
+      t.s.body = { ok: true, data: { settled: true, tx: TX } };
+      const served = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+      expect(served.status).toBe(200);
+      expect(t.s.calls).toBe(2);
+      const replay = await mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+      expect(replay.status).toBe(402);
+      expect(t.s.calls).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("a not-yet-valid answer after the entry expires re-records it", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const xp = earlyPayment(T0, 10);
+      await t.verify(xp, t.cfg);
+      // validAfter reached, the facilitator still says not yet (its clock is
+      // behind ours): the one allowed retry reaches settle and is answered
+      // not-yet-valid again. That validAfter is now past, so it is not held.
+      clock.mockReturnValue((T0 + 10) * 1000);
+      expect((await t.verify(xp, t.cfg)).reason).toBe("not-yet-valid");
+      expect(t.s.calls).toBe(2); // the one allowed retry reached settle
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("fresh early nonces from one payer: not counted toward the cooldown, bounded by the settle bucket", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const reasons: (string | undefined)[] = [];
+      for (let i = 0; i < 30; i++)
+        reasons.push((await t.verify(earlyPayment(T0), t.cfg)).reason);
+      // Pinned: row 5 is not counted (AC-3.3), so the bucket is the bound —
+      // SETTLE_BUCKET_CAP calls, then settle-throttled, no payer-cooldown.
+      expect(t.s.calls).toBe(SETTLE_BUCKET_CAP);
+      expect(reasons.filter((r) => r === "not-yet-valid").length).toBe(
+        SETTLE_BUCKET_CAP,
+      );
+      expect(reasons.filter((r) => r === "settle-throttled").length).toBe(
+        30 - SETTLE_BUCKET_CAP,
+      );
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("the remembered map is capped like the nonce cache (oldest evicted past 512)", async () => {
+    // The validAfter check reads opts.nowS (pinned), while Date.now advances
+    // 200 ms per call so the bucket refills one token each time.
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const t = stubbed();
+      const opts = { nowS: T0 };
+      const xps = Array.from({ length: 513 }, () => earlyPayment(T0));
+      for (const xp of xps) {
+        ms += 200;
+        await t.verify(xp, t.cfg, opts);
+      }
+      expect(t.s.calls).toBe(513);
+      ms += 200;
+      await t.verify(xps[512] ?? "", t.cfg, opts); // newest: still local
+      expect(t.s.calls).toBe(513);
+      ms += 200;
+      await t.verify(xps[0] ?? "", t.cfg, opts); // oldest: evicted, reaches settle
+      expect(t.s.calls).toBe(514);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("L6: an anonymous drain with one early payment no longer keeps a verified agent out of the maze (302 as on main)", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const cfg = parseConfig(toml());
+      const verify = makeSettlingVerify(
+        (url, init) => t.fetch(new Request(url, init)),
+        SETTLE_URL,
+        "settle-secret",
+      );
+      const a = new Hono();
+      a.use(
+        fareseal({
+          config: cfg,
+          x402: { buildOffer, verifyProof: verify, settles: true },
+          maze: makeMazeHandler({
+            corpus: corpusFromMap(generateCorpus({ seed: "r001", pages: 10 })),
+            cfg,
+            sleep: async () => {},
+          }),
+          fetchDirectory: dirWith(bot.jwk),
+          nowS: () => T0,
+        }),
+      );
+      a.get("*", (c) => c.text("content"));
+      // The anonymous drain: one early unfunded payment, 30 times.
+      const drain = earlyPayment(T0);
+      for (let i = 0; i < 30; i++)
+        await a.request("http://example.com/article", {
+          headers: { ...agent(), "x-payment": drain },
+        });
+      expect(t.s.calls).toBe(1);
+      // The verified agent attaches a fresh early unfunded payment each time.
+      const wba = await signedRequest(bot, { expires: T0 + 300 });
+      const headers = {
+        ...agent(),
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      };
+      const statuses: number[] = [];
+      for (let i = 0; i < 5; i++)
+        statuses.push(
+          (
+            await a.request("http://example.com/article", {
+              headers: { ...headers, "x-payment": earlyPayment(T0) },
+            })
+          ).status,
+        );
+      // Not-yet-valid records an offer (L4 decision), so the 4th is mazed.
+      expect(statuses).toEqual([402, 402, 402, 302, 302]);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
