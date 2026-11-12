@@ -284,6 +284,13 @@ Follow-up (not built here):
 
 - tunnelmind-data-api run: the settle route should answer a bad price_usd as 200 settled:false reason settlement-not-configured; not built here
 
+## Recorded, not built (R003, second review L8/L9)
+
+- The settle fetch has no timeout: a hung settle route holds the request until the runtime ends it (review table, "timeout" row; pre-existing).
+- L9 cold start: requests that arrive before the first state is built each build their own state and nonce cache (review: 4 concurrent copies of one payment, 4 settle calls cold, 1 warm); pre-existing, identical on main, and on chain only one can settle.
+- A vendoring site must refresh core and hono together: hono's 402 text and core's no-offer rule both key off core's `isOperatorFault` / `isNoOfferFault`.
+- Site tests that stub a placeholder tx id like `0xTX` fail after a refresh (F5 refuses it); stub `"0x" + "ab".repeat(32)`.
+
 ## Owner tasks (from tasks.md)
 
 - [ ] O001 (owner) Josh: the tunnelmind-site vendor refresh to this release is a separate run; npm publish and any tag are Josh's. Not done by any agent.

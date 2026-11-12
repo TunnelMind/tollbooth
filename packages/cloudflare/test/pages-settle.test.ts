@@ -3,8 +3,10 @@
 // on-chain failure, garbage, missing configuration — stays 402. Facilitator
 // damping: an exact payment already seen is never relayed twice, and a payer
 // with repeated fresh failures is cooled down locally (ADR-004).
+
+import { readFileSync } from "node:fs";
 import { buildOffer } from "@tunnelmindai/fareseal-adapter-x402";
-import { parseConfig } from "@tunnelmindai/fareseal-core";
+import { isNoOfferFault, parseConfig } from "@tunnelmindai/fareseal-core";
 import { fareseal } from "@tunnelmindai/fareseal-hono";
 import {
   corpusFromMap,
@@ -958,6 +960,168 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       table(503, settledFalse(VALID_AFTER)),
       "settle-retryable",
     );
+  });
+
+  // R003 (second review L8): a near-miss of an operator pattern is the
+  // payer's. Killed mutant: core's isOperatorFault regexes without `^`.
+  for (const r of [
+    "x settle-failed(500)",
+    "x verify-error: boom",
+    "settle-failed(500)x",
+  ])
+    it(`row 6: reason ${JSON.stringify(r)} is not an operator fault → cached, counted`, async () => {
+      await expectPayer(table(200, settledFalse(r)), r, "payment rejected");
+    });
+
+  // R003 (L8): the tx id must be the whole value. Killed mutant: the tx-id
+  // regex without its leading `^` would serve "junk0x<64 hex>".
+  for (const key of ["tx", "transaction"])
+    for (const v of [`junk${TX}`, `zz${TX}`, `${TX}zz`, `${TX}0`])
+      it(`row 2: ${key} ${JSON.stringify(v.slice(0, 8))}… (${v.length} chars) → no-transaction-id, not served`, async () => {
+        const body = { ok: true, data: { settled: true, [key]: v } };
+        const t = table(200, body);
+        expect(await t.verify(freshPayment(), t.cfg)).toEqual({
+          ok: false,
+          payer: null,
+          reason: "no-transaction-id",
+        });
+        const r = await settlingMw()(
+          ctx(
+            "/r",
+            agent({ "x-payment": freshPayment() }),
+            envOf(table(200, body)),
+          ),
+        );
+        expect(r.status).toBe(402);
+        expect((await r.json()).error).toBe("settle failed: no transaction id");
+      });
+
+  // R003: README row 6b, a 2xx JSON body with no data.settled at all.
+  for (const body of [{}, null, []])
+    it(`row 6b: HTTP 200 ${JSON.stringify(body)} → settle-failed, cached, counted`, async () => {
+      await expectPayer(table(200, body), "settle-failed");
+    });
+
+  // R003: a 3xx that reaches us is row 7 (payer).
+  for (const n of [300, 301, 307])
+    it(`row 7: HTTP ${n} → settle-failed, cached, counted`, async () => {
+      await expectPayer(
+        table(n, { ok: false, error: "moved" }),
+        "settle-failed",
+      );
+    });
+
+  // R003: the README table is checked against the code. One settle answer
+  // per row id; the Cached / Counted / Offer recorded cells must equal what
+  // the verifier does with it. Offer recorded is core's decide step 6: an
+  // offer unless isNoOfferFault(reason) (pinned in core's own tests).
+  it("README table: every row id has a scenario and its cells match the code", async () => {
+    const fresh = async (t: T) =>
+      (await t.verify(freshPayment(), t.cfg)).reason;
+    const SCENARIOS: Record<string, () => T | Promise<T>> = {
+      "0a": () => table(200, { data: { settled: true, tx: TX } }, ""),
+      "0b": async () => {
+        const t = table(503, {});
+        // Drain the bucket with operator faults (the clock is frozen below).
+        for (let i = 0; i < SETTLE_BUCKET_CAP; i++) await fresh(t);
+        return t;
+      },
+      "0c": () => table(200, "<html>ok</html>"),
+      "1": () => table(200, { ok: true, data: { settled: true, tx: TX } }),
+      "2": () => table(200, { ok: true, data: { settled: true, tx: "0x12" } }),
+      "3a": () => table(500, { ok: true, data: { settled: true, tx: TX } }),
+      "3": () => table(200, settledFalse("settle-failed(500)")),
+      "4": () => table(503, { ok: false, error: "down" }),
+      "5": () => table(200, settledFalse(VALID_AFTER)),
+      "6": () => table(200, settledFalse("insufficient_funds")),
+      "6b": () => table(200, {}),
+      "7": () => table(400, { ok: false, error: "bad" }),
+    };
+
+    async function observe(make: () => T | Promise<T>) {
+      // cached: a second identical payment makes no second settle call.
+      let t = await make();
+      const c0 = t.s.calls;
+      const xp = freshPayment();
+      const r1 = await t.verify(xp, t.cfg);
+      const reached = t.s.calls > c0;
+      await t.verify(xp, t.cfg);
+      const cached = reached && t.s.calls === c0 + 1;
+      // counted: the 4th fresh payment from one payer is cooled down.
+      t = await make();
+      for (let i = 0; i < 3; i++) await fresh(t);
+      const counted = (await fresh(t)) === "payer-cooldown";
+      // cleared: two payer faults, this answer, one more fault, and the next
+      // payment is still not cooled down. Only rows that reach settle can.
+      let cleared = false;
+      if (reached && !counted) {
+        t = await make();
+        const { status, body } = t.s;
+        const payerFault = () => {
+          t.s.status = 200;
+          t.s.body = settledFalse("insufficient_funds");
+        };
+        payerFault();
+        for (let i = 0; i < 2; i++) await fresh(t);
+        t.s.status = status;
+        t.s.body = body;
+        await fresh(t);
+        payerFault();
+        await fresh(t);
+        cleared = (await fresh(t)) !== "payer-cooldown";
+      }
+      return {
+        cached: cached ? "yes" : "no",
+        counted: counted ? "yes" : cleared ? "cleared" : "no",
+        offer: r1.ok ? "n/a" : isNoOfferFault(r1.reason) ? "no" : "yes",
+      };
+    }
+
+    const md = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+    const lines = md.split("\n");
+    const cells = (l: string) =>
+      l
+        .split(/(?<!\\)\|/)
+        .slice(1, -1)
+        .map((c) => c.trim());
+    const h = lines.findIndex((l) => l.startsWith("| # | Settle answer |"));
+    expect(h).toBeGreaterThan(-1);
+    const head = cells(lines[h] as string);
+    const col = (name: string) => {
+      const i = head.indexOf(name);
+      expect(i, name).toBeGreaterThan(-1);
+      return i;
+    };
+    const [ci, ki, oi] = [
+      col("Cached for nonce"),
+      col("Counted to cooldown"),
+      col("Offer recorded"),
+    ];
+    // First word of a cell: "yes, `already-settled`" → "yes".
+    const word = (c: string | undefined) =>
+      (c ?? "").split(/[\s,]/)[0]?.toLowerCase();
+    const rows: Record<
+      string,
+      { cached?: string; counted?: string; offer?: string }
+    > = {};
+    for (const l of lines.slice(h + 2)) {
+      if (!l.startsWith("|")) break;
+      const c = cells(l);
+      rows[c[0] as string] = {
+        cached: word(c[ci]),
+        counted: word(c[ki]),
+        offer: word(c[oi]),
+      };
+    }
+    expect(Object.keys(rows).sort()).toEqual(Object.keys(SCENARIOS).sort());
+
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    try {
+      for (const [id, make] of Object.entries(SCENARIOS))
+        expect({ id, ...(await observe(make)) }).toEqual({ id, ...rows[id] });
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parseConfig } from "@tunnelmindai/fareseal-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildOffer,
   MAX_TIMEOUT_SECONDS,
@@ -189,6 +189,26 @@ describe("T002 F2 - X-PAYMENT is capped at MAX_X_PAYMENT_CHARS (8192)", () => {
     expect(verifyProof("A".repeat(8193), CFG, { nowS: NOW }).reason).toBe(
       "malformed",
     );
+  });
+  // R003 (second review L8): AC-2.1 says the cap runs before any decode.
+  // Killed mutant: the length check moved after atob/JSON.parse.
+  it("an oversize header is refused with zero atob / JSON.parse calls; 8192 reaches atob", () => {
+    // Built before the spies: padded() decodes to measure itself.
+    const oversize = ["A".repeat(8193), `${padded(8192)} `, "A".repeat(60_000)];
+    const atobSpy = vi.spyOn(globalThis, "atob");
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      for (const xp of oversize)
+        expect(verifyProof(xp, CFG, { nowS: NOW }).reason).toBe("malformed");
+      expect(atobSpy).not.toHaveBeenCalled();
+      expect(parseSpy).not.toHaveBeenCalled();
+      // Boundary: exactly MAX_X_PAYMENT_CHARS is decoded.
+      verifyProof("A".repeat(MAX_X_PAYMENT_CHARS), CFG, { nowS: NOW });
+      expect(atobSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      atobSpy.mockRestore();
+      parseSpy.mockRestore();
+    }
   });
 });
 

@@ -174,6 +174,27 @@ pay_to = "0xabc"
     expect(isOperatorFault("settle-unconfirmed")).toBe(false);
   });
 
+  // R003 (second review L8): both reason regexes are anchored at both ends,
+  // so a near-miss stays a payer fault (killed mutant: drop the `^`).
+  it("isOperatorFault: the reason patterns are anchored", () => {
+    for (const r of [
+      "verify-error: boom",
+      "settle-error:",
+      "settle-failed(500)",
+      "verify-failed(429)",
+    ])
+      expect(isOperatorFault(r)).toBe(true);
+    for (const r of [
+      "x settle-failed(500)",
+      "xsettle-failed(500)",
+      "x verify-error:",
+      "x settle-error: boom",
+      "settle-failed(500)x",
+      "settle-failed(500)\n",
+    ])
+      expect(isOperatorFault(r)).toBe(false);
+  });
+
   it("an already-exhausted agent with an operator-fault payment gets the offer", async () => {
     const { agent, ledger, req, deps } = await setup("settle-retryable");
     const key = agent.jwk.x as string;
