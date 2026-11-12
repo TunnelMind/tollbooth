@@ -80,14 +80,14 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 | 3a | any non-2xx with `data.settled === true` (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
 | 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no | no |
 | 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no | no |
-| 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; held until its `validAfter`, repeats answered locally as `not-yet-valid-held` (same 402 text, no settle call, no offer recorded) | no | yes | yes |
+| 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
 | 6 | HTTP 2xx `settled:false` with any other reason | payer | `data.reason`, else `settle-failed` | yes | yes | yes |
 | 6b | HTTP 2xx JSON with no `data.settled` (`{}`, `null`, `[]`) | payer | `settle-failed` | yes | yes | yes |
 | 7 | any other HTTP status (a 3xx, or a 4xx the client caused, e.g. 400, 413, 422), whatever the body | payer | `data.reason` if a string, else `settle-failed` | yes | yes | yes |
 
 "Offer recorded" is what core's `decide` does with the reason (it records
-an offer unless `isNoOfferFault`): it counts toward the maze for a verified
-agent. `test/pages-settle.test.ts` ("README table") checks every row of
+an offer unless `isNoOfferFault`, and skips only the ledger write for
+`not-yet-valid-held`): it counts toward the maze for a verified agent. `test/pages-settle.test.ts` ("README table") checks every row of
 this table against the code. There is no timeout row: the settle fetch has
 no timeout of its own, so a hung settle route holds the request until the
 runtime ends it.

@@ -71,13 +71,14 @@ The `file:line` cited under each fix was re-read from `git show main:<path>`.
 
 - **Main checked:** `packages/cloudflare/src/index.ts:327-332`: every `settled:false` reason
   not caught by the operator test was `remember`ed for the nonce and counted.
+- **Superseded in part (R001, R004):** the payment is now held locally until its `validAfter` and the reject is counted once per nonce; see "R-tasks" below. The rest of this section is the T006 state.
 - **Change (`aa3c5d9`):** row 5, `if (reason.includes("valid_after")) return { …, reason:
   "not-yet-valid" }`, placed after rows 3/4 and before the cache-and-count
   (`packages/cloudflare/src/index.ts:335-336`). hono maps `not-yet-valid` to
   `authorization not yet valid` (`packages/hono/src/index.ts:603`).
 - **Tests** (`pages-settle.test.ts`):
   `row 5 (AC-3.1/3.2): valid_after reject → 402 authorization not yet valid; the same X-PAYMENT retried later serves`,
-  `row 5 (AC-3.3): valid_after → not-yet-valid, payer null, not cached, not counted`,
+  `row 5 (AC-3.3): valid_after → not-yet-valid, payer null, not cached, not counted` (renamed in R004: row 5 is now counted once per nonce, see "R-tasks" below),
   `row 5 guard: a valid_after reason on HTTP 503 → settle-retryable (row 4 wins)`.
 - **Red on main:**
   - AC-3.1/3.2: `expected 'facilitator rejected: invalid_exact_e…' to be 'authorization not yet valid'`. Main cached the nonce, so the retry never reached settle again.
@@ -118,6 +119,7 @@ The `file:line` cited under each fix was re-read from `git show main:<path>`.
 - **Main checked:** `packages/core/src/pipeline.ts:322-352`: a failed step-6 payment fell
   through to step 7 (`ledger.exhausted`, `:339`) and step 8 (`recordOffer`, `:350-351`: the `if (identity.kind === "agent")` guard, then the call) whatever
   the reason. `VerifyPayment` (`:90-94`) had no `reason`.
+- **Superseded in part (R004 L-a):** `settle-throttled` records an offer again (core `isNoOfferFault`); see "R-tasks" below.
 - **Change (`18a7f94`):** core exports `isOperatorFault(reason)` (`pipeline.ts:110`, re-exported
   from `packages/core/src/index.ts`). `VerifyPayment`'s result gains `reason?: string`. Step 6
   returns the offer at once on an operator fault, before steps 7 and 8 (`pipeline.ts:351-353`).
@@ -283,6 +285,121 @@ has to look up the settlement.
 Follow-up (not built here):
 
 - tunnelmind-data-api run: the settle route should answer a bad price_usd as 200 settled:false reason settlement-not-configured; not built here
+
+## R-tasks — second review fixes (R001, R004, R005)
+
+Second review 1 (`second-review-36c4f87.md`) and 2 (`second-review-9c5c489.md`)
+findings L2, L4, L6 and M1, L-a..L-f. Commits: R001 `0fefda6`, R004 `d74f650`,
+R005 this change (docs and the README test only).
+
+### Decisions
+
+- **L2 (R001 + R004 M1):** a row 5 (`valid_after`) reject holds the same
+  payment locally until its `validAfter` (`notYetValid` map in
+  `makeSettlingVerify`, keyed `${payer}:${nonce}`, capped at 512, oldest out);
+  repeats are answered `not-yet-valid-held` with no settle call and no bucket
+  token. Fresh nonces from one payer are bounded by the payer cooldown: the
+  reject counts once per nonce (the hold stops a repeat counting twice; a
+  successful settle clears the count), so one payer gets 3 settle calls, as on
+  main. The nonce is not cached, so an honest early payment still settles once
+  its time comes.
+- **L4 (R004 L-b):** `not-yet-valid` records an offer for the first attempt
+  only, the one that reached the facilitator. The held repeats record none
+  (core `decide` skips the ledger write for `not-yet-valid-held` but still
+  applies step 7, so an agent already mazed stays mazed). An honest agent
+  whose clock runs 30 s fast is no longer mazed while it waits.
+- **L6 (R004 L-a):** `settle-throttled` records an offer (it is not in
+  `isNoOfferFault`), so draining the shared settle bucket cannot keep a
+  verified agent out of the maze. The other operator faults stay no-offer.
+  Cost: an honest agent throttled four times inside the window is mazed.
+
+### Settle calls, measured
+
+Columns `main`, `36c4f87` and `9c5c489` are copied from
+`second-review-9c5c489.md` section B. Column `d74f650` (this head; R005
+changes no source) was re-measured on 2026-11-11 with a throwaway probe kept
+outside the repo (`/tmp/r005-probe/probe.test.ts`, run in a `crew-scratch`
+copy of the worktree as `packages/cloudflare/test/zz-probe.test.ts`; same stub
+as the review: unfunded payer, facilitator says `valid_after` while early, then
+`insufficient_funds`; "burst" = frozen clock, "10 rps" = 100 ms per request).
+The rows marked † are also asserted by the R004 tests in
+`packages/cloudflare/test/pages-settle.test.ts` (describe
+`makeSettlingVerify — not-yet-valid is answered locally until validAfter (R001)`).
+
+| Scenario | N | main | 36c4f87 | 9c5c489 | d74f650 (this head) |
+|---|---|---|---|---|---|
+| same payment dated +55 s, burst | 30 / 100 / 300 | 1 / 1 / 1 | 20 / 20 / 20 | 1 / 1 / 1 | 1 / 1 / 1 † |
+| same payment dated +55 s, 10 rps | 30 / 100 / 300 | 1 / 1 / 1 | 30 / 69 / 169 | 1 / 1 / 1 | 1 / 1 / 1 |
+| fresh nonces, ONE payer, +55 s, burst | 30 / 100 / 300 | 3 / 3 / 3 | 20 / 20 / 20 | 20 / 20 / 20 | 3 / 3 / 3 † (30) |
+| fresh nonces, ONE payer, +55 s, 10 rps | 30 / 100 / 300 | 3 / 3 / 3 | 30 / 69 / 169 | 30 / 69 / 169 | 3 / 3 / 3 |
+| fresh nonces, ONE payer, +60 s, 10 rps for 60 s | 600 | 3 | 319 | 319 | 3 † |
+| many payers (new key each), +55 s, burst | 30 / 100 / 300 | 20 / 20 / 20 | 20 / 20 / 20 | 20 / 20 / 20 | 20 / 20 / 20 |
+| many payers, +55 s, 10 rps | 30 / 100 / 300 | 30 / 69 / 169 | 30 / 69 / 169 | 30 / 69 / 169 | 30 / 69 / 169 |
+| baseline: plain unfunded, one payer, fresh nonces | 30 / 100 / 300 | 3 | 3 | 3 | 3 / 3 / 3 |
+| baseline: plain unfunded, many payers, 10 rps | 30 / 100 / 300 | 30 / 69 / 169 | same | same | 30 / 69 / 169 |
+| same payment +55 s, 10 rps through expiry | 1000 | 1 | 295 | 2 | 2 |
+| same, facilitator ALWAYS says valid_after | 1000 | 1 | 519 | 245 | 3 |
+| same payment +5 s, facilitator clock 3 s behind | 300 | 1 | 60 | 32 | 3 |
+| validAfter = now, facilitator clock 3 s behind | 300 | 1 | 31 | 31 | 3 |
+
+The last three rows changed with M1 as well: a repeat valid_after for an
+already-due payment is not held but is counted, so the cooldown stops it
+after 3 calls.
+
+L6 sequence (verified agent, offer_grace 3, maze on, frozen clock; 30
+anonymous drain requests, then 8 requests each with a fresh unfunded payment):
+
+| Drain before the agent | main | 36c4f87 | 9c5c489 | d74f650 (this head) |
+|---|---|---|---|---|
+| none | 402,402,402,302.. | same | same | 402x3,302x5 (0 calls) |
+| ONE early payment repeated | 402x3,302.. | 402 x8 | 402x3,302.. | 402x3,302x5 (drain 1 call) † |
+| fresh early nonces from one payer | 402x3,302.. (drain 3 calls) | 402 x8 | 402 x8 (drain 20 calls) | 402x3,302x5 (drain 3 calls) † |
+| plain unfunded payments from rotating payers | 402x3,302.. | 402 x8 | 402 x8 | 402x3,302x5 (drain 20 calls) † |
+
+Honest agent, clock 30 s fast (funded, verified agent, same payment retried):
+
+| Retry times (s) | main | 9c5c489 | d74f650 (this head) |
+|---|---|---|---|
+| 0,5,10,15,20,25,30,31 | 402,402,402,302,302,302,302,302 (1 call) | 402,402,402,302,302,302,200,402 (2 calls) | 402,402,402,402,402,402,200,402 (2 calls) † (0..30) |
+| 0,15,30,31 | 402,402,402,302 | 402,402,200,402 | 402,402,200,402 (2 calls) |
+| 0,30 | 402,402 | 402,200 | 402,200 (2 calls) |
+
+The final 402 in the first two rows is the replay of the served payment
+(`nonce already used`).
+
+### Known costs
+
+- **L-f, `settle-unconfirmed`:** a non-2xx settle answer that says
+  `settled: true` is not served, not cached, not counted and records no
+  offer. It is left uncached on purpose: the route's answer is not trusted
+  as a settlement (a non-2xx is not a clean "paid"), and it is not the
+  payer's fault, so it must not burn their nonce or cooldown. The cost: a
+  retry of that payment reaches the settle route again; with the real route
+  the nonce is then spent, so the retry becomes a cached, counted payer
+  fault. The 402 text says `do not pay again, contact the operator`, which
+  covers it. Same class as LOW-4 (F8, the data-api follow-up that returns
+  the recorded settlement for payer+nonce). Unreachable with tunnelmind-data-api
+  `9d38ee3`: the route never answers non-2xx with `settled: true`.
+- **L-c, facilitator clock behind ours:** after `validAfter` by our clock,
+  a facilitator that still says `valid_after` is not held again (that
+  `validAfter` is past), so each retry settles and counts toward the
+  cooldown; measured 3 calls, then `payer-cooldown` (table above). README
+  "Known costs" states it.
+- **L-b remainder:** an early payment counts once toward the cooldown, so a
+  payer whose clock runs ahead can be cooled down by three early payments
+  (README "Known costs").
+
+### Docs (R005, L-d, L-e)
+
+`packages/cloudflare/README.md` row 5 now states the local hold, "counted
+once per nonce" and "offer recorded for the first attempt only"; the
+"Offer recorded" note names the held-repeat exception. The test
+`README table: every row id has a scenario and its cells match the code`
+pins the row 5 cells whole and checks them on an early payment (first answer
+`not-yet-valid` with an offer and one settle call; five repeats
+`not-yet-valid-held`, no offer, no settle call; counted once). The CHANGELOG
+2.3.0 valid_after bullet no longer says "not counted", and gains one line
+for `settle-throttled` and the corrected columns.
 
 ## Recorded, not built (R003, second review L8/L9)
 

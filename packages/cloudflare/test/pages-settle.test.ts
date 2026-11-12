@@ -937,8 +937,8 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
   });
 
   // T006 F3, row 5: a not-yet-valid authorization is the payer's clock, and
-  // transient. Not cached and not counted, so the same X-PAYMENT can be
-  // retried once valid_after has passed.
+  // transient. Not cached, so the same X-PAYMENT can be retried once
+  // valid_after has passed; counted once per nonce since R004 (M1).
   const VALID_AFTER = "invalid_exact_evm_payload_authorization_valid_after";
 
   it("row 5 (AC-3.1/3.2): valid_after reject → 402 authorization not yet valid; the same X-PAYMENT retried later serves", async () => {
@@ -1136,10 +1136,51 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     }
     expect(Object.keys(rows).sort()).toEqual(Object.keys(SCENARIOS).sort());
 
+    // Row 5 (R005, second review 2 L-d): the first-word check cannot see the
+    // hold, so the row 5 cells are pinned whole and their claims checked on
+    // an early payment (validAfter in the future; freshPayment's is 0).
+    const r5 = cells(lines.find((l) => l.startsWith("| 5 |")) as string);
+    expect([r5[ci], r5[ki], r5[oi]]).toEqual([
+      "no, held locally until its `validAfter` (repeats: no settle call)",
+      "yes, once per nonce",
+      "yes, first attempt only (held repeats: no)",
+    ]);
+    // Core's decide: no offer for isNoOfferFault, and no ledger write for
+    // the held repeat (pipeline.ts step 6/8, pinned in core's tests).
+    const offerOf = (reason?: string) =>
+      isNoOfferFault(reason) || reason === "not-yet-valid-held" ? "no" : "yes";
+
     const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
     try {
       for (const [id, make] of Object.entries(SCENARIOS))
         expect({ id, ...(await observe(make)) }).toEqual({ id, ...rows[id] });
+
+      const t = table(200, settledFalse(VALID_AFTER));
+      const nowS = Math.floor(Date.now() / 1000);
+      const auth = makeAuth({
+        value: "1000",
+        validAfter: String(nowS + 30),
+        validBefore: String(nowS + 300),
+        nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+      });
+      const early = payment(auth, signAuth(auth));
+      const first = (await t.verify(early, t.cfg)).reason;
+      expect([first, offerOf(first), t.s.calls]).toEqual([
+        "not-yet-valid",
+        "yes",
+        1,
+      ]);
+      for (let i = 0; i < 5; i++) {
+        const held = (await t.verify(early, t.cfg)).reason;
+        expect([held, offerOf(held)]).toEqual(["not-yet-valid-held", "no"]);
+      }
+      expect(t.s.calls).toBe(1); // held: no settle call
+      // Counted once: the early payment plus two payer faults cool the payer
+      // down; had the held repeats counted, the second fault would not settle.
+      t.s.body = settledFalse("insufficient_funds");
+      expect(await fresh(t)).toBe("insufficient_funds");
+      expect(await fresh(t)).toBe("insufficient_funds");
+      expect(await fresh(t)).toBe("payer-cooldown");
     } finally {
       clock.mockRestore();
     }
