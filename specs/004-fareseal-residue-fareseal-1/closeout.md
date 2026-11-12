@@ -3,9 +3,13 @@
 ## Rows fixed
 - **E1** `.gitignore:5` now `fareseal.key` (above `tollbooth.key` at line 6), pinned by `packages/core/test/gitignore.test.ts` (expects both names).
 - **E2** `packages/core/src/config.ts:134` doc comment now names `/.well-known/fareseal-site.json (tollbooth-site.json still read until 3.0.0)`. Comment only.
+- **R001 (1)** `packages/core/src/config.ts:134-136` comment now says `tollbooth-site.json` is tried only when `fareseal-site.json` returns 404, until 3.0.0, and any other failure throws (matches `cli.ts:79-81`, `:124`). Wording only.
+- **R001 (2)** `README.md:339` names `/.well-known/fareseal-site.json` first and says the old `tollbooth-site.json` is still read on a 404 until 3.0.0. Wording only.
 
 ## Rows skipped
-None. Both rows still said tollbooth when re-measured, so no re-measure output applies.
+- `docs/adr/006-verify-export-lines-and-snapshots.md:37` (R001): ADR-006 is history; not edited, by design.
+
+E1/E2: none skipped. Both rows still said tollbooth when re-measured, so no re-measure output applies.
 
 ## What changes
 - Operator: a generated `./fareseal.key` is no longer committable by accident.

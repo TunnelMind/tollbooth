@@ -336,7 +336,7 @@ report_domain = "your-domain.example"   # the domain that vouches for your site 
 ```
 
 `report_domain` is a **claim**. The commons turns it into a fact by fetching
-`https://your-domain.example/.well-known/tollbooth-site.json`, which you serve as
+`https://your-domain.example/.well-known/fareseal-site.json` (the old `tollbooth-site.json` is still read if that 404s; removed in 3.0.0), which you serve as
 
 ```json
 { "v": 1, "keys": ["<your site public key, base64url>"] }
