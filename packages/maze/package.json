@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-maze",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Static decoy-maze corpus loader and handler. Pre-generated content only, never inference.",
   "license": "MIT",
   "type": "module",

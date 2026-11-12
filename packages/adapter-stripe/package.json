@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-adapter-stripe",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "Stripe webhook route and voucher mint, mounted on the operator's own app with the operator's own keys.",
   "license": "MIT",

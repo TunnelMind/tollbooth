@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-core",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Framework-free toll logic: identify, offer state, vouchers, receipts, canonicalization, config schema. No HTTP imports.",
   "license": "MIT",
   "type": "module",

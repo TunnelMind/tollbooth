@@ -2,8 +2,9 @@
 
 Tollbooth was renamed Fareseal on 2026-11-10.
 
-## Unreleased
+## 2.3.0 — Unreleased
 
+- The site vendored 514bb79 as 2.2.0; 2.3.0 marks this payment-path refresh.
 - A facilitator reject whose reason contains `valid_after` (authorization not yet valid, e.g. `invalid_exact_evm_payload_authorization_valid_after`) is now transient: 402 `authorization not yet valid` (`not-yet-valid`), not cached and not counted toward the payer's cooldown, so the same `X-PAYMENT` can be retried. It was cached, counted and `facilitator rejected: …`. On a settle HTTP 5xx it stays `settle-retryable`.
 - Settle answers are classified by one table (README, "Facilitator damping"). Moved: a settle-route HTTP 400, 404, 413 or 422 (whatever the body, including `settled: true` or non-JSON) is now a payer fault, cached for the nonce and counted toward the cooldown (402 `settle failed`), where it was `settle-retryable`. A facilitator answer `(verify|settle)-failed(401|403|429)` is now an operator fault, `settle-retryable`, not cached, not counted (402 operator-fault text), where it was cached, counted and `settle failed`. Settle-route HTTP 401, 403, 429 and 5xx stay operator faults.
 - `settled: true` on a non-2xx settle response is no longer accepted as payment: the origin is not served (402); a 5xx stays `settle-retryable`.
