@@ -587,6 +587,39 @@ describe("makeSettlingVerify — operator-side settle failures (T004)", () => {
   });
 });
 
+// F4: `settled:true` only counts on an HTTP 2xx. A 5xx/4xx that claims a
+// settle is not proof of payment, so the origin must not be served.
+describe("createPagesMiddleware — settled:true on non-2xx is not payment (F4)", () => {
+  it("HTTP 500 + settled:true: 402 operator fault, not served, retry reaches settle again", async () => {
+    const b = rawSettleBinding(500, {
+      ok: true,
+      data: { settled: true, tx: TX },
+    });
+    const mw = settlingMw();
+    const xp = freshPayment();
+    for (const call of [1, 2]) {
+      const r = await mw(
+        ctx("/research", agent({ "x-payment": xp }), envOf(b)),
+      );
+      expect(r.status).toBe(402);
+      const text = await r.text();
+      expect(text).not.toBe("site content");
+      expect(JSON.parse(text).error).toBe(OPERATOR_FAULT);
+      expect(b.settles).toBe(call); // not cached: each try reaches settle
+    }
+  });
+
+  it("HTTP 400 + settled:true: 402, not served", async () => {
+    // Cache/count behaviour for a 4xx belongs to T005; only "not served" here.
+    const b = rawSettleBinding(400, { data: { settled: true, tx: TX } });
+    const r = await settlingMw()(
+      ctx("/research", agent({ "x-payment": freshPayment() }), envOf(b)),
+    );
+    expect(r.status).toBe(402);
+    expect(await r.text()).not.toBe("site content");
+  });
+});
+
 describe("createPagesMiddleware — settle carries the resource (E003)", () => {
   it("the settle body carries origin+pathname+search, no fragment", async () => {
     const b = settleBinding({ settled: true, payer: "0xabc", tx: TX });

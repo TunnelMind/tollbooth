@@ -283,7 +283,7 @@ export function makeSettlingVerify(
           data?: Record<string, unknown>;
         } | null;
         const data = body?.data ?? {};
-        if (data.settled === true) {
+        if (resp.ok && data.settled === true) {
           // Settle routes name the on-chain id `transaction` or `tx`. Only a
           // 32-byte hex hash (0x + 64 hex, surrounding whitespace trimmed)
           // counts; `transaction` wins when valid, else a valid `tx` serves.
