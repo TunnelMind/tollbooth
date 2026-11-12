@@ -608,6 +608,10 @@ const PAYMENT_ERRORS: Record<string, string> = {
   "payer-cooldown": "payer cooling down after repeated failures; retry later",
   "no-transaction-id": "settle failed: no transaction id",
   "settle-failed": "settle failed",
+  // A non-2xx that claimed settled:true: money may have moved, so never
+  // "retry the same payment" (R002 L7).
+  "settle-unconfirmed":
+    "settlement status unconfirmed; do not pay again, contact the operator",
 };
 
 export function paymentError(reason?: string): string {

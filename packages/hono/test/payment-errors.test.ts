@@ -82,6 +82,11 @@ const TABLE: [string, string][] = [
   ["payer-cooldown", "payer cooling down after repeated failures; retry later"],
   ["no-transaction-id", "settle failed: no transaction id"],
   ["settle-failed", "settle failed"],
+  // R002 L7: a non-2xx that claimed settled:true; money may have moved.
+  [
+    "settle-unconfirmed",
+    "settlement status unconfirmed; do not pay again, contact the operator",
+  ],
   ["settle-failed(400)", "settle failed"],
   ["verify-failed(402)", "settle failed"],
   // T005 FR-002: the facilitator refusing *our* credentials or rate is ours.
@@ -215,48 +220,52 @@ describe("the no-maze consequence fallback 402 carries the reason too", () => {
 });
 
 describe("FR-006 - no maze for a payment we failed", () => {
-  it("a verified agent whose settle is retryable gets four 402s, no 302", async () => {
-    const agent = await makeAgent();
-    const maze = makeMazeHandler({
-      corpus: corpusFromMap(generateCorpus({ seed: "fr006", pages: 10 })),
-      cfg: parseConfig(TOLL),
-      sleep: async () => {},
-    });
-    const a = new Hono();
-    // offer_grace 3 and maze enabled are the defaults; the maze is wired.
-    a.use(
-      fareseal({
-        config: TOLL,
-        x402: { buildOffer, verifyProof: stub("settle-retryable") },
-        maze,
-        fetchDirectory: dirWith(agent.jwk),
-        nowS: () => NOW,
-      }),
-    );
-    a.get("*", (c) => c.text("content"));
-    const wba = await signedRequest(agent, { expires: NOW + 300 });
-    const headers = {
-      ...curl,
-      signature: wba.signature,
-      "signature-input": wba.signatureInput,
-      "signature-agent": wba.signatureAgent,
-    };
-    const statuses: number[] = [];
-    for (let i = 0; i < 4; i++)
-      statuses.push(
-        (
-          await a.request("http://example.com/article", {
-            headers: { ...headers, "x-payment": "anything" },
-          })
-        ).status,
+  // R002 L3/L7: no-transaction-id and settle-unconfirmed (maybe paid) too.
+  it.each(["settle-retryable", "no-transaction-id", "settle-unconfirmed"])(
+    "a verified agent whose settle answers %s gets four 402s, no 302",
+    async (reason) => {
+      const agent = await makeAgent();
+      const maze = makeMazeHandler({
+        corpus: corpusFromMap(generateCorpus({ seed: "fr006", pages: 10 })),
+        cfg: parseConfig(TOLL),
+        sleep: async () => {},
+      });
+      const a = new Hono();
+      // offer_grace 3 and maze enabled are the defaults; the maze is wired.
+      a.use(
+        fareseal({
+          config: TOLL,
+          x402: { buildOffer, verifyProof: stub(reason) },
+          maze,
+          fetchDirectory: dirWith(agent.jwk),
+          nowS: () => NOW,
+        }),
       );
-    expect(statuses).toEqual([402, 402, 402, 402]);
-    // Control: the same agent without a payment is mazed after the grace,
-    // so the agent is verified and the maze is live.
-    for (let i = 0; i < 3; i++)
-      await a.request("http://example.com/article", { headers });
-    expect(
-      (await a.request("http://example.com/article", { headers })).status,
-    ).toBe(302);
-  });
+      a.get("*", (c) => c.text("content"));
+      const wba = await signedRequest(agent, { expires: NOW + 300 });
+      const headers = {
+        ...curl,
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      };
+      const statuses: number[] = [];
+      for (let i = 0; i < 4; i++)
+        statuses.push(
+          (
+            await a.request("http://example.com/article", {
+              headers: { ...headers, "x-payment": "anything" },
+            })
+          ).status,
+        );
+      expect(statuses).toEqual([402, 402, 402, 402]);
+      // Control: the same agent without a payment is mazed after the grace,
+      // so the agent is verified and the maze is live.
+      for (let i = 0; i < 3; i++)
+        await a.request("http://example.com/article", { headers });
+      expect(
+        (await a.request("http://example.com/article", { headers })).status,
+      ).toBe(302);
+    },
+  );
 });

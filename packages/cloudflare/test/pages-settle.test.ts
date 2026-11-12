@@ -496,6 +496,8 @@ describe("createPagesMiddleware — settle-then-serve", () => {
 // 5xx) must not burn the payer's nonce or count toward their cooldown.
 const OPERATOR_FAULT =
   "settlement unavailable (operator fault); retry the same payment";
+const UNCONFIRMED =
+  "settlement status unconfirmed; do not pay again, contact the operator";
 
 /** A settle endpoint answering `status` with `body` verbatim. */
 function rawSettleBinding(status: number, body: unknown) {
@@ -604,7 +606,9 @@ describe("makeSettlingVerify — operator-side settle failures (T004)", () => {
 // F4: `settled:true` only counts on an HTTP 2xx. A 5xx/4xx that claims a
 // settle is not proof of payment, so the origin must not be served.
 describe("createPagesMiddleware — settled:true on non-2xx is not payment (F4)", () => {
-  it("HTTP 500 + settled:true: 402 operator fault, not served, retry reaches settle again", async () => {
+  // R002 L7: was OPERATOR_FAULT ("retry the same payment"); money may have
+  // moved, so the payer is now told not to pay again.
+  it("HTTP 500 + settled:true: 402 settle unconfirmed, not served, retry reaches settle again", async () => {
     const b = rawSettleBinding(500, {
       ok: true,
       data: { settled: true, tx: TX },
@@ -618,7 +622,7 @@ describe("createPagesMiddleware — settled:true on non-2xx is not payment (F4)"
       expect(r.status).toBe(402);
       const text = await r.text();
       expect(text).not.toBe("site content");
-      expect(JSON.parse(text).error).toBe(OPERATOR_FAULT);
+      expect(JSON.parse(text).error).toBe(UNCONFIRMED);
       expect(b.settles).toBe(call); // not cached: each try reaches settle
     }
   });
@@ -838,10 +842,16 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     );
   });
 
+  // R002 L5: the four core operator-fault names, sent back by the route,
+  // are classified by core's isOperatorFault, so no package caches one.
   for (const reason of [
     "network-mismatch",
     "settlement-not-configured",
     "verify-error: timeout",
+    "settle-throttled",
+    "settle-unreachable",
+    "settle-retryable",
+    "settlement-unconfigured",
   ])
     it(`row 3: reason ${reason} → settle-retryable`, async () => {
       await expectOperator(
@@ -850,13 +860,29 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       );
     });
 
-  // Row 4, the status form: whatever the body, including settled:true.
+  // Row 3a (R002 L7): a non-2xx that says settled:true. Money may have moved,
+  // so never "retry the same payment" and never the payer's fault.
+  for (const n of [400, 401, 403, 404, 429, 500, 503])
+    it(`row 3a: HTTP ${n} settled:true + valid tx → settle-unconfirmed, not cached, not counted, not served`, async () => {
+      const body = { ok: true, data: { settled: true, tx: TX } };
+      await expectOperator(table(n, body), "settle-unconfirmed");
+      const m = table(n, body);
+      const r = await settlingMw()(
+        ctx("/r", agent({ "x-payment": freshPayment() }), envOf(m)),
+      );
+      expect(r.status).toBe(402);
+      const error = (await r.json()).error as string;
+      expect(error).toBe(UNCONFIRMED);
+      expect(error).not.toContain("retry the same payment");
+    });
+
+  // Row 4, the status form: whatever the body (settled:true is row 3a).
+  // 404/405 (R002 L1): a wrong settle URL or method is ours, never the payer's.
   const row4Bodies: [string, unknown][] = [
     ["{ok:false,error}", { ok: false, error: "nope" }],
     ["non-JSON", "<html>Error</html>"],
-    ["settled:true", { ok: true, data: { settled: true, tx: TX } }],
   ];
-  for (const n of [401, 403, 429, 500, 503])
+  for (const n of [401, 403, 404, 405, 429, 500, 503])
     for (const [name, body] of row4Bodies)
       it(`row 4: HTTP ${n} ${name} → settle-retryable, not cached, not counted`, async () => {
         await expectOperator(table(n, body), "settle-retryable");
@@ -877,8 +903,8 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     );
   });
 
-  // Row 7: a 4xx the client caused is the payer's, whatever the body.
-  for (const n of [400, 404, 413, 422]) {
+  // Row 7: any other 4xx is the payer's (R002 L1: 404 moved to row 4).
+  for (const n of [400, 413, 422]) {
     it(`row 7: HTTP ${n} {ok:false,error} → settle-failed, cached, counted`, async () => {
       await expectPayer(
         table(n, { ok: false, error: "payment too large" }),
@@ -889,13 +915,6 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       await expectPayer(table(n, "<html>Bad Request</html>"), "settle-failed");
     });
   }
-
-  it("row 7: HTTP 400 settled:true → settle-failed, not served, cached, counted", async () => {
-    await expectPayer(
-      table(400, { ok: true, data: { settled: true, tx: TX } }),
-      "settle-failed",
-    );
-  });
 
   it("row 7: HTTP 422 with a string data.reason → that reason, cached, counted", async () => {
     await expectPayer(

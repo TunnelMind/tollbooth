@@ -47,6 +47,7 @@ export {
   decide,
   identify,
   isFreePath,
+  isNoOfferFault,
   isOperatorFault,
   verifiedPass,
 } from "./pipeline.js";

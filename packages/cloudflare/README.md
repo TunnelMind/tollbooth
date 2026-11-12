@@ -76,12 +76,19 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 | 0b | the per-isolate settle bucket is empty | operator | `settle-throttled` | no | no |
 | 0c | the settle call throws, or a 2xx body is not JSON | operator | `settle-unreachable` | no | no |
 | 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared |
-| 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault | `no-transaction-id` | yes | no |
-| 3 | `data.retryable === true`; or `data.reason` is `settlement-not-configured` or `network-mismatch`, or starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$` | operator | `settle-retryable` | no | no |
-| 4 | HTTP status 5xx, 401, 403 or 429 (whatever the body, including `settled:true`) | operator | `settle-retryable` | no | no |
+| 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault (the payer may have paid; no offer recorded) | `no-transaction-id` | yes | no |
+| 3a | any non-2xx with `data.settled === true` (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no |
+| 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no |
+| 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no |
 | 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid` | no | no |
 | 6 | HTTP 2xx `settled:false` with any other reason | payer | `data.reason`, else `settle-failed` | yes | yes |
-| 7 | any other HTTP status (a 4xx the client caused, e.g. 400, 404, 413, 422), whatever the body, including `settled:true` | payer | `data.reason` if a string, else `settle-failed` | yes | yes |
+| 7 | any other HTTP status (a 4xx the client caused, e.g. 400, 413, 422), whatever the body | payer | `data.reason` if a string, else `settle-failed` | yes | yes |
+
+Known costs. Row 7: the settle route answers a `price_usd` outside its
+bounds (our misconfiguration) with HTTP 400, so that 400 is still charged to
+the payer (cached, counted). Row 2: a payer whose payment settled but came
+back with an unusable tx id may have paid and is not served; it is not
+mazed either (no offer recorded).
 
 Prefer wiring the pieces yourself (or Stripe-only without chain code)?
 Use [`@tunnelmindai/fareseal-hono`](../hono) — it stays injection-only by design.

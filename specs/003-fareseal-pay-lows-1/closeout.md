@@ -257,6 +257,33 @@ Every path is inside this repo. The only `packages/adapter-stripe` change is the
 refuses mixed versions). No Stripe source file changed. The new files are all under
 `specs/003-fareseal-pay-lows-1/`.
 
+## R002 — second review L1, L3, L5, L7
+
+- **L5 one classifier:** cloudflare row 3 now calls core's `isOperatorFault(reason)`
+  (plus `retryable:true` and `network-mismatch`, which core's set does not hold).
+  A route reason `settle-throttled` / `settle-unreachable` / `settle-retryable` /
+  `settlement-unconfigured` is `settle-retryable`, not cached, not counted.
+- **L1 404/405:** settle-route HTTP 404 and 405 joined row 4 (operator). A wrong
+  settle URL or method is never the payer's doing.
+- **L1 known cost, not fixed:** a settle-route 400 caused by OUR misconfiguration
+  (a `price_usd` outside the route's bounds, which the route answers 400) is still
+  charged to the payer (row 7: cached, counted, mazed for a verified agent).
+- **L7:** a non-2xx answer with `settled:true` is `settle-unconfirmed`, checked
+  before rows 3/4: not served, not cached, not counted, no offer recorded, 402
+  text `settlement status unconfirmed; do not pay again, contact the operator`.
+- **L3:** `no-transaction-id` and `settle-unconfirmed` record no offer (core
+  `isNoOfferFault`, used at `decide` step 6). `isOperatorFault` is unchanged.
+
+**Known cost (L3), stated plainly:** a payer whose payment settled but whose
+settle answer carried an unusable transaction id may have paid and is not
+served. They are not mazed for it either. The payment stays cached as
+`no-transaction-id`, so retrying the same payment does not help; the operator
+has to look up the settlement.
+
+Follow-up (not built here):
+
+- tunnelmind-data-api run: the settle route should answer a bad price_usd as 200 settled:false reason settlement-not-configured; not built here
+
 ## Owner tasks (from tasks.md)
 
 - [ ] O001 (owner) Josh: the tunnelmind-site vendor refresh to this release is a separate run; npm publish and any tag are Josh's. Not done by any agent.

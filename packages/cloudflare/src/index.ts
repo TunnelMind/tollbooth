@@ -38,6 +38,7 @@ import {
   canonicalize,
   type FaresealConfig,
   fromBase64Url,
+  isOperatorFault,
   mazePrefixes,
   parseConfig,
   publicKeyOf,
@@ -323,24 +324,35 @@ export function makeSettlingVerify(
         }
         const reason =
           typeof data.reason === "string" ? data.reason : "settle-failed";
-        // FR-001 (spec 003), rows 3 → 4 → 5 → 6/7, first match wins. An operator
-        // fault must not burn the payer's nonce or cooldown: not cached, not
-        // counted, so the same X-PAYMENT can be retried once we are healthy.
+        // FR-001 (spec 003), rows 3a → 3 → 4 → 5 → 6/7, first match wins. An
+        // operator fault must not burn the payer's nonce or cooldown: not
+        // cached, not counted, so the same X-PAYMENT can be retried once we
+        // are healthy.
+        // Row 3a (R002 L7): a non-2xx that says settled:true. Money may have
+        // moved, so it is neither served nor "retry the same payment", and
+        // not the payer's fault: not cached, not counted, no offer in core.
+        if (data.settled === true)
+          return { ok: false, payer: null, reason: "settle-unconfirmed" };
         // Row 3: the settle route says it is ours (its config, or the
         // facilitator refusing our credentials/rate or failing with a 5xx).
-        // An explicit retryable:true beats the HTTP status.
+        // core's isOperatorFault is the one classifier (R002 L5), so a reason
+        // hono calls "retry the same payment" is never cached here.
+        // network-mismatch is ours too (the route's network, not the
+        // payment's: verifyProof already checked that); an explicit
+        // retryable:true beats the HTTP status.
         if (
           data.retryable === true ||
-          reason === "settlement-not-configured" ||
           reason === "network-mismatch" ||
-          reason.startsWith("verify-error:") ||
-          reason.startsWith("settle-error:") ||
-          /^(verify|settle)-failed\((5\d\d|401|403|429)\)$/.test(reason)
+          isOperatorFault(reason)
         )
           return { ok: false, payer: null, reason: "settle-retryable" };
-        // Row 4: the settle route itself is down, or refuses our token or
-        // rate, whatever the body says.
-        if (resp.status >= 500 || [401, 403, 429].includes(resp.status))
+        // Row 4: the settle route itself is down, refuses our token or rate,
+        // or is not there (404/405: a wrong settle.url or method, R002 L1),
+        // whatever the body says.
+        if (
+          resp.status >= 500 ||
+          [401, 403, 404, 405, 429].includes(resp.status)
+        )
           return { ok: false, payer: null, reason: "settle-retryable" };
         // Row 5: the authorization is not valid yet (payer clock ahead of
         // the chain's). Transient, so not cached and not counted: the same
@@ -360,8 +372,8 @@ export function makeSettlingVerify(
         // Row 6 (2xx settled:false) and row 7 (any other non-2xx: a 4xx the
         // client caused, e.g. an oversize or malformed payment) are the
         // payer's: cached for the nonce and counted toward the cooldown.
-        // ponytail: 404 lands here too though it is usually a wrong
-        // settle.url (plan Risks); add it to row 4 if GATE F says so.
+        // Known cost (R002 L1): the data-api route answers OUR bad price_usd
+        // with a 400 too, so that misconfiguration is charged to the payer.
         remember(seenPayments, key, reason);
         remember(payerFails, payer, {
           n: (fails && now < fails.untilMs ? fails.n : 0) + 1,

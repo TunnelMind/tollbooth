@@ -114,6 +114,21 @@ export function isOperatorFault(reason?: string): boolean {
   return /^(?:verify|settle)-failed\((?:5\d\d|401|403|429)\)$/.test(reason);
 }
 
+/**
+ * Step 6 (R002 L3/L7): a rejected payment that records no offer. Operator
+ * faults, plus two answers where the payer may already have paid: a settle
+ * with an unusable transaction id, and a non-2xx claiming settled:true.
+ * Kept out of isOperatorFault because hono's text for those says "retry the
+ * same payment", wrong for a cached no-transaction-id or a maybe-moved one.
+ */
+export function isNoOfferFault(reason?: string): boolean {
+  return (
+    isOperatorFault(reason) ||
+    reason === "no-transaction-id" ||
+    reason === "settle-unconfirmed"
+  );
+}
+
 export interface PipelineDeps {
   fetchDirectory: FetchDirectory;
   /** Epoch seconds — injectable for deterministic tests. */
@@ -348,8 +363,9 @@ export async function decide(
         deps.ledger?.recordPaid(identity.agentKey, nowMs);
       return { action: "pass", reason: "paid", identity };
     }
-    // FR-006: our fault, so the offer again - no consequence check, no ledger.
-    if (isOperatorFault(paid.reason))
+    // FR-006: our fault (or maybe paid), so the offer again - no consequence
+    // check, no ledger.
+    if (isNoOfferFault(paid.reason))
       return { action: "offer", identity, body: buildOfferBody(cfg) };
   }
 

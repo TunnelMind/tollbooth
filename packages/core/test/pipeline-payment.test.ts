@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config.js";
 import { OfferLedger } from "../src/ledger.js";
-import { decide, type PipelineDeps } from "../src/pipeline.js";
+import {
+  decide,
+  isNoOfferFault,
+  isOperatorFault,
+  type PipelineDeps,
+} from "../src/pipeline.js";
 import { dirWith, makeAgent, NOW, signedRequest } from "./fixtures/wba.js";
 
 const TOLL_CFG = parseConfig(`
@@ -139,6 +144,34 @@ pay_to = "0xabc"
       actions.push((await decide(req, CFG, deps)).action);
     expect(actions).toEqual(["offer", "offer", "offer", "offer"]);
     expect(ledger.get(agent.jwk.x as string)).toBeUndefined();
+  });
+
+  // R002 L3/L7: the payer may have paid (settled, unusable tx id; or a
+  // non-2xx claiming settled:true), so no offer is recorded either.
+  it.each(["no-transaction-id", "settle-unconfirmed"])(
+    "%s: four attempts are four offers, no consequence, nothing ledgered",
+    async (reason) => {
+      const { agent, ledger, req, deps } = await setup(reason);
+      const actions: string[] = [];
+      for (let i = 0; i < 4; i++)
+        actions.push((await decide(req, CFG, deps)).action);
+      expect(actions).toEqual(["offer", "offer", "offer", "offer"]);
+      expect(ledger.get(agent.jwk.x as string)).toBeUndefined();
+    },
+  );
+
+  it("isNoOfferFault: operator faults plus the two maybe-paid reasons, not payer faults", () => {
+    for (const r of [
+      "settle-retryable",
+      "no-transaction-id",
+      "settle-unconfirmed",
+    ])
+      expect(isNoOfferFault(r)).toBe(true);
+    for (const r of [undefined, "expired", "settle-failed"])
+      expect(isNoOfferFault(r)).toBe(false);
+    // The operator set itself is unchanged (hono's "retry" text keys off it).
+    expect(isOperatorFault("no-transaction-id")).toBe(false);
+    expect(isOperatorFault("settle-unconfirmed")).toBe(false);
   });
 
   it("an already-exhausted agent with an operator-fault payment gets the offer", async () => {
