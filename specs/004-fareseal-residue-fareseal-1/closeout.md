@@ -41,14 +41,15 @@ NFR-1 (pass-path added latency <= 1 ms p50, <= 5 ms p99): **PASS** (added p50 0.
 ```
 
 ## git diff main --stat
-Taken before this file was added (closeout.md is new/untracked until the loop commits it):
 ```
- .gitignore                                     |  1 +
- packages/core/src/config.ts                    |  2 +-
- packages/core/test/gitignore.test.ts           | 11 ++++
- specs/004-fareseal-residue-fareseal-1/plan.md  | 34 +++++++++++++
- specs/004-fareseal-residue-fareseal-1/spec.md  | 70 ++++++++++++++++++++++++++
- specs/004-fareseal-residue-fareseal-1/tasks.md | 11 ++++
- 6 files changed, 128 insertions(+), 1 deletion(-)
+ .gitignore                                        |  1 +
+ README.md                                         |  2 +-
+ packages/core/src/config.ts                       |  4 +-
+ packages/core/test/gitignore.test.ts              | 11 ++++
+ specs/004-fareseal-residue-fareseal-1/closeout.md | 55 ++++++++++++++++++
+ specs/004-fareseal-residue-fareseal-1/plan.md     | 34 +++++++++++
+ specs/004-fareseal-residue-fareseal-1/spec.md     | 70 +++++++++++++++++++++++
+ specs/004-fareseal-residue-fareseal-1/tasks.md    | 13 +++++
+ 8 files changed, 188 insertions(+), 2 deletions(-)
 ```
-Source/test changes are only the three files above. `tasks.md` changes are the loop's ticks, not code; `spec.md`/`plan.md` are the planner's spec commit already on the branch.
+Source/test changes are four files: `packages/core/src/config.ts` (4 lines, comment and wording only, no code change), `packages/core/test/gitignore.test.ts`, plus `.gitignore` and `README.md` (1 and 2 lines). The four `specs/004-fareseal-residue-fareseal-1/` files (this closeout, `plan.md`, `spec.md`, `tasks.md`) are the crew's own records, not code.
