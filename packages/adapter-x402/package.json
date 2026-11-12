@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-adapter-x402",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "x402 offer headers and payment-proof verification. Chain specifics stay inside this boundary.",
   "license": "MIT",
   "type": "module",

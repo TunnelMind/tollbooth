@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-cli",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "description": "fareseal CLI: corpus, verify, voucher inspect/mint.",
   "license": "MIT",

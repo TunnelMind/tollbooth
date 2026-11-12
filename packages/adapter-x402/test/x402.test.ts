@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { parseConfig } from "@tunnelmindai/fareseal-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildOffer,
   MAX_TIMEOUT_SECONDS,
+  MAX_X_PAYMENT_CHARS,
   usdToAtomic,
   verifyProof,
 } from "../src/index.js";
@@ -155,6 +156,59 @@ describe("AC-2.2 - verifyProof verifies locally", () => {
     expect(buildOffer(CFG, "/x").requirement.maxTimeoutSeconds).toBe(
       MAX_TIMEOUT_SECONDS,
     );
+  });
+});
+
+/** A valid payment with a `pad` field sized so its base64 is `chars` long. */
+function padded(chars: number): string {
+  const auth = makeAuth();
+  const p = JSON.parse(atob(payment(auth, signAuth(auth))));
+  p.pad = "";
+  // base64 of n bytes is 4*ceil(n/3) chars; take the largest n that fits.
+  p.pad = "x".repeat(Math.floor(chars / 4) * 3 - JSON.stringify(p).length);
+  const xp = btoa(JSON.stringify(p));
+  expect(xp.length).toBe(chars);
+  return xp;
+}
+
+describe("T002 F2 - X-PAYMENT is capped at MAX_X_PAYMENT_CHARS (8192)", () => {
+  it("a validly signed payment of exactly 8192 chars passes", () => {
+    expect(MAX_X_PAYMENT_CHARS).toBe(8192);
+    expect(verifyProof(padded(8192), CFG, { nowS: NOW }).ok).toBe(true);
+  });
+  it("a validly signed payment over 8192 chars is malformed", () => {
+    expect(verifyProof(padded(8196), CFG, { nowS: NOW }).reason).toBe(
+      "malformed",
+    );
+    // atob strips whitespace, so 8192 + one space still decodes.
+    expect(verifyProof(`${padded(8192)} `, CFG, { nowS: NOW }).reason).toBe(
+      "malformed",
+    );
+  });
+  it("a bare 8193-char string is malformed", () => {
+    expect(verifyProof("A".repeat(8193), CFG, { nowS: NOW }).reason).toBe(
+      "malformed",
+    );
+  });
+  // R003 (second review L8): AC-2.1 says the cap runs before any decode.
+  // Killed mutant: the length check moved after atob/JSON.parse.
+  it("an oversize header is refused with zero atob / JSON.parse calls; 8192 reaches atob", () => {
+    // Built before the spies: padded() decodes to measure itself.
+    const oversize = ["A".repeat(8193), `${padded(8192)} `, "A".repeat(60_000)];
+    const atobSpy = vi.spyOn(globalThis, "atob");
+    const parseSpy = vi.spyOn(JSON, "parse");
+    try {
+      for (const xp of oversize)
+        expect(verifyProof(xp, CFG, { nowS: NOW }).reason).toBe("malformed");
+      expect(atobSpy).not.toHaveBeenCalled();
+      expect(parseSpy).not.toHaveBeenCalled();
+      // Boundary: exactly MAX_X_PAYMENT_CHARS is decoded.
+      verifyProof("A".repeat(MAX_X_PAYMENT_CHARS), CFG, { nowS: NOW });
+      expect(atobSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      atobSpy.mockRestore();
+      parseSpy.mockRestore();
+    }
   });
 });
 

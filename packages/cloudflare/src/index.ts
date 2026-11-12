@@ -38,6 +38,7 @@ import {
   canonicalize,
   type FaresealConfig,
   fromBase64Url,
+  isOperatorFault,
   mazePrefixes,
   parseConfig,
   publicKeyOf,
@@ -209,6 +210,9 @@ export function makeSettlingVerify(
   // of the same authorization is still the same payment.
   const seenPayments = new Map<string, string>();
   const payerFails = new Map<string, { n: number; untilMs: number }>();
+  // Row 5 rejects, key -> validAfter (epoch s). Answered locally until then,
+  // so one early authorization costs one settle call, not one per request.
+  const notYetValid = new Map<string, bigint>();
   // Concurrent identical payments share one settle; only the starter passes.
   // The x402 resource is not in the signed EIP-3009 authorization, so sharing
   // ok:true would let one payment sent to many paths unlock all of them.
@@ -224,14 +228,26 @@ export function makeSettlingVerify(
     // It hashes pad32(hexToBytes(nonce.slice(2))): any 2-char prefix, any
     // leading zeros, any hex case sign the same bytes32. Key on that value.
     // Odd-length hex is rejected there; "" (nonce 0) is not, hence `|| "0"`.
-    const nonce = (
+    const { nonce, validAfter } = (
       JSON.parse(atob(xPayment)) as {
-        payload: { authorization: { nonce: string } };
+        payload: { authorization: { nonce: string; validAfter: string } };
       }
-    ).payload.authorization.nonce;
+    ).payload.authorization;
     const key = `${payer}:${BigInt(`0x${nonce.slice(2) || "0"}`).toString(16)}`;
     const seen = seenPayments.get(key);
     if (seen !== undefined) return { ok: false, payer: null, reason: seen };
+    // Before inflight/cooldown/bucket: no settle call, no token, no count.
+    // Same clock as verifyProof (opts.nowS, else wall time). Once validAfter
+    // has passed the entry goes and exactly one settle attempt is allowed.
+    const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
+    const early = notYetValid.get(key);
+    if (early !== undefined) {
+      // Its own reason so core records no offer for it (R004 L-b); hono
+      // shows the payer the same "not yet valid" text.
+      if (nowS < early)
+        return { ok: false, payer: null, reason: "not-yet-valid-held" };
+      notYetValid.delete(key);
+    }
     const pending = inflight.get(key);
     if (pending !== undefined) {
       const leader = await pending;
@@ -283,15 +299,14 @@ export function makeSettlingVerify(
           data?: Record<string, unknown>;
         } | null;
         const data = body?.data ?? {};
-        if (data.settled === true) {
-          // Settle routes name the on-chain id `transaction` or `tx`;
-          // `transaction` wins when both are present.
+        if (resp.ok && data.settled === true) {
+          // Settle routes name the on-chain id `transaction` or `tx`. Only a
+          // 32-byte hex hash (0x + 64 hex, surrounding whitespace trimmed)
+          // counts; `transaction` wins when valid, else a valid `tx` serves.
           const txId =
-            typeof data.transaction === "string" && data.transaction !== ""
-              ? data.transaction
-              : typeof data.tx === "string" && data.tx !== ""
-                ? data.tx
-                : null;
+            [data.transaction, data.tx]
+              .map((v) => (typeof v === "string" ? v.trim() : ""))
+              .find((v) => /^0x[0-9a-fA-F]{64}$/.test(v)) ?? null;
           if (txId === null) {
             // A settle we cannot point the payer at is not proof of payment.
             // Remember it (the nonce may be spent; never settle it twice), but
@@ -311,19 +326,62 @@ export function makeSettlingVerify(
         }
         const reason =
           typeof data.reason === "string" ? data.reason : "settle-failed";
-        // An operator fault (non-2xx settle, our config, our facilitator's
-        // 5xx) must not burn the payer's nonce or cooldown: not cached, not
-        // counted, so the same X-PAYMENT can be retried once we are healthy.
+        // FR-001 (spec 003), rows 3a → 3 → 4 → 5 → 6/7, first match wins. An
+        // operator fault must not burn the payer's nonce or cooldown: not
+        // cached, not counted, so the same X-PAYMENT can be retried once we
+        // are healthy.
+        // Row 3a (R002 L7): a non-2xx that says settled:true. Money may have
+        // moved, so it is neither served nor "retry the same payment", and
+        // not the payer's fault: not cached, not counted, no offer in core.
+        if (data.settled === true)
+          return { ok: false, payer: null, reason: "settle-unconfirmed" };
+        // Row 3: the settle route says it is ours (its config, or the
+        // facilitator refusing our credentials/rate or failing with a 5xx).
+        // core's isOperatorFault is the one classifier (R002 L5), so a reason
+        // hono calls "retry the same payment" is never cached here.
+        // network-mismatch is ours too (the route's network, not the
+        // payment's: verifyProof already checked that); an explicit
+        // retryable:true beats the HTTP status.
         if (
-          !resp.ok ||
           data.retryable === true ||
-          reason === "settlement-not-configured" ||
           reason === "network-mismatch" ||
-          reason.startsWith("verify-error:") ||
-          reason.startsWith("settle-error:") ||
-          /^(verify|settle)-failed\(5\d\d\)$/.test(reason)
+          isOperatorFault(reason)
         )
           return { ok: false, payer: null, reason: "settle-retryable" };
+        // Row 4: the settle route itself is down, refuses our token or rate,
+        // or is not there (404/405: a wrong settle.url or method, R002 L1),
+        // whatever the body says.
+        if (
+          resp.status >= 500 ||
+          [401, 403, 404, 405, 429].includes(resp.status)
+        )
+          return { ok: false, payer: null, reason: "settle-retryable" };
+        // Row 5: the authorization is not valid yet (payer clock ahead of
+        // the chain's). Not cached: the same X-PAYMENT may be retried once
+        // valid_after has passed; until then the retry is answered locally
+        // (R001, second review L2). Counted toward the payer's cooldown, as
+        // on main (R004, second review 2 M1): otherwise fresh early nonces
+        // from one payer cost a settle call each. The hold means one count
+        // per payment while it is early, and a later successful settle
+        // clears the count, so an honest early payment still settles.
+        // Offers: this answer records one in core (else a verified agent
+        // could attach a fresh early unfunded payment to every request and
+        // never be mazed, L6); the held repeats above record none (L-b).
+        if (reason.includes("valid_after")) {
+          // ponytail: a validAfter already past (facilitator clock behind
+          // ours) is not held, so each retry settles; the cooldown bounds it.
+          remember(notYetValid, key, BigInt(validAfter));
+          remember(payerFails, payer, {
+            n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
+            untilMs: now + PAYER_COOLDOWN_MS,
+          });
+          return { ok: false, payer: null, reason: "not-yet-valid" };
+        }
+        // Row 6 (2xx settled:false) and row 7 (any other non-2xx: a 4xx the
+        // client caused, e.g. an oversize or malformed payment) are the
+        // payer's: cached for the nonce and counted toward the cooldown.
+        // Known cost (R002 L1): the data-api route answers OUR bad price_usd
+        // with a 400 too, so that misconfiguration is charged to the payer.
         remember(seenPayments, key, reason);
         remember(payerFails, payer, {
           n: (fails && now < fails.untilMs ? fails.n : 0) + 1,

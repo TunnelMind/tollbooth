@@ -47,6 +47,8 @@ export {
   decide,
   identify,
   isFreePath,
+  isNoOfferFault,
+  isOperatorFault,
   verifiedPass,
 } from "./pipeline.js";
 export type { Receipt, ReceiptFacts, ReceiptType } from "./receipt.js";

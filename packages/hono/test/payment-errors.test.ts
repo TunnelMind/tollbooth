@@ -5,6 +5,12 @@ import {
   type TransferAuthorization,
   verifyProof,
 } from "@tunnelmindai/fareseal-adapter-x402";
+import { parseConfig } from "@tunnelmindai/fareseal-core";
+import {
+  corpusFromMap,
+  generateCorpus,
+  makeMazeHandler,
+} from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import {
@@ -69,6 +75,8 @@ const TABLE: [string, string][] = [
   ["insufficient-value", "amount too low"],
   ["expired", "authorization expired"],
   ["not-yet-valid", "authorization not yet valid"],
+  // R004 L-b: the local repeat while held shows the payer the same text.
+  ["not-yet-valid-held", "authorization not yet valid"],
   ["window-too-long", "authorization validity window too long"],
   ["bad-signature", "invalid signature (wrong signer or wrong asset)"],
   ["signer-mismatch", "invalid signature (wrong signer or wrong asset)"],
@@ -76,8 +84,17 @@ const TABLE: [string, string][] = [
   ["payer-cooldown", "payer cooling down after repeated failures; retry later"],
   ["no-transaction-id", "settle failed: no transaction id"],
   ["settle-failed", "settle failed"],
+  // R002 L7: a non-2xx that claimed settled:true; money may have moved.
+  [
+    "settle-unconfirmed",
+    "settlement status unconfirmed; do not pay again, contact the operator",
+  ],
   ["settle-failed(400)", "settle failed"],
   ["verify-failed(402)", "settle failed"],
+  // T005 FR-002: the facilitator refusing *our* credentials or rate is ours.
+  ["settle-failed(401)", OPERATOR],
+  ["verify-failed(403)", OPERATOR],
+  ["settle-failed(429)", OPERATOR],
   ["settle-throttled", OPERATOR],
   ["settlement-unconfigured", OPERATOR],
   ["settle-unreachable", OPERATOR],
@@ -202,4 +219,55 @@ describe("the no-maze consequence fallback 402 carries the reason too", () => {
     expect(r.status).toBe(402);
     expect((await r.json()).error).toBe("authorization expired");
   });
+});
+
+describe("FR-006 - no maze for a payment we failed", () => {
+  // R002 L3/L7: no-transaction-id and settle-unconfirmed (maybe paid) too.
+  it.each(["settle-retryable", "no-transaction-id", "settle-unconfirmed"])(
+    "a verified agent whose settle answers %s gets four 402s, no 302",
+    async (reason) => {
+      const agent = await makeAgent();
+      const maze = makeMazeHandler({
+        corpus: corpusFromMap(generateCorpus({ seed: "fr006", pages: 10 })),
+        cfg: parseConfig(TOLL),
+        sleep: async () => {},
+      });
+      const a = new Hono();
+      // offer_grace 3 and maze enabled are the defaults; the maze is wired.
+      a.use(
+        fareseal({
+          config: TOLL,
+          x402: { buildOffer, verifyProof: stub(reason) },
+          maze,
+          fetchDirectory: dirWith(agent.jwk),
+          nowS: () => NOW,
+        }),
+      );
+      a.get("*", (c) => c.text("content"));
+      const wba = await signedRequest(agent, { expires: NOW + 300 });
+      const headers = {
+        ...curl,
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      };
+      const statuses: number[] = [];
+      for (let i = 0; i < 4; i++)
+        statuses.push(
+          (
+            await a.request("http://example.com/article", {
+              headers: { ...headers, "x-payment": "anything" },
+            })
+          ).status,
+        );
+      expect(statuses).toEqual([402, 402, 402, 402]);
+      // Control: the same agent without a payment is mazed after the grace,
+      // so the agent is verified and the maze is live.
+      for (let i = 0; i < 3; i++)
+        await a.request("http://example.com/article", { headers });
+      expect(
+        (await a.request("http://example.com/article", { headers })).status,
+      ).toBe(302);
+    },
+  );
 });

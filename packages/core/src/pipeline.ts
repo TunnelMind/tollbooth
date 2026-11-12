@@ -90,8 +90,51 @@ export type Decision =
 export type VerifyPayment = (
   payment: string,
 ) =>
-  | { ok: boolean; payer: string | null }
-  | Promise<{ ok: boolean; payer: string | null }>;
+  | { ok: boolean; payer: string | null; reason?: string }
+  | Promise<{ ok: boolean; payer: string | null; reason?: string }>;
+
+const OPERATOR_FAULTS = new Set([
+  "settle-retryable",
+  "settle-throttled",
+  "settlement-unconfigured",
+  "settlement-not-configured",
+  "settle-unreachable",
+]);
+
+/**
+ * FR-006: a rejected payment the operator failed, not the payer: our
+ * facilitator down, rate-limited, refusing our credentials, or unconfigured.
+ * Such a payment never counts toward, or triggers, the maze; the payer did
+ * what was asked. Hono's paymentError uses the same predicate for its 402 text.
+ */
+export function isOperatorFault(reason?: string): boolean {
+  if (reason === undefined) return false;
+  if (OPERATOR_FAULTS.has(reason)) return true;
+  if (/^(?:verify|settle)-error:/.test(reason)) return true;
+  return /^(?:verify|settle)-failed\((?:5\d\d|401|403|429)\)$/.test(reason);
+}
+
+/**
+ * Step 6 (R002 L3/L7): a rejected payment that records no offer. Operator
+ * faults, plus two answers where the payer may already have paid: a settle
+ * with an unusable transaction id, and a non-2xx claiming settled:true.
+ * Kept out of isOperatorFault because hono's text for those says "retry the
+ * same payment", wrong for a cached no-transaction-id or a maybe-moved one.
+ *
+ * R004 (second review 2 L-a): settle-throttled is NOT one. Our settle bucket
+ * is shared, so any client can empty it; were it no-offer, a verified agent
+ * could drain it and never be mazed. Its 402 text stays the operator-fault
+ * one. (not-yet-valid-held is not one either: it keeps the consequence and
+ * only skips the ledger write, see decide step 6/8.)
+ */
+export function isNoOfferFault(reason?: string): boolean {
+  if (reason === "settle-throttled") return false;
+  return (
+    isOperatorFault(reason) ||
+    reason === "no-transaction-id" ||
+    reason === "settle-unconfirmed"
+  );
+}
 
 export interface PipelineDeps {
   fetchDirectory: FetchDirectory;
@@ -320,6 +363,12 @@ export async function decide(
   }
 
   // Step 6: a valid payment proof passes (AC-2.2).
+  // R004 L-b: the local repeat of a held early payment's answer (no settle
+  // call) records no offer, so an honest agent whose clock runs ahead is not
+  // mazed while it waits; the first answer, which reached the facilitator,
+  // did record one. Unlike the no-offer faults it still meets step 7, so an
+  // agent already mazed stays mazed by repeating one held payment.
+  let ledgerOffer = true;
   if (req.payment !== undefined && deps.verifyPayment) {
     const paid = await deps.verifyPayment(req.payment);
     if (paid.ok) {
@@ -327,6 +376,11 @@ export async function decide(
         deps.ledger?.recordPaid(identity.agentKey, nowMs);
       return { action: "pass", reason: "paid", identity };
     }
+    // FR-006: our fault (or maybe paid), so the offer again - no consequence
+    // check, no ledger.
+    if (isNoOfferFault(paid.reason))
+      return { action: "offer", identity, body: buildOfferBody(cfg) };
+    ledgerOffer = paid.reason !== "not-yet-valid-held";
   }
 
   // Step 7: grace offers ignored within the window -> the consequence
@@ -347,7 +401,7 @@ export async function decide(
   }
 
   // Step 8: the offer. Only verified keys are ledgered (spec sec 8).
-  if (identity.kind === "agent")
+  if (identity.kind === "agent" && ledgerOffer)
     deps.ledger?.recordOffer(identity.agentKey, nowMs, cfg.toll.window);
   return { action: "offer", identity, body: buildOfferBody(cfg) };
 }

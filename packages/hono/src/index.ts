@@ -15,6 +15,7 @@ import {
   type Identity,
   identify,
   isFreePath,
+  isOperatorFault,
   JtiCache,
   keptFor,
   LEDGER,
@@ -600,6 +601,8 @@ const PAYMENT_ERRORS: Record<string, string> = {
   "insufficient-value": "amount too low",
   expired: "authorization expired",
   "not-yet-valid": "authorization not yet valid",
+  // The local repeat while an early payment is held (R004 L-b): same text.
+  "not-yet-valid-held": "authorization not yet valid",
   "window-too-long": "authorization validity window too long",
   "bad-signature": "invalid signature (wrong signer or wrong asset)",
   "signer-mismatch": "invalid signature (wrong signer or wrong asset)",
@@ -607,22 +610,21 @@ const PAYMENT_ERRORS: Record<string, string> = {
   "payer-cooldown": "payer cooling down after repeated failures; retry later",
   "no-transaction-id": "settle failed: no transaction id",
   "settle-failed": "settle failed",
-  "settle-throttled": OPERATOR_FAULT,
-  "settlement-unconfigured": OPERATOR_FAULT,
-  "settlement-not-configured": OPERATOR_FAULT,
-  "settle-unreachable": OPERATOR_FAULT,
-  "settle-retryable": OPERATOR_FAULT,
+  // A non-2xx that claimed settled:true: money may have moved, so never
+  // "retry the same payment" (R002 L7).
+  "settle-unconfirmed":
+    "settlement status unconfirmed; do not pay again, contact the operator",
 };
 
 export function paymentError(reason?: string): string {
   if (reason === undefined) return "payment rejected";
+  // Core's FR-006 predicate: the same set that keeps these out of the maze.
+  if (isOperatorFault(reason)) return OPERATOR_FAULT;
   if (Object.hasOwn(PAYMENT_ERRORS, reason))
     return PAYMENT_ERRORS[reason] as string;
-  const status = /^(?:verify|settle)-failed\((\d{3})\)$/.exec(reason)?.[1];
-  if (status !== undefined)
-    return Number(status) < 500 ? "settle failed" : OPERATOR_FAULT;
-  // Facilitator transport errors and timeouts (FR-008) are the operator's.
-  if (/^(?:verify|settle)-error:/.test(reason)) return OPERATOR_FAULT;
+  // Any other facilitator status is the payer's (FR-002).
+  if (/^(?:verify|settle)-failed\(\d{3}\)$/.test(reason))
+    return "settle failed";
   if (/^[a-z0-9_]{1,64}$/.test(reason))
     return `facilitator rejected: ${reason}`;
   return "payment rejected";

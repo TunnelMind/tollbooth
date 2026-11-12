@@ -1,6 +1,6 @@
 {
   "name": "@tunnelmindai/fareseal-hono",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Hono middleware binding of @tunnelmindai/fareseal-core \u2014 one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",

@@ -78,3 +78,32 @@ export function validPayment(): string {
   const auth = makeAuth();
   return payment(auth, signAuth(auth));
 }
+
+/** A complete X-PAYMENT signed by a fresh random key: a new payer each call
+ * (keys are free, so an attacker can rotate them). `from` is that key's
+ * address; other fields from `overrides`. */
+export function freshKeyPayment(
+  overrides: Partial<TransferAuthorization> = {},
+  network = "base-sepolia",
+): string {
+  const priv = secp256k1.utils.randomSecretKey();
+  const from = ethAddressOf(secp256k1.getPublicKey(priv, false));
+  const auth = makeAuth({ ...overrides, from });
+  const digest = authorizationHash(network, auth);
+  const rs = secp256k1.sign(digest, priv, { prehash: false });
+  for (const rec of [0, 1]) {
+    const candidate = secp256k1.Signature.fromBytes(
+      rs,
+      "compact",
+    ).addRecoveryBit(rec);
+    if (
+      ethAddressOf(candidate.recoverPublicKey(digest).toBytes(false)) === from
+    )
+      return payment(
+        auth,
+        `0x${bytesToHex(rs)}${(27 + rec).toString(16)}`,
+        network,
+      );
+  }
+  throw new Error("no recovery bit matched");
+}
