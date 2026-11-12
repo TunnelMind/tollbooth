@@ -66,5 +66,22 @@ settled or failed on-chain — is rejected from a capped per-isolate cache,
 and a payer with three fresh failures inside ten minutes is cooled down
 locally instead of burning your facilitator quota. Eviction is amnesty.
 
+Each settle answer is classified by this table; the first row that matches
+wins. Operator rows never burn the payer's nonce or cooldown, so the same
+`X-PAYMENT` can be retried once settlement is healthy.
+
+| # | Settle answer | Class | Result reason | Cached for nonce | Counted to cooldown |
+|---|---|---|---|---|---|
+| 0a | no settle token configured | operator | `settlement-unconfigured` | no | no |
+| 0b | the per-isolate settle bucket is empty | operator | `settle-throttled` | no | no |
+| 0c | the settle call throws, or a 2xx body is not JSON | operator | `settle-unreachable` | no | no |
+| 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared |
+| 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault | `no-transaction-id` | yes | no |
+| 3 | `data.retryable === true`; or `data.reason` is `settlement-not-configured` or `network-mismatch`, or starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$` | operator | `settle-retryable` | no | no |
+| 4 | HTTP status 5xx, 401, 403 or 429 (whatever the body, including `settled:true`) | operator | `settle-retryable` | no | no |
+| 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid` | no | no |
+| 6 | HTTP 2xx `settled:false` with any other reason | payer | `data.reason`, else `settle-failed` | yes | yes |
+| 7 | any other HTTP status (a 4xx the client caused, e.g. 400, 404, 413, 422), whatever the body, including `settled:true` | payer | `data.reason` if a string, else `settle-failed` | yes | yes |
+
 Prefer wiring the pieces yourself (or Stripe-only without chain code)?
 Use [`@tunnelmindai/fareseal-hono`](../hono) — it stays injection-only by design.

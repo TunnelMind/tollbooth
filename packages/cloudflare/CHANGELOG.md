@@ -4,6 +4,7 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 
 ## Unreleased
 
+- Settle answers are classified by one table (README, "Facilitator damping"). Moved: a settle-route HTTP 400, 404, 413 or 422 (whatever the body, including `settled: true` or non-JSON) is now a payer fault, cached for the nonce and counted toward the cooldown (402 `settle failed`), where it was `settle-retryable`. A facilitator answer `(verify|settle)-failed(401|403|429)` is now an operator fault, `settle-retryable`, not cached, not counted (402 operator-fault text), where it was cached, counted and `settle failed`. Settle-route HTTP 401, 403, 429 and 5xx stay operator faults.
 - `settled: true` on a non-2xx settle response is no longer accepted as payment: the origin is not served (402); a 5xx stays `settle-retryable`.
 - A settled response now needs a tx id (`transaction`, else `tx`) that is a `0x` + 64-hex hash once trimmed; anything else is `settle failed: no transaction id` (402, `no-transaction-id`), remembered and not counted toward the payer's cooldown.
 - An `X-PAYMENT` header longer than 8192 characters is refused as `malformed X-PAYMENT header` (402) before decoding or settling.
@@ -11,9 +12,9 @@ Tollbooth was renamed Fareseal on 2026-11-10.
   `parseConfig` throws a `ConfigError` naming `toll.x402.network` and the
   supported networks (`base-sepolia`, `base`), and the Pages middleware
   rethrows a `ConfigError` instead of failing open to the origin.
-- Operator-side settle failures (settle HTTP non-2xx, `retryable: true`,
+- Operator-side settle failures (settle HTTP 401/403/429/5xx, `retryable: true`,
   `settlement-not-configured`, `network-mismatch`, `verify-error:` /
-  `settle-error:`, `(verify|settle)-failed(5xx)`) now return
+  `settle-error:`, `(verify|settle)-failed(401|403|429|5xx)`) now return
   `settle-retryable`: the payment is not cached and does not count toward
   the payer's cooldown, so the same `X-PAYMENT` can be retried.
 - `[toll.x402] skew_tolerance` (default `"60s"`) absorbs client clock drift:

@@ -619,8 +619,12 @@ export function paymentError(reason?: string): string {
   if (Object.hasOwn(PAYMENT_ERRORS, reason))
     return PAYMENT_ERRORS[reason] as string;
   const status = /^(?:verify|settle)-failed\((\d{3})\)$/.exec(reason)?.[1];
+  // The facilitator refusing our credentials (401/403) or rate (429), or
+  // failing (5xx), is the operator's; any other status is the payer's (FR-002).
   if (status !== undefined)
-    return Number(status) < 500 ? "settle failed" : OPERATOR_FAULT;
+    return Number(status) >= 500 || ["401", "403", "429"].includes(status)
+      ? OPERATOR_FAULT
+      : "settle failed";
   // Facilitator transport errors and timeouts (FR-008) are the operator's.
   if (/^(?:verify|settle)-error:/.test(reason)) return OPERATOR_FAULT;
   if (/^[a-z0-9_]{1,64}$/.test(reason))

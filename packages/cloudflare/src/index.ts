@@ -310,19 +310,30 @@ export function makeSettlingVerify(
         }
         const reason =
           typeof data.reason === "string" ? data.reason : "settle-failed";
-        // An operator fault (non-2xx settle, our config, our facilitator's
-        // 5xx) must not burn the payer's nonce or cooldown: not cached, not
+        // FR-001 (spec 003), rows 3 → 4 → 6/7, first match wins. An operator
+        // fault must not burn the payer's nonce or cooldown: not cached, not
         // counted, so the same X-PAYMENT can be retried once we are healthy.
+        // Row 3: the settle route says it is ours (its config, or the
+        // facilitator refusing our credentials/rate or failing with a 5xx).
+        // An explicit retryable:true beats the HTTP status.
         if (
-          !resp.ok ||
           data.retryable === true ||
           reason === "settlement-not-configured" ||
           reason === "network-mismatch" ||
           reason.startsWith("verify-error:") ||
           reason.startsWith("settle-error:") ||
-          /^(verify|settle)-failed\(5\d\d\)$/.test(reason)
+          /^(verify|settle)-failed\((5\d\d|401|403|429)\)$/.test(reason)
         )
           return { ok: false, payer: null, reason: "settle-retryable" };
+        // Row 4: the settle route itself is down, or refuses our token or
+        // rate, whatever the body says.
+        if (resp.status >= 500 || [401, 403, 429].includes(resp.status))
+          return { ok: false, payer: null, reason: "settle-retryable" };
+        // Row 6 (2xx settled:false) and row 7 (any other non-2xx: a 4xx the
+        // client caused, e.g. an oversize or malformed payment) are the
+        // payer's: cached for the nonce and counted toward the cooldown.
+        // ponytail: 404 lands here too though it is usually a wrong
+        // settle.url (plan Risks); add it to row 4 if GATE F says so.
         remember(seenPayments, key, reason);
         remember(payerFails, payer, {
           n: (fails && now < fails.untilMs ? fails.n : 0) + 1,

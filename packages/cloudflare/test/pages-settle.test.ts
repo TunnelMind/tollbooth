@@ -676,3 +676,218 @@ describe("createPagesMiddleware — mainnet (B008)", () => {
     });
   });
 });
+
+// T005 F1: one test per FR-001 row (spec 003). Each row says three things:
+// the reason, whether the nonce is cached (a second identical try reaches
+// settle or not) and whether the payer is counted toward the cooldown.
+describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
+  /** A settle stub whose answer can change between calls; `throws` = transport error. */
+  function table(status: number, body: unknown, token = "settle-secret") {
+    const s = { calls: 0, status, body, throws: false };
+    const fetch = async (req: Request) => {
+      if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
+      s.calls += 1;
+      if (s.throws) throw new TypeError("fetch failed");
+      const b = s.body;
+      return new Response(typeof b === "string" ? b : JSON.stringify(b), {
+        status: s.status,
+      });
+    };
+    const verify = makeSettlingVerify(
+      (url, init) => fetch(new Request(url, init)),
+      SETTLE_URL,
+      token,
+    );
+    return { s, fetch, verify, cfg: parseConfig(toml()) };
+  }
+  type T = ReturnType<typeof table>;
+
+  /** Operator row: not cached, not counted (no cooldown after many fresh tries). */
+  async function expectOperator(t: T, reason: string) {
+    const xp = freshPayment();
+    const c0 = t.s.calls;
+    expect(await t.verify(xp, t.cfg)).toMatchObject({ ok: false, reason });
+    const reached = t.s.calls - c0; // 0 for rows 0a/0b, else 1
+    expect((await t.verify(xp, t.cfg)).reason).toBe(reason);
+    expect(t.s.calls - c0).toBe(2 * reached); // not cached
+    for (let i = 0; i < 4; i++)
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(reason);
+    expect(t.s.calls - c0).toBe(6 * reached); // never payer-cooldown
+  }
+
+  /** Payer row: cached for the nonce, and the 4th fresh payment cools down unsettled. */
+  async function expectPayer(t: T, reason: string, error = "settle failed") {
+    const xp = freshPayment();
+    expect(await t.verify(xp, t.cfg)).toMatchObject({ ok: false, reason });
+    expect((await t.verify(xp, t.cfg)).reason).toBe(reason);
+    expect(t.s.calls).toBe(1); // cached
+    for (let i = 0; i < 2; i++) await t.verify(freshPayment(), t.cfg);
+    expect(t.s.calls).toBe(3);
+    expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+      "payer-cooldown",
+    );
+    expect(t.s.calls).toBe(3); // counted: no settle call on the 4th
+    // Through the middleware (fresh isolate state) the payer sees its fault.
+    const m = table(t.s.status, t.s.body);
+    const r = await settlingMw()(
+      ctx("/r", agent({ "x-payment": freshPayment() }), envOf(m)),
+    );
+    expect(r.status).toBe(402);
+    expect((await r.json()).error).toBe(error);
+  }
+
+  const settledFalse = (reason: string) => ({
+    ok: true,
+    data: { settled: false, reason },
+  });
+
+  it("row 0a: no settle token → settlement-unconfigured, not cached, not counted", async () => {
+    const t = table(200, { data: { settled: true, tx: TX } }, "");
+    await expectOperator(t, "settlement-unconfigured");
+    expect(t.s.calls).toBe(0);
+  });
+
+  it("row 0b: empty settle bucket → settle-throttled, not cached, not counted", async () => {
+    const t = table(200, settledFalse("insufficient_funds"));
+    const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+    try {
+      // Drain the bucket with operator faults so the payer is never counted.
+      t.s.status = 503;
+      for (let i = 0; i < SETTLE_BUCKET_CAP; i++)
+        await t.verify(freshPayment(), t.cfg);
+      t.s.status = 200;
+      await expectOperator(t, "settle-throttled");
+      expect(t.s.calls).toBe(SETTLE_BUCKET_CAP);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("row 0c: the settle call throws → settle-unreachable, not cached, not counted", async () => {
+    const t = table(200, {});
+    t.s.throws = true;
+    await expectOperator(t, "settle-unreachable");
+  });
+
+  it("row 0c: a 2xx body that is not JSON → settle-unreachable, not cached, not counted", async () => {
+    await expectOperator(table(200, "<html>ok</html>"), "settle-unreachable");
+  });
+
+  it("row 1: 2xx settled:true + valid tx → served, cached as already-settled, payer cleared", async () => {
+    const t = table(200, settledFalse("insufficient_funds"));
+    // Two counted failures, then a success clears them.
+    for (let i = 0; i < 2; i++) await t.verify(freshPayment(), t.cfg);
+    t.s.body = { ok: true, data: { settled: true, tx: TX } };
+    const xp = freshPayment();
+    expect(await t.verify(xp, t.cfg)).toMatchObject({
+      ok: true,
+      transaction: TX,
+    });
+    expect((await t.verify(xp, t.cfg)).reason).toBe("already-settled");
+    expect(t.s.calls).toBe(3); // cached
+    // Two more failures: without the clear this would be 4 ≥ 3 → cooldown.
+    t.s.body = settledFalse("insufficient_funds");
+    for (let i = 0; i < 2; i++) await t.verify(freshPayment(), t.cfg);
+    expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+      "insufficient_funds",
+    );
+    expect(t.s.calls).toBe(6);
+  });
+
+  it("row 2: 2xx settled:true + no valid tx → no-transaction-id, cached, not counted", async () => {
+    const t = table(200, { ok: true, data: { settled: true, tx: "0x12" } });
+    const xp = freshPayment();
+    expect((await t.verify(xp, t.cfg)).reason).toBe("no-transaction-id");
+    expect((await t.verify(xp, t.cfg)).reason).toBe("no-transaction-id");
+    expect(t.s.calls).toBe(1); // cached
+    for (let i = 0; i < 4; i++)
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "no-transaction-id",
+      );
+    expect(t.s.calls).toBe(5); // never payer-cooldown
+  });
+
+  // Row 3, the reason form: HTTP 200 settled:false with a facilitator status.
+  for (const n of [401, 403, 429, 500, 503])
+    for (const kind of ["verify", "settle"])
+      it(`row 3: HTTP 200 reason ${kind}-failed(${n}) → settle-retryable, not cached, not counted`, async () => {
+        await expectOperator(
+          table(200, settledFalse(`${kind}-failed(${n})`)),
+          "settle-retryable",
+        );
+      });
+
+  it("row 3: retryable:true beats a 400 status → settle-retryable", async () => {
+    await expectOperator(
+      table(400, { ok: false, data: { retryable: true } }),
+      "settle-retryable",
+    );
+  });
+
+  for (const reason of [
+    "network-mismatch",
+    "settlement-not-configured",
+    "verify-error: timeout",
+  ])
+    it(`row 3: reason ${reason} → settle-retryable`, async () => {
+      await expectOperator(
+        table(200, settledFalse(reason)),
+        "settle-retryable",
+      );
+    });
+
+  // Row 4, the status form: whatever the body, including settled:true.
+  const row4Bodies: [string, unknown][] = [
+    ["{ok:false,error}", { ok: false, error: "nope" }],
+    ["non-JSON", "<html>Error</html>"],
+    ["settled:true", { ok: true, data: { settled: true, tx: TX } }],
+  ];
+  for (const n of [401, 403, 429, 500, 503])
+    for (const [name, body] of row4Bodies)
+      it(`row 4: HTTP ${n} ${name} → settle-retryable, not cached, not counted`, async () => {
+        await expectOperator(table(n, body), "settle-retryable");
+      });
+
+  it("row 6: HTTP 200 settled:false with a payer reason → that reason, cached, counted", async () => {
+    await expectPayer(
+      table(200, settledFalse("insufficient_funds")),
+      "insufficient_funds",
+      "facilitator rejected: insufficient_funds",
+    );
+  });
+
+  it("row 6: HTTP 200 settled:false with no reason → settle-failed, cached, counted", async () => {
+    await expectPayer(
+      table(200, { ok: true, data: { settled: false } }),
+      "settle-failed",
+    );
+  });
+
+  // Row 7: a 4xx the client caused is the payer's, whatever the body.
+  for (const n of [400, 404, 413, 422]) {
+    it(`row 7: HTTP ${n} {ok:false,error} → settle-failed, cached, counted`, async () => {
+      await expectPayer(
+        table(n, { ok: false, error: "payment too large" }),
+        "settle-failed",
+      );
+    });
+    it(`row 7: HTTP ${n} non-JSON body → settle-failed, cached, counted`, async () => {
+      await expectPayer(table(n, "<html>Bad Request</html>"), "settle-failed");
+    });
+  }
+
+  it("row 7: HTTP 400 settled:true → settle-failed, not served, cached, counted", async () => {
+    await expectPayer(
+      table(400, { ok: true, data: { settled: true, tx: TX } }),
+      "settle-failed",
+    );
+  });
+
+  it("row 7: HTTP 422 with a string data.reason → that reason, cached, counted", async () => {
+    await expectPayer(
+      table(422, { ok: false, data: { reason: "bad_payload" } }),
+      "bad_payload",
+      "facilitator rejected: bad_payload",
+    );
+  });
+});

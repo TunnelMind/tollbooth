@@ -78,6 +78,10 @@ const TABLE: [string, string][] = [
   ["settle-failed", "settle failed"],
   ["settle-failed(400)", "settle failed"],
   ["verify-failed(402)", "settle failed"],
+  // T005 FR-002: the facilitator refusing *our* credentials or rate is ours.
+  ["settle-failed(401)", OPERATOR],
+  ["verify-failed(403)", OPERATOR],
+  ["settle-failed(429)", OPERATOR],
   ["settle-throttled", OPERATOR],
   ["settlement-unconfigured", OPERATOR],
   ["settle-unreachable", OPERATOR],
