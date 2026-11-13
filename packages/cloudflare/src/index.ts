@@ -371,8 +371,11 @@ export function makeSettlingVerify(
           // ponytail: a validAfter already past (facilitator clock behind
           // ours) is not held, so each retry settles; the cooldown bounds it.
           remember(notYetValid, key, BigInt(validAfter));
+          // Re-read at write time, not the pre-await `fails`: concurrent
+          // settles from one payer finish out of order and each must count.
+          const cur = payerFails.get(payer);
           remember(payerFails, payer, {
-            n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
+            n: (cur && now < cur.untilMs ? cur.n : 0) + 1,
             untilMs: now + PAYER_COOLDOWN_MS,
           });
           return { ok: false, payer: null, reason: "not-yet-valid" };
@@ -383,8 +386,10 @@ export function makeSettlingVerify(
         // Known cost (R002 L1): the data-api route answers OUR bad price_usd
         // with a 400 too, so that misconfiguration is charged to the payer.
         remember(seenPayments, key, reason);
+        // Re-read at write time, as in row 5.
+        const cur = payerFails.get(payer);
         remember(payerFails, payer, {
-          n: (fails && now < fails.untilMs ? fails.n : 0) + 1,
+          n: (cur && now < cur.untilMs ? cur.n : 0) + 1,
           untilMs: now + PAYER_COOLDOWN_MS,
         });
         return { ok: false, payer: null, reason };

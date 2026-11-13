@@ -1450,6 +1450,33 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
+  // All three pass the cooldown check before any settle answers, so each
+  // must add to the live count when it lands, not to what it saw going in
+  // (that wrote n=1 three times and left the payer free to keep settling).
+  it("N1: three concurrent failures from one payer cool it down", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const results = await Promise.all(
+        [freshPayment(), freshPayment(), freshPayment()].map((xp) =>
+          t.verify(xp, t.cfg),
+        ),
+      );
+      expect(results.map((r) => r.reason)).toEqual([
+        "insufficient_funds",
+        "insufficient_funds",
+        "insufficient_funds",
+      ]);
+      expect(t.s.calls).toBe(3);
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "payer-cooldown",
+      );
+      expect(t.s.calls).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
