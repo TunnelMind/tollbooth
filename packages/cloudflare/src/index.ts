@@ -95,6 +95,9 @@ const SETTLE_TIMEOUT_MS = 10_000;
 // runs. 30 s = the settle timeout plus a 20 s margin (judgment), so a
 // reservation does not expire while its own settle can still be running.
 const RESERVATION_TTL_MS = 30_000;
+// Operator-fault answers one hold's due pass survives (row A7, R003 L1).
+// ponytail: a fixed cap, the owner's choice; make it config if 3 proves wrong.
+const DUE_FAULT_LIMIT = 3;
 // Paths are attacker-chosen, so the per-isolate exists cache must be bounded.
 const EXISTS_CAP = 1024;
 
@@ -234,7 +237,8 @@ export function makeSettlingVerify(
   const payerFails = new Map<string, { n: number; untilMs: number }>();
   // Row 5 rejects, key -> validAfter (epoch s). Answered locally until then,
   // so one early authorization costs one settle call, not one per request.
-  const notYetValid = new Map<string, bigint>();
+  // `faults`: operator-fault answers its due attempts have had (row A7).
+  const notYetValid = new Map<string, { validAfter: bigint; faults: number }>();
   // Concurrent identical payments share one settle; only the starter passes.
   // The x402 resource is not in the signed EIP-3009 authorization, so sharing
   // ok:true would let one payment sent to many paths unlock all of them.
@@ -285,7 +289,8 @@ export function makeSettlingVerify(
     // Before inflight/cooldown/bucket: no settle call, no token, no count.
     // Same clock as verifyProof (opts.nowS, else wall time).
     const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
-    const early = notYetValid.get(key);
+    const hold = notYetValid.get(key);
+    const early = hold?.validAfter;
     // R-O4 (spec 006): once validAfter has passed, the held payment is "due"
     // and this one attempt goes to settle even if the payer is cooled down.
     // Otherwise an honest payer with a fast clock, cooled down by its own
@@ -453,7 +458,10 @@ export function makeSettlingVerify(
           // behind ours): an entry written then would make the next retry
           // "due", a pass through the cooldown after every ordinary attempt.
           if (BigInt(validAfter) > nowS)
-            remember(notYetValid, key, BigInt(validAfter));
+            remember(notYetValid, key, {
+              validAfter: BigInt(validAfter),
+              faults: 0,
+            });
           // Re-read at write time, not the pre-await `fails`: concurrent
           // settles from one payer finish out of order and each must count.
           // The clock too (L2): with the pre-await `now`, a slow settle
@@ -492,8 +500,18 @@ export function makeSettlingVerify(
       // the payer its due pass. Put the hold back, same validAfter, so the
       // retry is the due attempt again. settle-unconfirmed and
       // no-transaction-id are not operator faults: not put back.
-      if (due && !result.ok && isOperatorFault(result.reason))
-        remember(notYetValid, key, early);
+      // Bounded (R003 L1): the DUE_FAULT_LIMIT-th operator fault for one hold
+      // drops it, so the next retry is an ordinary attempt that meets the
+      // cooldown. Otherwise a cooled-down payer with one due hold gets a
+      // settle call on every request for as long as the facilitator is down.
+      if (
+        hold !== undefined &&
+        due &&
+        !result.ok &&
+        isOperatorFault(result.reason) &&
+        hold.faults + 1 < DUE_FAULT_LIMIT
+      )
+        remember(notYetValid, key, { ...hold, faults: hold.faults + 1 });
       return result;
     } finally {
       inflight.delete(key);

@@ -1,15 +1,16 @@
 # Closeout: fareseal-contract-o1o4-1 (FR-010)
 
-Branch `crew/fareseal-contract-o1o4-1` at HEAD `2d680f1`, on main `6825c30`. Written by T010 (2026-11-13).
+Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9).
 
-Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. All line numbers are at HEAD `2d680f1`.
+Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change.
 
 Every run below was made on 2026-11-13. Runs on changed source were made in throwaway copies (`~/agent-crew/bin/crew-scratch`), never in the worktree.
 
 **Two things for the reviewer, before the detail:**
 
 1. **Finding (section 3).** The golden file run on main's source fails on 2 entries, not 1: `held` (row A2, expected) and `fourth concurrent payment (A1)`. The second is the 27th entry, added by T004 for row A1; it is not one of the 26 shapes in FR-001. Of the 26, only `held` fails, and only by the `retry-after` header. SC-002 as written ("fails only on the held-repeat entry") is not met by the file as a whole. Nothing was loosened.
-2. **spec.md still states the old per-nonce bound.** The T005 ruling says to correct spec.md; R-O4 "Bound" (spec.md line 51) and US4 still read "at most 2 … per nonce" with no mention of the 3-call case. spec.md is the supervisor's file, so it is not edited here. The README and this closeout state both bounds (section 7).
+2. **spec.md's per-nonce bound: corrected by R003.** R-O4 "Bound" (spec.md line 51) and US4 (line 90) now state both bounds as ruled at T005, on the supervisor's R003 brief (section 9).
+3. **For the owner: row A7 is now bounded (R003, section 9).** A hold's due pass survives at most 3 operator-fault answers. The cap of 3 is a choice; the owner may prefer a different cap or none.
 
 ## 1. Rows A1–A8 and T1: code and pinning test
 
@@ -23,7 +24,7 @@ Test names are quoted as they stand in the file (`$row` and `$path` are `it.each
 | A4 | CF:268 (`due`), CF:297 (`!due &&` skips the refusal), CF:311 (hold deleted when the token is taken) | PS:2277 `(a) L3, row A4: 3 early payments at once from a funded payer 55 s fast, each repeated after validAfter → all 3 served, 6 settle calls`; PS:2382 `(e) rows A4/US5: 20 concurrent copies of a due payment → 1 settle call, 1 x 200` |
 | A5 | CF:419-420 (row 5 holds only while `validAfter` is still ahead of our clock, so a due attempt is not held again) | PS:2296 `(b) row A5: a due attempt answered not-yet-valid again is not held again; the cooled-down payer's next retry is payer-cooldown with no call (2 calls for the nonce)`; PS:2323 `row A5, ruling: a lone early nonce against a lagging facilitator costs exactly 3 settle calls, then payer-cooldown`; PS:1335 `a not-yet-valid answer to the due attempt is not held again (row A5)` |
 | A6 | CF:305-306 (`settle-throttled` returns before CF:311, so the hold stays) | PS:2344 `(c) row A6: a due attempt that meets an empty bucket is settle-throttled with no call; after a refill the retry is still the due attempt and is served` |
-| A7 | CF:459-460 (hold put back when a due attempt ends in an operator fault) | PS:2364 `(d) row A7: a due attempt answered settle 503 is put back; the retry is the due attempt again and is served` |
+| A7 | CF:459-460 (hold put back when a due attempt ends in an operator fault) | PS:2364 `(d) row A7: a due attempt answered settle 503 is put back; the retry is the due attempt again and is served`; bounded by R003, see section 9 |
 | A8 | CF:426 and CF:429 (row 5), CF:441 and CF:444 (rows 6/7): `const t = Date.now()` at write, `untilMs: t + PAYER_COOLDOWN_MS` | PS:1719 `L2: a held $row failure landing at 5 s cools the payer until 605 s, not 600 s` (runs for row 5 and row 6) |
 | T1 | HONO:79 (`retryAfterS?: number`), LEDGER:12 (`heldInWindow`), LEDGER:70 (`recordHeld`), CF:209-218 and CF:470-478 (`_sizes()`, `@internal`) | `packages/hono/test/payment-errors.test.ts`:290 (as A2); `packages/core/test/ledger.test.ts`:45 `recordHeld counts 1..n and records no offer` and :88 `recordPaid resets the held count`; PS:2162 `_sizes() counts payers with a settle in flight, not settles`; PS:2134 `released after $path: _sizes().payerInflight is 0` |
 
@@ -225,7 +226,7 @@ This is local verify only. GitHub CI on the draft PR is GATE F's check (SC-001).
 - **T005 ruling** (tasks.md T005, commit `e5d8b20`, option 1). Two per-nonce bounds, both as measured:
   - **3 settle calls** for a lone early nonce against a lagging facilitator: the first attempt, the due attempt, and one ordinary retry (the payer's third failure), then `payer-cooldown`. Pinned by PS:2323, which asserts exactly 3. This is no more than main for that case.
   - **2 settle calls** per nonce for a payer who is cooled down or reserved out: the first attempt and the due attempt. Pinned by PS:2296 (`f.per.get(xps[0])` is 2).
-  - Row A5 is unchanged and the ordinary retry is not refused, as ruled. spec.md's R-O4 "Bound" line still gives only the 2 (see the top of this file).
+  - Row A5 is unchanged and the ordinary retry is not refused, as ruled. spec.md's R-O4 "Bound" line and US4 state both since R003.
 
 ## 8. Not done, and whose
 
@@ -238,4 +239,49 @@ All of these are the owner's (**O001**, Josh). No agent does them.
 - The merge word on the draft PR.
 - The decision on `retry-after: 1` for `settle-throttled` (O2 variant b). Not built; spec OQ2 calls it a one-line follow-up.
 
-Still open for the crew: **GATE F** (reviewer agent, verify, GitHub CI green on the draft PR), and the two items at the top of this file.
+Still open for the crew: **GATE F** (reviewer agent, verify, GitHub CI green on the draft PR), and the items at the top of this file.
+
+## 9. R003: second review of 2abd077, lows L1 to L5
+
+Written on `ed98127` (`git rev-parse --short HEAD`), with the R003 change in the worktree. Line numbers here are at that tree.
+
+**L1, the bound on row A7.** A hold's due pass survives at most 3 operator-fault answers (`DUE_FAULT_LIMIT = 3`, CF:98-100). The hold entry carries a `faults` count (CF:240-241). An operator-fault answer to a due attempt puts the hold back with the count raised; the third one does not put it back (CF:499-514). The hold is then gone, so the next request is an ordinary attempt and meets the cooldown: `payer-cooldown`, no settle call. The payment is not cached, so it can be sent again once the cooldown ends. `settle-unconfirmed` and `no-transaction-id` are not put back, as before. Rows A5 and A6 are unchanged. No new reason string, 402 text or status code; the golden snapshot file is unchanged.
+
+Measured (PS:2627): a cooled-down payer with one due hold, facilitator answering 503 on every call, 10 requests: exactly 3 settle calls (requests 1 to 3, operator-fault 402), requests 4 to 10 `payer-cooldown` with no call; with the facilitator healthy again the next request is still `payer-cooldown`. Before the bound, the review measured 100 calls in 100 requests (main: 0).
+
+**For the owner.** The cap of 3 is a choice. The owner may prefer a different cap, or none (row A7 as first written, bounded only by the settle bucket). It is one constant. The README ("Known costs") says the same. It belongs in the PR text; that is R004's update.
+
+**L4 and L5, the two mutant gaps, and L1's test.** Run in one throwaway copy (`~/agent-crew/bin/crew-scratch`), each change applied alone to CF, then `CI=true pnpm exec vitest run packages/cloudflare/test/pages-settle.test.ts` (178 tests), then CF restored. Baseline: **178 passed**.
+
+| Finding | Source under test | Red / green | Test that goes red | Assertion |
+|---|---|---|---|---|
+| L1 | CF as at `ed98127` (no counter) | 1 / 177 | PS:2627 `row A7 bound: a cooled-down payer with one due hold against a 503 facilitator makes exactly 3 settle calls; the 4th and later requests are payer-cooldown with no call` | `expected 'settlement unavailable (operator faul…' to be 'payer cooling down after repeated fai…'` |
+| L4 | M41: CF:350 `payerInflight.set(payer, [` → `if (!due) payerInflight.set(payer, [` | 1 / 177 | PS:2664 `R-O4: due attempts in flight are reserved: with 2 in flight and no failures, of 3 fresh payments 1 starts a settle call and 2 are payer-cooldown` | `expected 9 to be 7` (all 3 fresh payments started a settle call) |
+| L5 | M26: CF:511 `isOperatorFault(result.reason) &&` → `(isOperatorFault(result.reason) \|\| result.reason === "settle-unconfirmed") &&` | 1 / 177 | PS:2647 `row A7: a due attempt answered 502 with settled:true (settle-unconfirmed) is not put back; the retry is payer-cooldown with no call` | `expected 'settlement status unconfirmed; do not…' to be 'payer cooling down after repeated fai…'` |
+
+The red runs, as printed:
+
+```
+=== HEAD source (no counter), new tests
+      Tests  1 failed | 177 passed (178)
+     × row A7 bound: a cooled-down payer with one due hold against a 503 facilitator makes exactly 3 settle calls; the 4th and later requests are payer-cooldown with no call 34ms
+AssertionError: expected 'settlement unavailable (operator faul…' to be 'payer cooling down after repeated fai…' // Object.is equality
+=== M41 due attempt does not reserve
+      Tests  1 failed | 177 passed (178)
+     × R-O4: due attempts in flight are reserved: with 2 in flight and no failures, of 3 fresh payments 1 starts a settle call and 2 are payer-cooldown 1104ms
+AssertionError: expected 9 to be 7 // Object.is equality
+=== M26 put-back also for settle-unconfirmed
+      Tests  1 failed | 177 passed (178)
+     × row A7: a due attempt answered 502 with settled:true (settle-unconfirmed) is not put back; the retry is payer-cooldown with no call 35ms
+AssertionError: expected 'settlement status unconfirmed; do not…' to be 'payer cooling down after repeated fai…' // Object.is equality
+=== baseline
+      Tests  178 passed (178)
+```
+
+**L2.** spec.md line 51 (R-O4 "Bound") and line 90 (US4) now state both bounds as ruled at T005: 3 settle calls for a lone early nonce against a lagging facilitator (first attempt, due attempt, one ordinary retry under row A5), 2 for a payer who is cooled down or reserved out. Same wording as the README and the CHANGELOG. Edited on the supervisor's R003 brief. spec.md line 50 (R-O4 "How it is counted") and table row A7 (line 70) now carry the cap too, in the README's words: the put-back happens at most twice, and the third operator-fault answer for one hold drops the hold. Rows A5 and A6 are unchanged.
+
+**L3.** Line 3 of this file names `ed98127`, the head this update was written on. The R003 commit itself comes after it; its sha cannot be written inside it.
+
+**Also changed, outside the brief's file list, on purpose.** `packages/cloudflare/CHANGELOG.md`, entry A7: the bound added, since the entry said the hold is put back with no limit. The supervisor has confirmed it stays.
+
+**Full verify** (the section 6 command) on `ed98127` plus the R003 change, in the worktree, 2026-11-13: **58 test files, 790 tests passed**, bun-hono example OK, bench NFR-1 PASS, exit code **0**. `pnpm lint`: the same 1 warning and 4 infos as section 6, no error. `git status` shows no change to `packages/cloudflare/test/__snapshots__/contract-golden.test.ts.snap`. Section 6's tail is T010's run at `2d680f1`.

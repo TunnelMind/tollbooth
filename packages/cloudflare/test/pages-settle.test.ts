@@ -2457,14 +2457,15 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
   /** Facilitator stub on the mocked clock, counting calls in total and per
    * X-PAYMENT: valid_after while a payment is early, then settled for a
    * `funded` X-PAYMENT, else insufficient_funds. `lagS` sets its clock behind
-   * ours, `status` (non-200) takes the settle route down, `gate` makes every
-   * answer wait. */
+   * ours, `status` (non-200) takes the settle route down with `body`, `gate`
+   * makes every answer wait. */
   function facilitator(funded: string[] = []) {
     const f = {
       calls: 0,
       per: new Map<string, number>(),
       lagS: 0,
       status: 200,
+      body: "{}",
       gate: Promise.resolve(),
       fetch: async (req: Request): Promise<Response> => {
         if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
@@ -2472,7 +2473,7 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
         const xp = ((await req.json()) as { payment: string }).payment;
         f.per.set(xp, (f.per.get(xp) ?? 0) + 1);
         await f.gate;
-        if (f.status !== 200) return new Response("{}", { status: f.status });
+        if (f.status !== 200) return new Response(f.body, { status: f.status });
         const { validAfter } = JSON.parse(atob(xp)).payload.authorization;
         const data =
           Number(validAfter) > Date.now() / 1000 - f.lagS
@@ -2619,6 +2620,74 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
     expect(served.status).toBe(200);
     expect(served.headers.get("x-payment-response")).not.toBeNull();
     expect(f.calls).toBe(6);
+  });
+
+  // R003 L1 (second review of 2abd077): row A7 is bounded. Without the bound
+  // every one of these requests is a settle call (main: none).
+  it("row A7 bound: a cooled-down payer with one due hold against a 503 facilitator makes exactly 3 settle calls; the 4th and later requests are payer-cooldown with no call", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55);
+    f.status = 503;
+    for (let i = 1; i <= 10; i++) {
+      const r = await send(xps[0]);
+      expect(r.status).toBe(402);
+      expect(await errorOf(r)).toBe(i <= 3 ? OPERATOR_FAULT : COOLING);
+      expect(f.calls).toBe(3 + Math.min(i, 3));
+    }
+    // The hold is gone, not parked: a healthy facilitator changes nothing
+    // while the cooldown lasts.
+    f.status = 200;
+    expect(await errorOf(await send(xps[0]))).toBe(COOLING);
+    expect(f.calls).toBe(6);
+    expect(f.per.get(xps[0])).toBe(4); // first attempt + 3 due attempts
+  });
+
+  // R003 L5 (mutant M26): settle-unconfirmed is not an operator fault for
+  // row A7; the hold is not put back.
+  it("row A7: a due attempt answered 502 with settled:true (settle-unconfirmed) is not put back; the retry is payer-cooldown with no call", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55);
+    f.status = 502;
+    f.body = JSON.stringify({ ok: false, data: { settled: true } });
+    const due = await send(xps[0]);
+    expect(due.status).toBe(402);
+    expect(await errorOf(due)).toBe(UNCONFIRMED);
+    expect(f.calls).toBe(4);
+    const retry = await send(xps[0]);
+    expect(retry.status).toBe(402);
+    expect(await errorOf(retry)).toBe(COOLING);
+    expect(f.calls).toBe(4);
+  });
+
+  // R003 L4 (mutant M41): a due attempt skips the R-O1 check but still
+  // reserves, so due settles in flight count against the payer's fresh ones.
+  it("R-O4: due attempts in flight are reserved: with 2 in flight and no failures, of 3 fresh payments 1 starts a settle call and 2 are payer-cooldown", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55);
+    // The first due attempt is served, which clears the payer's failures.
+    expect((await send(xps[0])).status).toBe(200);
+    expect(f.calls).toBe(4);
+    let open = () => {};
+    f.gate = new Promise<void>((r) => {
+      open = r;
+    });
+    const dues = [send(xps[1]), send(xps[2])];
+    await vi.waitFor(() => expect(f.calls).toBe(6));
+    const fresh = Array.from({ length: 3 }, () => send(freshPayment()));
+    await vi.waitFor(() => expect(f.calls).toBe(7));
+    // Let the other two reach the verifier while the settle calls wait.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.calls).toBe(7);
+    open();
+    const errors = await Promise.all(
+      (await Promise.all(fresh)).map(async (r) => {
+        expect(r.status).toBe(402);
+        return errorOf(r);
+      }),
+    );
+    expect(errors.filter((e) => e === COOLING).length).toBe(2);
+    for (const r of await Promise.all(dues)) expect(r.status).toBe(200);
+    expect(f.calls).toBe(7);
   });
 
   it("(e) rows A4/US5: 20 concurrent copies of a due payment → 1 settle call, 1 x 200", async () => {

@@ -124,7 +124,15 @@ due attempt). A lone early nonce against a lagging facilitator (its clock
 behind ours, so the due attempt is answered row 5 again) may cost 3 settle
 calls: the first attempt, the due attempt, and one ordinary retry, which is
 the payer's third failure; after that it is `payer-cooldown`. That is no
-more than before for that case. A row 5 answer whose `validAfter` is already
+more than before for that case. Operator faults on a due attempt: the hold
+is put back so the retry is the due attempt again, but only twice. The third
+operator-fault answer for one hold drops it, so a cooled-down payer with one
+due hold makes at most 3 settle calls through a facilitator outage; its 4th
+and later requests are `payer-cooldown` with no settle call, and the payment
+(not cached) can be sent again once the cooldown ends. Without the bound that
+payer got a settle call on every request while the outage lasted. The cap of
+3 is a choice for the owner: a different cap, or none, is a one-line change
+(`DUE_FAULT_LIMIT`). A row 5 answer whose `validAfter` is already
 past by our clock is never held, on the first attempt too, so each retry of
 it is an ordinary attempt that counts toward the cooldown.
 Held repeats are bounded by the cap of 60 per window: a verified agent
@@ -146,8 +154,8 @@ land.
 A cooldown now ends 600 s after the failure was written (when its settle
 answer came back), not 600 s after that settle call started, so a slow
 settle answer no longer shortens it.
-The current numbers above (3, 2 and 6 settle calls, request 64, the cap of
-60) are asserted in `test/settle-budget.test.ts` and
+The current numbers above (3, 2 and 6 settle calls, the 3 operator faults
+per hold, request 64, the cap of 60) are asserted in `test/settle-budget.test.ts` and
 `test/pages-settle.test.ts` (rows A4–A7 and "lagging facilitator"). The
 121-request figure is a historical measurement from before the cap, and
 "7 or more payments at once" is the design estimate from spec 006 (OQ3);
