@@ -88,7 +88,14 @@ const SETTLE_REFILL_PER_S = 5;
 // reservation and its `inflight` entry for the life of the isolate. A timeout
 // is answered as settle-unconfirmed (row 3a, R006), not settle-unreachable:
 // the facilitator may have broadcast the transfer before we gave up. Not
-// cached, not counted. 10 s is judgment, not measured facilitator latency.
+// cached, not counted.
+// NOT MEASURED (R010): 10 s is a choice the owner has not yet approved. No
+// latency data backs it; nothing shows the data-api settle route answers
+// under 10 s at p99, on-chain wait included. The consequence if it does not:
+// a settle answer slower than 10 s is answered settle-unconfirmed ("do not
+// pay again") and the payer is not served, while the transfer may already
+// have confirmed. The owner decides: see "Choices for the owner" in
+// specs/006-fareseal-contract-o1o4-1/pr-body.md.
 const SETTLE_TIMEOUT_MS = 10_000;
 // A per-payer reservation older than this no longer counts and is removed
 // when next read. It covers the case the timeout cannot: on Workers a client

@@ -22,7 +22,7 @@ Code: `packages/cloudflare/src/index.ts` (`building`, in `createPagesMiddleware`
 
 Found by the second review (M1): a settle that never answered held its payer's reservation for good.
 
-- The settle call now has a hard timeout of **10 s** (judgment, not measured facilitator latency). A timeout is answered `settle-unconfirmed` (row 3a: do not pay again), not cached and not counted, because the transfer may already have been broadcast.
+- The settle call now has a hard timeout of **10 s** (judgment, not measured facilitator latency; not yet approved, see "Choices for the owner"). A timeout is answered `settle-unconfirmed` (row 3a: do not pay again), not cached and not counted, because the transfer may already have been broadcast.
 - A per-payer reservation stops counting after **30 s** (the timeout plus a margin). The limit is checked on read; there is no timer.
 - **Not built:** running the settle under `waitUntil`. The verifier is built once per isolate and hono passes it no request context. If the runtime cancels a request, the reservation is released by the 30 s limit, not at once.
 - No CHANGELOG line yet for the timeout or the limit.
@@ -32,6 +32,7 @@ Closeout section 8b. The held-repeat window fix (H1) is in section 8a.
 ## Choices for the owner
 
 - **Row A7 cap (R003).** A hold's due pass survives at most 3 operator-fault answers, so a cooled-down payer with one due hold makes at most 3 settle calls through a facilitator outage. The cap of 3 is one constant; the owner may prefer another number, or none. Closeout section 9.
+- **Settle timeout of 10 s (R010).** `SETTLE_TIMEOUT_MS = 10_000` is a judgment. No latency data backs it: the data-api settle route was not measured, and no log was read. At the timeout the request is answered `settle-unconfirmed` (row 3a: do not pay again) and the payer is not served. If the real route can take longer than 10 s, for example while it waits for on-chain confirmation under congestion, a payer whose transfer did confirm gets that answer. Main had no such path. The owner decides: approve 10 s explicitly, or give a measured p99 of the data-api settle route under congestion, including its on-chain wait, and the constant follows it.
 - **O2 variant b.** `retry-after: 1` on `settle-throttled` is not built. Spec OQ2.
 - **Golden file on main's source.** It fails on 2 entries, not 1 (`held`, and the A1 entry T004 added). Closeout section 3.
 

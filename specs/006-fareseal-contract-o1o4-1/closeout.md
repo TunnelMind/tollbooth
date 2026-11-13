@@ -284,7 +284,7 @@ The fix is commit `ed98127`. Line numbers are at `a2681ea`, so they include what
 
 **The numbers.**
 
-- `SETTLE_TIMEOUT_MS = 10_000` (CF:92). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:375), and the `tagged` wrapper forwards it with the rest of `init` (CF:205-212). Why 10 s: judgment, not measured facilitator latency (CF:91). Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
+- `SETTLE_TIMEOUT_MS = 10_000` (CF:92). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:375), and the `tagged` wrapper forwards it with the rest of `init` (CF:205-212). Why 10 s: judgment only. It is not measured and the owner has not yet approved it (R010; the comment above the constant, and `pr-body.md` "Choices for the owner"). No latency data shows the data-api settle route answers under 10 s at p99 with its on-chain wait. If it takes longer, the payer is answered `settle-unconfirmed` ("do not pay again") and not served, while the transfer may already have confirmed. Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
 - `RESERVATION_TTL_MS = 30_000` (CF:98). Why 30 s: the settle timeout plus a 20 s margin (judgment), so a reservation does not expire while its own settle can still be running (CF:96-97).
 - **Changed since R002:** at `ed98127` a timeout landed in the existing catch as `settle-unreachable`. Since R006 (`a2681ea`) it is answered `settle-unconfirmed` (row 3a; CF:497-498), because the transfer may have been broadcast before the abort. Not cached, not counted.
 
