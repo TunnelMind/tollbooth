@@ -5,6 +5,8 @@ Tollbooth was renamed Fareseal on 2026-11-10.
 ## 2.3.0 — Unreleased
 
 - The site vendored 514bb79 as 2.2.0; 2.3.0 marks this payment-path refresh.
+- Concurrent failures from one payer now each count toward the cooldown (the count is re-read after the settle answer; N at once used to count as 1). A concurrent burst from one payer still reaches the settle bucket (20 calls) before the cooldown applies.
+- Known cost: held repeats stretch the offer grace. A verified unfunded agent sending one held early payment per 60 s from throwaway payer keys got 402 for 121 requests at 1 request/s before the first 302 (main: 3), with 5 settle calls in 280 s (measured by the second review on dd35fc2). No content is served; it is mazed once three first attempts are recorded (README, "Known costs").
 - Settle-route HTTP 404 and 405 (a wrong settle URL or method) are now operator faults, `settle-retryable`, not cached, not counted. A settle-route 400 for an out-of-bounds `price_usd` (our misconfiguration) is still charged to the payer.
 - `no-transaction-id` and the new `settle-unconfirmed` record no offer (core `isNoOfferFault`, exported): a payer who may have paid is never mazed for it. Known cost: such a payer is not served either.
 - The settle classifier uses core's `isOperatorFault`, so a route reason `settle-throttled`, `settle-unreachable`, `settle-retryable` or `settlement-unconfigured` is `settle-retryable`, not cached, not counted (it was cached and counted while hono said "retry the same payment").
