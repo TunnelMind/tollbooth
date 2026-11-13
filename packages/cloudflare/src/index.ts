@@ -83,6 +83,18 @@ const PAYER_COOLDOWN_MS = 600_000;
 // N isolates spend N × this; move to a Durable Object if that ever matters.
 export const SETTLE_BUCKET_CAP = 20;
 const SETTLE_REFILL_PER_S = 5;
+// Hard limit on one settle call (spec 006 R002, second review M1). Without it
+// a settle route that never answers holds the request, its per-payer
+// reservation and its `inflight` entry for the life of the isolate. A timeout
+// is answered like any other fetch reject: settle-unreachable, not cached,
+// not counted. 10 s is judgment, not measured facilitator latency.
+const SETTLE_TIMEOUT_MS = 10_000;
+// A per-payer reservation older than this no longer counts and is removed
+// when next read. It covers the case the timeout cannot: on Workers a client
+// disconnect can cancel the request, and then the release in `finally` never
+// runs. 30 s = the settle timeout plus a 20 s margin (judgment), so a
+// reservation does not expire while its own settle can still be running.
+const RESERVATION_TTL_MS = 30_000;
 // Paths are attacker-chosen, so the per-isolate exists cache must be bounded.
 const EXISTS_CAP = 1024;
 
@@ -230,9 +242,23 @@ export function makeSettlingVerify(
   // Settle calls started per payer and not finished (R-O1, spec 006). They
   // count toward PAYER_FAIL_LIMIT with the recorded failures; otherwise a
   // concurrent burst from one payer all passes the cooldown check before the
-  // first answer lands, one settle call each. An entry lives only while a
-  // settle for that payer runs, so this map is never larger than `inflight`.
-  const payerInflight = new Map<string, number>();
+  // first answer lands, one settle call each. One object per settle call,
+  // holding its start time: release removes exactly that object, and one
+  // older than RESERVATION_TTL_MS is dropped on read, so a settle whose
+  // release never runs cannot lock its payer out (R002 M1). Bounded: a
+  // reservation costs a bucket token, so at most SETTLE_BUCKET_CAP +
+  // SETTLE_REFILL_PER_S x 30 s = 170 are younger than the limit, and every
+  // new one sweeps the older out.
+  const payerInflight = new Map<string, { atMs: number }[]>();
+  /** The payer's reservations still inside the limit; the rest are removed. */
+  const liveReservations = (payer: string, now: number): { atMs: number }[] => {
+    const live = (payerInflight.get(payer) ?? []).filter(
+      (r) => now - r.atMs < RESERVATION_TTL_MS,
+    );
+    if (live.length > 0) payerInflight.set(payer, live);
+    else payerInflight.delete(payer);
+    return live;
+  };
   const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
   const verify: X402Adapter["verifyProof"] = async (
     xPayment,
@@ -294,7 +320,7 @@ export function makeSettlingVerify(
     // payment is refused too (not cached, so it can be sent again).
     // A due attempt (R-O4) skips this once; its outcome is counted as usual.
     const live = fails && now < fails.untilMs ? fails.n : 0;
-    if (!due && live + (payerInflight.get(payer) ?? 0) >= PAYER_FAIL_LIMIT)
+    if (!due && live + liveReservations(payer, now).length >= PAYER_FAIL_LIMIT)
       return { ok: false, payer: null, reason: "payer-cooldown" };
     bucket.tokens = Math.min(
       SETTLE_BUCKET_CAP,
@@ -311,7 +337,15 @@ export function makeSettlingVerify(
     if (due) notYetValid.delete(key);
     // Reserve in the same synchronous run as the check above: no await
     // between them, so concurrent requests cannot all pass first.
-    payerInflight.set(payer, (payerInflight.get(payer) ?? 0) + 1);
+    // ponytail: every new reservation scans the whole map for expired ones
+    // (at most 170 entries, see above); keep an age-ordered list if the
+    // bucket ever grows by orders of magnitude.
+    for (const p of payerInflight.keys()) liveReservations(p, now);
+    const reservation = { atMs: now };
+    payerInflight.set(payer, [
+      ...(payerInflight.get(payer) ?? []),
+      reservation,
+    ]);
     const settle = async (): Promise<X402VerifyResult> => {
       try {
         const resp = await routedFetch(settleUrl, {
@@ -331,6 +365,8 @@ export function makeSettlingVerify(
               ? { resource: opts.resource }
               : {}),
           }),
+          // Fires as a rejected fetch (or body read): the catch below.
+          signal: AbortSignal.timeout(SETTLE_TIMEOUT_MS),
         });
         // A non-2xx body may not parse (a proxy's HTML 502); it is still
         // classified by status below. A 2xx that fails to parse throws, as
@@ -461,9 +497,13 @@ export function makeSettlingVerify(
       return result;
     } finally {
       inflight.delete(key);
-      // Release on every outcome; settle() itself never rejects.
-      const left = (payerInflight.get(payer) ?? 1) - 1;
-      if (left > 0) payerInflight.set(payer, left);
+      // Release on every outcome; settle() itself never rejects. Only this
+      // call's own reservation: if it expired and was swept while the settle
+      // ran, there is nothing to remove and the payer's newer ones stay.
+      const left = (payerInflight.get(payer) ?? []).filter(
+        (r) => r !== reservation,
+      );
+      if (left.length > 0) payerInflight.set(payer, left);
       else payerInflight.delete(payer);
     }
   };

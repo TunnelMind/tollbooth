@@ -79,7 +79,7 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 |---|---|---|---|---|---|---|
 | 0a | no settle token configured | operator | `settlement-unconfigured` | no | no | no |
 | 0b | the per-isolate settle bucket is empty (any client can empty it, so an offer is still recorded) | operator | `settle-throttled` | no | no | yes |
-| 0c | the settle call throws, or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
+| 0c | the settle call throws or times out (10 s), or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
 | 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared | n/a (served) |
 | 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault (the payer may have paid; no offer recorded) | `no-transaction-id` | yes | no | no |
 | 3a | any non-2xx with `data.settled === true` (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
@@ -98,9 +98,11 @@ agent key per offer window (`toll.window`); from the 61st the held repeat
 gets the same 402 with `Retry-After` and an offer is recorded, and once
 `offer_grace` is spent the agent gets the usual 302 to the maze.
 `test/pages-settle.test.ts` ("README table") checks every row of
-this table against the code. There is no timeout row: the settle fetch has
-no timeout of its own, so a hung settle route holds the request until the
-runtime ends it.
+this table against the code. A timeout is row 0c: the settle fetch is
+aborted after 10 s and answered like any other failed call. A settle in
+flight stops counting toward its payer's limit after 30 s (the timeout plus
+a margin), so a settle whose request the runtime cancelled cannot keep the
+payer locked out.
 
 Known costs. Row 7: the settle route answers a `price_usd` outside its
 bounds (our misconfiguration) with HTTP 400, so that 400 is still charged to

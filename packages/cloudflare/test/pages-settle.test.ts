@@ -26,6 +26,7 @@ import {
 import {
   freshKeyPayment,
   makeAuth,
+  PAYER,
   payment,
   signAuth,
 } from "../../adapter-x402/test/fixtures/payment.js";
@@ -2188,6 +2189,247 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
       inflight: 0,
       payerInflight: 0,
     });
+  });
+
+  // R002 (second review of 2abd077, M1): a reservation has a time limit
+  // (RESERVATION_TTL_MS = 30 s, checked on read) and the settle fetch a hard
+  // timeout (SETTLE_TIMEOUT_MS = 10 s). Before, a settle that never answered
+  // kept its reservation for the life of the isolate: three of them locked
+  // the payer out for good.
+  const TTL_MS = 30_000;
+  const UNREACHABLE =
+    "settlement unavailable (operator fault); retry the same payment";
+  const okResponse = () => new Response(JSON.stringify(OK), { status: 200 });
+  /** AbortSignal.timeout is native and runs on real time, which a mocked
+   * Date.now does not move. Replace it with signals the test fires by hand;
+   * `ms` records what each was asked for. */
+  function manualTimeouts() {
+    const made: { ms: number; c: AbortController }[] = [];
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      const c = new AbortController();
+      made.push({ ms, c });
+      return c.signal;
+    });
+    return {
+      made,
+      fire: () => {
+        for (const m of made)
+          m.c.abort(
+            new DOMException("The operation timed out", "TimeoutError"),
+          );
+      },
+    };
+  }
+
+  /** A settle endpoint that never answers but, like a real fetch, rejects
+   * when the request's signal aborts. With `hang` off it answers OK. */
+  function hungSettle() {
+    const h = {
+      calls: 0,
+      hang: true,
+      fetch: (req: Request): Promise<Response> => {
+        if (req.url !== SETTLE_URL)
+          return Promise.resolve(new Response("{}", { status: 200 }));
+        h.calls += 1;
+        if (!h.hang) return Promise.resolve(okResponse());
+        return new Promise((_, reject) => {
+          req.signal.addEventListener("abort", () => reject(req.signal.reason));
+        });
+      },
+    };
+    return h;
+  }
+
+  it("R002 M1 test 1: 3 settles that never answer; once RESERVATION_TTL_MS has passed the payer is served again", async () => {
+    const { h, send } = await viaMiddleware();
+    for (let i = 0; i < 3; i++) void send(freshPayment());
+    await inFlight(h, 3);
+    // One ms short of the bound: still three live reservations.
+    ms += TTL_MS - 1;
+    const refused = await send(freshPayment());
+    expect(refused.status).toBe(402);
+    expect(await errorOf(refused)).toBe(COOLING);
+    expect(h.calls).toBe(3);
+    // At the bound (and past the 10 s settle timeout) they no longer count.
+    ms += 1;
+    const r = send(freshPayment());
+    await inFlight(h, 4);
+    h.waiting.pop()?.resolve(okResponse());
+    const served = await r;
+    expect(served.status).toBe(200);
+    expect(served.headers.get("x-payment-response")).not.toBeNull();
+    // Long after (the review's +10 min / +1 h / +24 h): still served.
+    for (const later of [600_000, 3_600_000, 86_400_000]) {
+      ms += later;
+      const before = h.calls;
+      const again = send(freshPayment());
+      await inFlight(h, before + 1);
+      h.waiting.pop()?.resolve(okResponse());
+      expect((await again).status).toBe(200);
+    }
+  });
+
+  it("R002 M1 test 2: other payers are served at every step of a payer's hung settles", async () => {
+    // Hangs for the fixture payer P only; any other payer's settle answers.
+    const calls = { p: 0, q: 0 };
+    const b = {
+      fetch: async (req: Request): Promise<Response> => {
+        if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
+        const { payment: xp } = (await req.json()) as { payment: string };
+        const { from } = (
+          JSON.parse(atob(xp)) as {
+            payload: { authorization: { from: string } };
+          }
+        ).payload.authorization;
+        if (from !== PAYER) {
+          calls.q += 1;
+          return okResponse();
+        }
+        calls.p += 1;
+        return new Promise(() => {});
+      },
+    };
+    const mw = settlingMw();
+    await mw(ctx("/r", agent(), envOf(b)));
+    const send = (xp: string) =>
+      mw(ctx("/r", agent({ "x-payment": xp }), envOf(b)));
+    let q = 0;
+    const qServed = async () => {
+      expect((await send(rotatingPayerPayment())).status).toBe(200);
+      q += 1;
+      expect(calls.q).toBe(q);
+    };
+    await qServed(); // before anything hangs
+    for (let i = 1; i <= 3; i++) {
+      void send(freshPayment());
+      await vi.waitFor(() => expect(calls.p).toBe(i));
+      await qServed(); // after each hung settle
+    }
+    expect(await errorOf(await send(freshPayment()))).toBe(COOLING);
+    await qServed(); // while P is refused
+    for (const step of [TTL_MS - 1, 1, 600_000]) {
+      ms += step;
+      await qServed(); // just before the bound, at it, and long after
+    }
+    // And P itself is back (test 1); still exactly its 3 hung calls + this.
+    void send(freshPayment());
+    await vi.waitFor(() => expect(calls.p).toBe(4));
+  });
+
+  // On the verify function itself, where `_sizes()` lives. Bound: a
+  // reservation needs a bucket token, so at most SETTLE_BUCKET_CAP + 5/s x
+  // 30 s = 170 can be alive at once; this run starts 5 per second.
+  it("R002 M1 test 3: hung payers at 5/s for 60 s leave 150 reservations, not 300; 0 after the bound and a sweep", async () => {
+    const t = manualTimeouts();
+    const h = hungSettle();
+    const verify = makeSettlingVerify(
+      (url, init) => h.fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const cfg = parseConfig(toml());
+    const hung: unknown[] = [];
+    for (let s = 0; s < 60; s++) {
+      for (let i = 0; i < 5; i++)
+        hung.push(verify(rotatingPayerPayment(), cfg));
+      // Reservations made at second s-29..s are alive: 5 x min(s + 1, 30).
+      expect(verify._sizes().payerInflight).toBe(5 * Math.min(s + 1, 30));
+      ms += 1000;
+    }
+    expect(h.calls).toBe(300);
+    expect(verify._sizes()).toMatchObject({
+      inflight: 300,
+      payerInflight: 150,
+    });
+    // Past the bound for the newest one; the next settle to start sweeps.
+    ms += TTL_MS;
+    h.hang = false;
+    expect((await verify(rotatingPayerPayment(), cfg)).ok).toBe(true);
+    // `inflight` is per payment and has no age limit (the join must hold
+    // while a settle runs); its entries go when the settle timeout fires.
+    expect(verify._sizes()).toMatchObject({ inflight: 300, payerInflight: 0 });
+    expect(t.made.length).toBe(301);
+    t.fire();
+    await Promise.all(hung);
+    expect(verify._sizes()).toMatchObject({ inflight: 0, payerInflight: 0 });
+  }, 30_000);
+
+  it("R002 M1 test 4: a copy of an in-flight payment whose reservation expired still joins it: one settle call, served once", async () => {
+    const { h, send } = await viaMiddleware();
+    const xp = freshPayment();
+    const leader = send(xp);
+    for (let i = 0; i < 2; i++) void send(freshPayment());
+    await inFlight(h, 3);
+    ms += TTL_MS;
+    // The reservations did expire: a fresh payment from the payer starts.
+    void send(freshPayment());
+    await inFlight(h, 4);
+    // The copy must wait on the leader, not settle again.
+    let copyDone = false;
+    const copy = send(xp).then((r) => {
+      copyDone = true;
+      return r;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(copyDone).toBe(false);
+    expect(h.calls).toBe(4);
+    h.answer(200, OK); // the oldest waiting call is the leader's
+    const [a, b] = await Promise.all([leader, copy]);
+    expect(a.status).toBe(200);
+    expect(a.headers.get("x-payment-response")).not.toBeNull();
+    expect(b.status).toBe(402);
+    expect(b.headers.get("x-payment-response")).toBeNull();
+    expect(h.calls).toBe(4); // one call for `xp`, ever
+    const replay = await send(xp);
+    expect(replay.status).toBe(402);
+    expect(h.calls).toBe(4);
+  });
+
+  it("R002 M1 test 5: an expired reservation whose settle answers late does not release a newer one", async () => {
+    const { h, send } = await viaMiddleware();
+    const old = send(freshPayment());
+    await inFlight(h, 1);
+    ms += TTL_MS;
+    const three = [1, 2, 3].map(() => send(freshPayment()));
+    await inFlight(h, 4);
+    h.answer(200, OK); // the old settle answers at last
+    expect((await old).status).toBe(200);
+    // Still three live reservations: a release by count would leave two.
+    const fourth = await send(freshPayment());
+    expect(fourth.status).toBe(402);
+    expect(await errorOf(fourth)).toBe(COOLING);
+    expect(h.calls).toBe(4);
+    while (h.waiting.length > 0) h.answer(200, OK);
+    for (const r of await Promise.all(three)) expect(r.status).toBe(200);
+    // And each of the three released its own: three more start, not four.
+    const again = [1, 2, 3].map(() => send(freshPayment()));
+    await inFlight(h, 7);
+    expect(await errorOf(await send(freshPayment()))).toBe(COOLING);
+    while (h.waiting.length > 0) h.answer(200, OK);
+    await Promise.all(again);
+  });
+
+  it("R002 M1 test 6: a hung settle is aborted at SETTLE_TIMEOUT_MS → settle-unreachable, not served, nonce not cached", async () => {
+    const t = manualTimeouts();
+    const h = hungSettle();
+    const mw = settlingMw();
+    await mw(ctx("/r", agent(), envOf(h)));
+    const send = (xp: string) =>
+      mw(ctx("/r", agent({ "x-payment": xp }), envOf(h)));
+    const xp = freshPayment();
+    const r = send(xp);
+    await vi.waitFor(() => expect(h.calls).toBe(1));
+    expect(t.made.map((m) => m.ms)).toEqual([10_000]);
+    t.fire();
+    const timedOut = await r;
+    expect(timedOut.status).toBe(402);
+    expect(await errorOf(timedOut)).toBe(UNREACHABLE);
+    expect(timedOut.headers.get("x-payment-response")).toBeNull();
+    // Not cached and not counted: the same X-PAYMENT settles once healthy.
+    h.hang = false;
+    const retry = await send(xp);
+    expect(retry.status).toBe(200);
+    expect(h.calls).toBe(2);
   });
 });
 
