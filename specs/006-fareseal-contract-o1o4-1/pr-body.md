@@ -18,6 +18,17 @@ This is not one of the spec's rows. The second review found it on main and on th
 
 Code: `packages/cloudflare/src/index.ts` (`building`, in `createPagesMiddleware`). Tests: `packages/cloudflare/test/pages-settle.test.ts`, "cold handler: the first burst shares one state (R004, L6)". Closeout section 10.
 
+## Settle timeout and reservation limit (R002, R006)
+
+Found by the second review (M1): a settle that never answered held its payer's reservation for good.
+
+- The settle call now has a hard timeout of **10 s** (judgment, not measured facilitator latency). A timeout is answered `settle-unconfirmed` (row 3a: do not pay again), not cached and not counted, because the transfer may already have been broadcast.
+- A per-payer reservation stops counting after **30 s** (the timeout plus a margin). The limit is checked on read; there is no timer.
+- **Not built:** running the settle under `waitUntil`. The verifier is built once per isolate and hono passes it no request context. If the runtime cancels a request, the reservation is released by the 30 s limit, not at once.
+- No CHANGELOG line yet for the timeout or the limit.
+
+Closeout section 8b. The held-repeat window fix (H1) is in section 8a.
+
 ## Choices for the owner
 
 - **Row A7 cap (R003).** A hold's due pass survives at most 3 operator-fault answers, so a cooled-down payer with one due hold makes at most 3 settle calls through a facilitator outage. The cap of 3 is one constant; the owner may prefer another number, or none. Closeout section 9.

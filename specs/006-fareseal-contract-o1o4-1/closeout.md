@@ -1,6 +1,6 @@
 # Closeout: fareseal-contract-o1o4-1 (FR-010)
 
-Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9). Updated by R004 (2026-11-13) on `7f87051` (section 10); the branch head is then `7f87051` plus the R004 commit.
+Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9). Updated by R004 (2026-11-13) on `7f87051` (section 10); the branch head is then `7f87051` plus the R004 commit. Sections 8a and 8b (R001 and R002) were added by R007 (2026-11-13) on `a2681ea`, with line numbers at that tree.
 
 Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change. Line numbers in section 10 are at `7f87051` plus the R004 change.
 
@@ -241,6 +241,80 @@ All of these are the owner's (**O001**, Josh). No agent does them.
 - The decision on `retry-after: 1` for `settle-throttled` (O2 variant b). Not built; spec OQ2 calls it a one-line follow-up.
 
 Still open for the crew: **GATE F** (reviewer agent, verify, GitHub CI green on the draft PR), and the items at the top of this file.
+
+## 8a. R001: second review, H1 (held repeat rolls the offer window)
+
+Written by R007 (2026-11-13) on `a2681ea`; every line number in 8a and 8b was checked at that tree. The fix is commit `376f65c`. The red/green and mutation counts are quoted from the commit messages of `376f65c` and `ed98127` (the QA's record); R007 did not run them again.
+
+**The fix.** `recordHeld` (LEDGER:93-102) no longer rolls the offer window and never writes `windowStart` or `offersInWindow`. The held count has its own window: `heldStart` (LEDGER:24), a `WeakMap` beside the entry, since row T1 fixes the shape of `OfferState`. It has the same length as the offer window and is opened by the first held repeat (LEDGER:95-99). The count is cleared when `recordOffer` rolls the offer window (`roll`, LEDGER:62-69) and on payment (LEDGER:113-114). An entry only held repeats have written has no offer window: it is never exhausted (`heldOnly`, LEDGER:57-59 and :128), and its first offer opens the window (LEDGER:74).
+
+**The rule changed.** It was "60 free held repeats per offer window". It is now **60 per held window** (`cfg.toll.window` long, starting at the first held repeat). `HELD_REPEATS_FREE = 60` is unchanged.
+
+**Pinning tests.**
+
+| Test | What it pins |
+|---|---|
+| `packages/core/test/ledger.test.ts`:59 `recordHeld never rolls the offer window (H1)` | the reviewer's t=1203 case (:65-66); replaces `recordHeld rolls with the window like recordOffer` |
+| :80 `the held count expires with its own window, not the offer window` | the held window |
+| :109 `the held window edge: exactly windowMs old still counts, 1 ms more restarts` | the edge |
+| :120-121 `recordHeld leaves offers alone at every t across the edge (seeded=%s)` | the sweep across the window edge |
+| :149 `recordOffer's window roll clears the held count`; :161 `recordPaid resets the held count` | the two resets |
+| `packages/core/test/pipeline-payment.test.ts`:280-281 `a held repeat after the window expired does not restart it (H1, seeded=%s)` | at t=1203 the answer is the maze (:312), as on main |
+| :322 `held repeats spread over two windows: 50 + 11 record no offer (main's answers)` | old repeats stop counting |
+
+Red/green as recorded in `376f65c`: **7 red** on HEAD's ledger, **63 green** on the diff with the golden test. The snapshot file is unchanged.
+
+**Acceptance check 2, a reading the reviewer must confirm.** The check said `heldInWindow` is reset only in `roll()` and `recordPaid`. It is also reset in `recordHeld` when the held window has expired (LEDGER:96-99). So the check is met in intent, not to the letter. Without that reset the 50 + 11 schedule records an offer that main does not: the mutation run in `376f65c` shows 3 tests red with it removed.
+
+**Open points.**
+
+1. **Receipt window start: open at R001, closed since by R005 (`e9adf06`).** After R001, for a key whose only ledger entry came from a held repeat, the hono receipt read the first held time where main uses the current second. The receipt now reads the ledger through `usableState` (LEDGER:144-147, HONO:887-888), so such a key gets the current second (HONO:895). Test: `packages/hono/test/reporter-wiring.test.ts`:132 `R005: a held-only ledger entry does not set the receipt window`.
+2. **LRU side effect: open, not fixed.** `recordHeld` still calls `touch()` (LEDGER:94). On a full ledger a held repeat from a new key evicts the oldest key (LEDGER:33-36), and a held repeat from a known key refreshes its place. Main writes nothing for a held repeat. R-O3 (spec.md line 42) mandates the touch.
+3. **Docs still state the old rule: not updated, queued for a docs pass.**
+   - spec.md line 41 ("per offer window"), line 42 ("roll the window exactly as `recordOffer` does"), line 66 (row A3, "in the offer window") and line 103 (FR-007, "window roll").
+   - `packages/cloudflare/README.md`:107-108 ("per offer window") and :150 ("60 per window").
+   - `packages/cloudflare/CHANGELOG.md`:10 (A3, "in the offer window").
+   - This file: line 24 (row A3 names `LEDGER:70-75`, `LEDGER:49-55` and the replaced test `recordHeld rolls with the window like recordOffer`), line 30 (row T1, `LEDGER:70`) and the OQ4 line in section 7 ("per window"). Sections 1 to 8 stand as T010 wrote them at `2d680f1`.
+
+## 8b. R002: second review, M1 (reservation has no time limit)
+
+The fix is commit `ed98127`. Line numbers are at `a2681ea`, so they include what R003, R004 and R006 moved.
+
+**Reservations.** Each reservation is its own object with a start time, `{ atMs }` (CF:257, made at CF:350-354). The cooldown check counts only those younger than `RESERVATION_TTL_MS` (`liveReservations`, CF:259-266; the check, CF:329). The limit is checked on read; there is no timer. Every new reservation sweeps the whole map (CF:349). The `finally` removes only its own reservation (CF:523-533), so a late answer leaves newer ones alone. The per-nonce `inflight` join (CF:313-321) is untouched.
+
+**The numbers.**
+
+- `SETTLE_TIMEOUT_MS = 10_000` (CF:92). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:375), and the `tagged` wrapper forwards it with the rest of `init` (CF:205-212). Why 10 s: judgment, not measured facilitator latency (CF:91). Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
+- `RESERVATION_TTL_MS = 30_000` (CF:98). Why 30 s: the settle timeout plus a 20 s margin (judgment), so a reservation does not expire while its own settle can still be running (CF:96-97).
+- **Changed since R002:** at `ed98127` a timeout landed in the existing catch as `settle-unreachable`. Since R006 (`a2681ea`) it is answered `settle-unconfirmed` (row 3a; CF:497-498), because the transfer may have been broadcast before the abort. Not cached, not counted.
+
+**`waitUntil`: not built.** R002(b) asked to run the settle and its release under `ctx.waitUntil` where a context exists. The verifier is built once per isolate, inside `buildState` (`makeSettlingVerify`, CF:686), not per request. hono calls it with only `{ nowS, resource }` (HONO:862-865); it passes no context. Wiring `waitUntil` would mean changing `packages/hono`. So liveness rests on the 30 s limit:
+
+- A settle that hangs is aborted at 10 s, and its `finally` releases the reservation.
+- **Where there is no context (every settle today):** a client disconnect can cancel the request, and then the `finally` never runs. The reservation stops counting 30 s after it began. It is removed at the next read for that payer or the next new reservation, not by the `finally` and not by a timer.
+- The `inflight` entry for that payment has no limit of its own; it is removed only in the same `finally` (CF:524). R007 did not test this case.
+
+**Pinning tests** (PS; six, under the comment at PS:2249).
+
+| Test | Line |
+|---|---|
+| `R002 M1 test 1: 3 settles that never answer; once RESERVATION_TTL_MS has passed the payer is served again` | PS:2296 |
+| `R002 M1 test 2: other payers are served at every step of a payer's hung settles` | PS:2325 |
+| `R002 M1 test 3: hung payers at 5/s for 60 s leave 150 reservations, not 300; 0 after the bound and a sweep` | PS:2375 |
+| `R002 M1 test 4: a copy of an in-flight payment whose reservation expired still joins it: one settle call, served once` | PS:2410 |
+| `R002 M1 test 5: an expired reservation whose settle answers late does not release a newer one` | PS:2441 |
+| `R002 M1 test 6: a hung settle is aborted at SETTLE_TIMEOUT_MS → settle-unconfirmed (row 3a, R006), not served, nonce not cached` | PS:2465 (R006 changed its expected reason) |
+
+Red/green as recorded in `ed98127`: tests 1 to 6 red on HEAD source, green on the diff; every mutant the QA ran was killed. The commit message gives no count of mutants.
+
+**Docs.** Updated: `packages/cloudflare/README.md`:93 (row 0c no longer lists the timeout), :96 (row 3a lists it) and :112-117 (the 10 s timeout and the 30 s limit). **No CHANGELOG line was added** for the timeout or the limit.
+
+**Not done.**
+
+- spec.md line 30 ("an entry exists only while a settle for that payer runs") is now false: an entry can outlive a cancelled request until it is swept. Not edited; spec.md is off limits to the coder. Queue for closeout.
+- spec.md line 144 ("The code has no timeout of its own and none is added") is now false. Same.
+- spec.md line 29 still lists "timeout/abort" under `settle-unreachable`; since R006 a timeout is `settle-unconfirmed`. Same.
+- The test comment at PS:2165 ("A reservation has no expiry") is stale. Not edited; R007 is docs only.
 
 ## 9. R003: second review of 2abd077, lows L1 to L5
 
