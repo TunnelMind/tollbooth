@@ -1,0 +1,241 @@
+# Closeout: fareseal-contract-o1o4-1 (FR-010)
+
+Branch `crew/fareseal-contract-o1o4-1` at HEAD `2d680f1`, on main `6825c30`. Written by T010 (2026-11-13).
+
+Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. All line numbers are at HEAD `2d680f1`.
+
+Every run below was made on 2026-11-13. Runs on changed source were made in throwaway copies (`~/agent-crew/bin/crew-scratch`), never in the worktree.
+
+**Two things for the reviewer, before the detail:**
+
+1. **Finding (section 3).** The golden file run on main's source fails on 2 entries, not 1: `held` (row A2, expected) and `fourth concurrent payment (A1)`. The second is the 27th entry, added by T004 for row A1; it is not one of the 26 shapes in FR-001. Of the 26, only `held` fails, and only by the `retry-after` header. SC-002 as written ("fails only on the held-repeat entry") is not met by the file as a whole. Nothing was loosened.
+2. **spec.md still states the old per-nonce bound.** The T005 ruling says to correct spec.md; R-O4 "Bound" (spec.md line 51) and US4 still read "at most 2 … per nonce" with no mention of the 3-call case. spec.md is the supervisor's file, so it is not edited here. The README and this closeout state both bounds (section 7).
+
+## 1. Rows A1–A8 and T1: code and pinning test
+
+Test names are quoted as they stand in the file (`$row` and `$path` are `it.each` placeholders).
+
+| Row | Code at HEAD | Pinning test |
+|---|---|---|
+| A1 | CF:296-297 (live failures + in-flight ≥ 3 → `payer-cooldown`), CF:314 (reserve after the token), CF:465-467 (release in `finally`) | PS:2015 `100 concurrent fresh payments from one payer → 3 settle calls, 97 x 402 payer-cooldown`; PS:2043 `an honest funded payer with 3 in flight: the 4th is payer-cooldown with no settle call; after they land it and a 5th are served`; PS:2122 `released after $path: 3 concurrent settles start again (Pages middleware)`; GOLD:262 `fourth concurrent payment (A1)` (the 402 bytes) |
+| A2 | CF:273-279 (held return carries `retryAfterS: Number(early - nowS)`), HONO:724-730 (`retry-after` header) | PS:1264 `held at T0, repeated at T0+10 s → 402 with retry-after: 45; the first answer has none`; PS:1286 `the settle-throttled 402 has no retry-after`; GOLD:158 `held`; `packages/hono/test/payment-errors.test.ts`:290 `a rejected result with retryAfterS 45 -> 402 with retry-after: 45` and :321 `a 302 consequence carries none` |
+| A3 | PIPE:102 (`HELD_REPEATS_FREE = 60`), PIPE:394-400 (step 6), LEDGER:70-75 (`recordHeld`), LEDGER:49-55 (`roll`), LEDGER:86 (reset in `recordPaid`) | `packages/core/test/pipeline-payment.test.ts`:249 `held repeats: 60 record no offer, the 61st does, then the grace runs out`; :275 `held repeats from an anonymous agent are never ledgered`; `packages/core/test/ledger.test.ts`:56 `recordHeld rolls with the window like recordOffer`; BUDGET:515 `a verified agent at 10 req/s on one held payment → 302 by request 64`; BUDGET:531 `an honest agent polling 1/s for 60 s on one held payment is never mazed, then served` |
+| A4 | CF:268 (`due`), CF:297 (`!due &&` skips the refusal), CF:311 (hold deleted when the token is taken) | PS:2277 `(a) L3, row A4: 3 early payments at once from a funded payer 55 s fast, each repeated after validAfter → all 3 served, 6 settle calls`; PS:2382 `(e) rows A4/US5: 20 concurrent copies of a due payment → 1 settle call, 1 x 200` |
+| A5 | CF:419-420 (row 5 holds only while `validAfter` is still ahead of our clock, so a due attempt is not held again) | PS:2296 `(b) row A5: a due attempt answered not-yet-valid again is not held again; the cooled-down payer's next retry is payer-cooldown with no call (2 calls for the nonce)`; PS:2323 `row A5, ruling: a lone early nonce against a lagging facilitator costs exactly 3 settle calls, then payer-cooldown`; PS:1335 `a not-yet-valid answer to the due attempt is not held again (row A5)` |
+| A6 | CF:305-306 (`settle-throttled` returns before CF:311, so the hold stays) | PS:2344 `(c) row A6: a due attempt that meets an empty bucket is settle-throttled with no call; after a refill the retry is still the due attempt and is served` |
+| A7 | CF:459-460 (hold put back when a due attempt ends in an operator fault) | PS:2364 `(d) row A7: a due attempt answered settle 503 is put back; the retry is the due attempt again and is served` |
+| A8 | CF:426 and CF:429 (row 5), CF:441 and CF:444 (rows 6/7): `const t = Date.now()` at write, `untilMs: t + PAYER_COOLDOWN_MS` | PS:1719 `L2: a held $row failure landing at 5 s cools the payer until 605 s, not 600 s` (runs for row 5 and row 6) |
+| T1 | HONO:79 (`retryAfterS?: number`), LEDGER:12 (`heldInWindow`), LEDGER:70 (`recordHeld`), CF:209-218 and CF:470-478 (`_sizes()`, `@internal`) | `packages/hono/test/payment-errors.test.ts`:290 (as A2); `packages/core/test/ledger.test.ts`:45 `recordHeld counts 1..n and records no offer` and :88 `recordPaid resets the held count`; PS:2162 `_sizes() counts payers with a settle in flight, not settles`; PS:2134 `released after $path: _sizes().payerInflight is 0` |
+
+One difference from the spec's wording, same behaviour for row A5: R-O4 says the row-5 hold is "skipped when `due`". The code at CF:419 instead holds only when `BigInt(validAfter) > nowS`. A due attempt always has `validAfter <= nowS`, so it is never held again. The condition also covers a first attempt whose `validAfter` is already past by our clock (facilitator clock behind ours); the comment at CF:413-418 gives the reason, and the README states it.
+
+## 2. L1, L2, L4, L5: closed
+
+Re-run today in one scratch copy. Each mutant was applied alone to CF with `sed` on the line named, then `CI=true pnpm exec vitest run packages/cloudflare` (9 files, 253 tests), then CF was restored from the saved original. Baseline without a mutant: **253 passed, 0 failed**.
+
+| Low | Mutant | Line changed (HEAD → mutant) | Red / green | Tests that go red |
+|---|---|---|---|---|
+| L1 | m01 row 5 counts from the pre-await snapshot | CF:428 `cur && t < cur.untilMs ? cur.n : 0` → `fails && t < fails.untilMs ? fails.n : 0` | 8 / 245 | PS `L1: three concurrent early payments from one payer cool it down`, and 7 more (below) |
+| L4 | m04 rows 6/7 ignore the window | CF:443 → `n: (cur ? cur.n : 0) + 1` | 2 / 251 | PS `L4: a row-6 count from an expired cooldown window restarts at 1`; `L4: a 'row 6' failure written exactly at untilMs starts at 1` |
+| L4 | m09 row 5 keeps the old `untilMs` | CF:429 → `untilMs: cur && t < cur.untilMs ? cur.untilMs : t + PAYER_COOLDOWN_MS` | 2 / 251 | PS `L4: 'row 5' failures at t, t+1 s, t+300 s cool the payer until t+900 s`; `L2: a held 'row 5' failure landing at 5 s cools the payer until 605 s, not 600 s` |
+| L4 | m10 rows 6/7 keep the old `untilMs` | CF:444, same change | 2 / 251 | the same two tests for `'row 6'` |
+| L4 | m19 row 5 `<=` | CF:428 `t < cur.untilMs` → `t <= cur.untilMs` | 1 / 252 | PS `L4: a 'row 5' failure written exactly at untilMs starts at 1` |
+| L4 | m20 rows 6/7 `<=` | CF:443, same change | 1 / 252 | PS `L4: a 'row 6' failure written exactly at untilMs starts at 1` |
+| L4 | m21 row 5 max(snapshot, re-read) | CF:428 → `n: Math.max(live, cur && t < cur.untilMs ? cur.n : 0) + 1` | 1 / 252 | PS `L4 (P2d): a success landing before an in-flight 'row 5' failure clears the count that failure adds to` |
+| L4 | m22 rows 6/7 max(snapshot, re-read) | CF:443, same change | 1 / 252 | the same test for `'row 6'` |
+| L2 | row 5 stamped with the pre-await clock (the code before T003) | CF:426 `const t = Date.now()` → `const t = now` | 1 / 252 | PS `L2: a held 'row 5' failure landing at 5 s cools the payer until 605 s, not 600 s` |
+| L2 | rows 6/7 stamped with the pre-await clock | CF:441, same change | 1 / 252 | PS `L2: a held 'row 6' failure landing at 5 s cools the payer until 605 s, not 600 s` |
+
+The names with `'row 5'` / `'row 6'` are how vitest prints the `it.each` tests at PS:1612, PS:1643, PS:1670 and PS:1719 (`$row` in the file).
+
+m01's other 7 red tests, all in PS: `L2: a held 'row 5' failure landing at 5 s cools the payer until 605 s, not 600 s`, `L4 (P2d): a success landing before an in-flight 'row 5' failure clears the count that failure adds to`, and the five R-O4 tests (a)–(e) at PS:2277-2382. m01 and m21/m22 are still killed after R-O1 (SC-004).
+
+**L5** closed by T009: `git diff main -- specs/005-fareseal-pay-lows-2/closeout.md`
+
+```
+-Branch `crew/fareseal-pay-lows-2` at HEAD `825f88a`, on main `705cc57`. Written by T004 (2026-11-13).
++Branch `crew/fareseal-pay-lows-2` at HEAD `f24a66e`, on main `705cc57`. Written by T004 (2026-11-13).
+```
+
+## 3. Golden test against main's source (SC-002)
+
+In a scratch copy: every file under `packages/*/src` replaced with `git show main:<path>`, HEAD's tests and snapshot kept, then `pnpm exec tsc -b` (the cloudflare tests import core and hono from their built `dist/`, so main's source had to be rebuilt), then `CI=true pnpm exec vitest run packages/cloudflare/test/contract-golden.test.ts`.
+
+```
+--- src now differs from main in:
+--- src differs from HEAD in:
+ packages/cloudflare/src/index.ts | 105 +++++++--------------------------------
+ packages/core/src/ledger.ts      |  28 ++---------
+ packages/core/src/pipeline.ts    |  20 +-------
+ packages/hono/src/index.ts       |  16 ------
+ 4 files changed, 21 insertions(+), 148 deletions(-)
+tsc -b exit: 0
+
+ ❯ packages/cloudflare/test/contract-golden.test.ts (27 tests | 2 failed) 5365ms
+     × held 20ms
+     × fourth concurrent payment (A1) 5004ms
+
+ FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > held
+Error: Snapshot `golden contract (spec 006 FR-001) > held 1` mismatched
+
+- Expected
++ Received
+
+@@ -8,14 +8,10 @@
+      [
+        "content-type",
+        "application/json",
+      ],
+      [
+-       "retry-after",
+-       "55",
+-     ],
+-     [
+        "x-payment-required",
+        "{"scheme":"exact","network":"base-sepolia",…}",
+      ],
+    ],
+    "status": 402,
+
+ FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > fourth concurrent payment (A1)
+Error: Test timed out in 5000ms.
+
+  Snapshots  1 failed
+             1 obsolete
+             ↳ packages/cloudflare/test/contract-golden.test.ts
+               · golden contract (spec 006 FR-001) > fourth concurrent payment (A1) 1
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 25 passed (27)
+```
+
+(The `x-payment-required` value is cut short here with `…`; it is a context line, the same on both sides.)
+
+What this shows:
+
+- **`held` (A2):** the one snapshot mismatch. The only differing lines are the `retry-after` / `55` header pair. Status, body and every other header are the same.
+- **`fourth concurrent payment (A1)` — the finding.** T004 added this entry for row A1 (tasks.md T004: "Add the A1 shape … as a new golden entry"). It holds three settles open and expects the fourth payment to be refused at once. On main the fourth payment goes to settle (row A1 "before"), the stub never answers it, and the test times out. It never reaches its snapshot, which is why vitest lists that snapshot as obsolete. This is row A1's before/after difference seen through a test written for the "after" side. It is not one of the 26 shapes of FR-001.
+- **The other 25 pass on main's source** unchanged. So among the 26 shapes only `held` differs, and only by its headers.
+
+For the reviewer to decide: accept SC-002 as "of the 26 shapes, only A2's headers differ" (what the run shows), or move the A1 entry out of the golden file so the file as a whole fails on one entry.
+
+## 4. T008 budget table: head against main
+
+Head numbers are what BUDGET asserts at HEAD (green in the verify run, section 6). Main numbers were measured today by running the same BUDGET file on main's source in the scratch copy of section 3; the assertion failures print main's value.
+
+| Scenario | SC-003 main | main measured | SC-003 head | head asserted (BUDGET line) | Differs from SC-003? |
+|---|---|---|---|---|---|
+| 100 sequential | 3 | 3 (test passes on main) | 3 | `toBe(3)` (:269) | no |
+| 100 concurrent, one burst | 20 | 20 (`expected 20 to be 3`) | 3 | `toBe(3)` (:278) | no |
+| 3 concurrent per second, 20 s | 9 | 9 (`expected 9 to be 3`) | 3 | `toBe(3)` (:288) | no |
+| 20 concurrent every 4 s, 60 s | 60 | 60 (`expected 60 to be 3`) | 3 | `toBe(3)` (:298) | no |
+| 10 per second, settle never answers, 30 s | 169 | 169 (`expected 169 to be 3`) | 3 | `toBe(3)` (:313) | no |
+| many payers, 30 per second, 20 s | 115 | 115 | <= 115 | `toBeLessThanOrEqual(115)` (:338); measured 115 | no |
+| OQ1 exception: stream of early nonces whose holds come due | 3 | 3 in the first 600 s (`expected 3 to be greater than 3`) | <= 6 per 600 s | `toBeLessThanOrEqual(6)` in every 600 s window, more than 3 in the first 600 s, and <= 2 per nonce (:367-379) | no |
+
+No row differs from SC-003. The "many payers" value was read by changing that one assertion to `toBe(-1)` in a scratch copy: `expected 115 to be -1` on head's source and on main's source.
+
+US3 (BUDGET:515, :531): a verified agent at 10 requests/s on one held payment gets its first 302 at request <= 64 (asserted as an upper bound: 1 + 60 free + 3 grace) with 1 settle call; an honest agent polling once a second for 60 s gets 60 × 402 then 200, never 302, with 2 settle calls. On main's source the first test fails with no 302 in 100 requests (`expected 0 to be greater than 0`).
+
+**Bounds** (BUDGET:549 `1400 one-payment payers → seen 512, payerFails 512, notYetValid <= 512, nothing in flight; the same a year later`): after 1400 settle calls, `_sizes()` is seen 512, payerFails 512, notYetValid <= 512, inflight 0, payerInflight 0, and equal to itself after the clock moves 365 days and after one more pair of payments.
+
+One difference from FR-008's wording, marked here: FR-008 says "700 payers and 1400 payments". The test uses 1400 payers with one payment each (700 pairs), because the fixtures sign one payment per fresh key (comment at BUDGET:559-562). So no payer has two settles in flight in this test; that release path is pinned in PS:2122 and PS:2134 instead.
+
+## 5. Command outputs
+
+`grep -rn "retry-after" packages/*/src` (SC-006: one hit, in hono's `offerResponse`):
+
+```
+packages/hono/src/index.ts:730:      c.header("retry-after", String(rejected.retryAfterS));
+```
+
+`git diff main -- packages/adapter-x402` : empty (0 bytes). Discovery unchanged.
+
+`git diff main --stat -- packages/core/src/voucher.ts packages/adapter-x402` : empty (0 bytes).
+
+`git diff main -- packages | grep -iE '^[+-].*(stripe|voucher)'` : prints nothing (grep exit 1). SC-005.
+
+`git diff main --name-only | grep -E 'package\.json|lock|\.github'` : prints nothing (grep exit 1). No lockfile, workflow or `package.json` in the diff.
+
+`git diff main --stat` (before this file was added):
+
+```
+ packages/cloudflare/CHANGELOG.md                   |  13 +-
+ packages/cloudflare/README.md                      |  69 +-
+ packages/cloudflare/src/index.ts                   | 105 ++-
+ .../__snapshots__/contract-golden.test.ts.snap     | 594 ++++++++++++++++
+ packages/cloudflare/test/contract-golden.test.ts   | 338 +++++++++
+ packages/cloudflare/test/pages-settle.test.ts      | 779 ++++++++++++++++++++-
+ packages/cloudflare/test/settle-budget.test.ts     | 600 ++++++++++++++++
+ packages/core/src/ledger.ts                        |  28 +-
+ packages/core/src/pipeline.ts                      |  20 +-
+ packages/core/test/ledger.test.ts                  |  52 ++
+ packages/core/test/pipeline-payment.test.ts        |  41 ++
+ packages/hono/README.md                            |  11 +
+ packages/hono/src/index.ts                         |  16 +
+ packages/hono/test/payment-errors.test.ts          |  88 +++
+ specs/005-fareseal-pay-lows-2/closeout.md          |   2 +-
+ specs/006-fareseal-contract-o1o4-1/plan.md         |  63 ++
+ specs/006-fareseal-contract-o1o4-1/spec.md         | 158 +++++
+ specs/006-fareseal-contract-o1o4-1/tasks.md        |  19 +
+ 18 files changed, 2944 insertions(+), 52 deletions(-)
+```
+
+## 6. Full verify
+
+`pnpm install --frozen-lockfile && pnpm lint && pnpm typecheck && pnpm test && bun examples/bun-hono/check.ts && node --experimental-strip-types bench/bench.ts --check` at HEAD `2d680f1`, in the worktree. Tail:
+
+```
+$ tsc -b
+$ vitest run
+
+ RUN  v4.1.12 /home/o2k/.crew/work/fareseal-contract-o1o4-1/code
+
+
+ Test Files  58 passed (58)
+      Tests  774 passed (774)
+   Start at  09:19:25
+   Duration  46.00s (transform 12.52s, setup 0ms, import 39.22s, tests 120.52s, environment 18ms)
+
+bun-hono example OK: human 200, agent 402, arrival 200
+| scenario | p50 | p99 |
+|---|---|---|
+| baseline app, no fareseal | 0.024 ms | 0.111 ms |
+| human pass-through | 0.021 ms | 0.153 ms |
+| free path pass-through | 0.009 ms | 0.076 ms |
+| agent 402 offer | 0.037 ms | 0.138 ms |
+| voucher spend + re-sign (ed25519 x2) | 4.919 ms | 10.689 ms |
+
+NFR-1 (pass-path added latency <= 1 ms p50, <= 5 ms p99): **PASS** (added p50 0.000 ms, added p99 0.042 ms)
+EXIT CODE: 0
+```
+
+Exit code **0**. `pnpm lint` printed 1 warning and 4 infos, none an error, all in test files this branch does not touch (`packages/cloudflare/test/pages-arrival.test.ts:168` `noTemplateCurlyInString`; `packages/core/test/keyfile.test.ts` `useTemplate` × 4). They do not fail `biome check`. The bench timings are this machine's, this run's.
+
+This is local verify only. GitHub CI on the draft PR is GATE F's check (SC-001).
+
+## 7. Coordinator rulings used
+
+- **GATE 0** (tasks.md, 2026-11-13): R-O1 to R-O4 and the table A1–A8, T1 confirmed as the rules to build.
+  - **OQ1:** accepted. O4 lets a due attempt through a cooldown, so a stream of early nonces whose holds come due may cost up to 6 settle calls per payer per 600 s window, where main costs 3. Every other scenario costs no more than main (section 4). Pinned by BUDGET:350.
+  - **OQ2:** `Retry-After` on the held 402 only (variant c). Whether `settle-throttled` should carry it too is the owner's question (section 8).
+  - **OQ3:** every payer is reserved, and the refusal reuses `payer-cooldown`. Cost, in plain words: an honest payer's 4th payment at once is refused with a text that says "after repeated failures", and an offer is recorded for it.
+  - **OQ4:** N = 60 held repeats per agent key per window, a constant (PIPE:102).
+- **No ADR.** Constitution Art. VII.24 asks for an ADR before "any decision that contradicts `plan.md`". The root `plan.md` says nothing about cooldowns, reservations or `Retry-After`, so there is nothing in it to contradict. ADR-004 (`docs/adr/004-cloudflare-batteries-included.md`) says a payer with repeated fresh failures gets a cooldown. O1 counts in-flight settles toward that same limit, and O4 adds one exception (a due payment gets one attempt). Both refine ADR-004's rule; neither reverses it. The owner can overrule this and ask for an ADR; none of the code depends on the answer.
+- **T005 ruling** (tasks.md T005, commit `e5d8b20`, option 1). Two per-nonce bounds, both as measured:
+  - **3 settle calls** for a lone early nonce against a lagging facilitator: the first attempt, the due attempt, and one ordinary retry (the payer's third failure), then `payer-cooldown`. Pinned by PS:2323, which asserts exactly 3. This is no more than main for that case.
+  - **2 settle calls** per nonce for a payer who is cooled down or reserved out: the first attempt and the due attempt. Pinned by PS:2296 (`f.per.get(xps[0])` is 2).
+  - Row A5 is unchanged and the ordinary retry is not refused, as ruled. spec.md's R-O4 "Bound" line still gives only the 2 (see the top of this file).
+
+## 8. Not done, and whose
+
+All of these are the owner's (**O001**, Josh). No agent does them.
+
+- Live facilitator measurements. Every settle answer in this work is an in-process stub.
+- workerd / Pages measurements. The tests call `createPagesMiddleware` in Node under vitest.
+- Deploy.
+- npm publish. No version bump; the CHANGELOG entries are under `2.3.0 — Unreleased`.
+- The merge word on the draft PR.
+- The decision on `retry-after: 1` for `settle-throttled` (O2 variant b). Not built; spec OQ2 calls it a one-line follow-up.
+
+Still open for the crew: **GATE F** (reviewer agent, verify, GitHub CI green on the draft PR), and the two items at the top of this file.
