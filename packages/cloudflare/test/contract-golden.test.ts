@@ -252,7 +252,7 @@ describe("golden contract (spec 006 FR-001)", () => {
     // All three pass the cooldown check before any settle answers.
     const s = settleStub(200, UNFUNDED);
     const mw = settlingMw();
-    // Warm the isolate state first: a cold burst builds one state per request.
+    // Warm the isolate state first (a cold burst is covered by the R004 tests).
     await mw(ctx("/research", agent(), envOf(s)));
     const rs = await Promise.all([1, 2, 3].map((n) => paid(mw, s, pay(n))));
     expect(await Promise.all(rs.map(shape))).toMatchSnapshot();
@@ -276,7 +276,7 @@ describe("golden contract (spec 006 FR-001)", () => {
       return r;
     };
     const mw = settlingMw();
-    // Warm the isolate state first: a cold burst builds one state per request.
+    // Warm the isolate state first (a cold burst is covered by the R004 tests).
     await mw(ctx("/research", agent(), envOf(s)));
     const three = [1, 2, 3].map((n) => paid(mw, s, pay(n)));
     await vi.waitFor(() => expect(s.calls).toBe(3));

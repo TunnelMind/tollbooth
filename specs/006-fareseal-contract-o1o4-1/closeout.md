@@ -1,8 +1,8 @@
 # Closeout: fareseal-contract-o1o4-1 (FR-010)
 
-Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9).
+Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9). Updated by R004 (2026-11-13) on `7f87051` (section 10); the branch head is then `7f87051` plus the R004 commit.
 
-Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change.
+Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change. Line numbers in section 10 are at `7f87051` plus the R004 change.
 
 Every run below was made on 2026-11-13. Runs on changed source were made in throwaway copies (`~/agent-crew/bin/crew-scratch`), never in the worktree.
 
@@ -11,6 +11,7 @@ Every run below was made on 2026-11-13. Runs on changed source were made in thro
 1. **Finding (section 3).** The golden file run on main's source fails on 2 entries, not 1: `held` (row A2, expected) and `fourth concurrent payment (A1)`. The second is the 27th entry, added by T004 for row A1; it is not one of the 26 shapes in FR-001. Of the 26, only `held` fails, and only by the `retry-after` header. SC-002 as written ("fails only on the held-repeat entry") is not met by the file as a whole. Nothing was loosened.
 2. **spec.md's per-nonce bound: corrected by R003.** R-O4 "Bound" (spec.md line 51) and US4 (line 90) now state both bounds as ruled at T005, on the supervisor's R003 brief (section 9).
 3. **For the owner: row A7 is now bounded (R003, section 9).** A hold's due pass survives at most 3 operator-fault answers. The cap of 3 is a choice; the owner may prefer a different cap or none.
+4. **For the owner: this branch also fixes behaviour main has today (R004, section 10).** On main, on a cold isolate, requests that arrive during the first state build each build their own state: 5 concurrent copies of one payment make 5 settle calls, 100 concurrent fresh payments from one payer make 100. After this change they make 1 and 3. It is not one of the spec's rows; the second review found it (L6) on main and head alike.
 
 ## 1. Rows A1–A8 and T1: code and pinning test
 
@@ -285,3 +286,72 @@ AssertionError: expected 'settlement status unconfirmed; do not…' to be 'payer
 **Also changed, outside the brief's file list, on purpose.** `packages/cloudflare/CHANGELOG.md`, entry A7: the bound added, since the entry said the hold is put back with no limit. The supervisor has confirmed it stays.
 
 **Full verify** (the section 6 command) on `ed98127` plus the R003 change, in the worktree, 2026-11-13: **58 test files, 790 tests passed**, bun-hono example OK, bench NFR-1 PASS, exit code **0**. `pnpm lint`: the same 1 warning and 4 infos as section 6, no error. `git status` shows no change to `packages/cloudflare/test/__snapshots__/contract-golden.test.ts.snap`. Section 6's tail is T010's run at `2d680f1`.
+
+## 10. R004: second review of 2abd077, L6 (a fix for behaviour main has today)
+
+Written on `7f87051` (`git rev-parse --short HEAD`), with the R004 change in the worktree. main is `6825c30`.
+
+**What main does today.** `createPagesMiddleware` keeps one state per isolate (payment cache, in-flight join, settle bucket, per-payer counts and reservations). The first request builds it with `await buildState(...)`. Every request that arrived before that await finished saw no state and built its own. So for the first burst on a cold isolate none of the limits held. This is the same on main and on this branch before R004; rows A1 to A8 did not cause it. US1 and US5 say "warmed", and every test and the review's fuzz warmed the handler with one request first.
+
+| First burst on a cold handler | main `6825c30` and head `7f87051` | With R004 |
+|---|---|---|
+| 5 concurrent copies of one payment, stub confirms every call | 5 settle calls (the review measured 5 x 200) | 1 settle call, 1 x 200 with `x-payment-response`, 4 x 402: the same answers as a warm handler |
+| 100 concurrent fresh payments from one payer | 100 settle calls | 3 settle calls, 97 x 402 `payer-cooldown`; the 3 are served when answered |
+
+The main column is the review's probe (second-review-2abd077.md, L6) and the red run below on `7f87051` source; CF's state build is the same code on main (the review's CF:704-707).
+
+**The change.** CF:601-605 and CF:767-786. The build in progress is kept as one promise with its config key (`building`). A request that finds no state for its key starts the build or, if one for the same key is running, awaits that one. The state and its key are set when the build resolves. When the build settles either way its entry is cleared, so a rejected build is not kept and the next request builds again; the requests that waited on it get the error, handled as before (rethrown for `ConfigError` and `FaresealBindingMissingError`, failed open otherwise). A changed key still rebuilds, and a rebuild that fails still leaves the previous state in place for its own key, as before. A warm request takes the same path as before, with no added await.
+
+Not changed: each isolate has its own state. Across isolates only the chain refuses a reused nonce.
+
+**Tests** (PS:2445, `cold handler: the first burst shares one state (R004, L6)`; each uses a middleware that has answered nothing):
+
+| Test | Asserts |
+|---|---|
+| PS:2459 `5 concurrent copies of one payment → 1 settle call, one receipt, as on a warm handler` | 1 settle call; one 200 with `x-payment-response`; 4 x 402; the sorted (status, receipt, error) list equals the same burst on a warmed handler |
+| PS:2484 `100 concurrent fresh payments from one payer → 3 settle calls, 97 x 402 payer-cooldown` | 3 calls with 97 already answered; after the answers 3 x 200 with receipt, 97 x `payer-cooldown`, still 3 calls |
+| PS:2513 `a failed build is not kept: the next request builds again` | 3 concurrent requests with an undecodable site key fail open (as before); then, same cache key, 3 copies of one payment: 1 x 200, 2 x 402, 1 settle call |
+
+Red and green, in throwaway copies (`~/agent-crew/bin/crew-scratch`), `CI=true pnpm exec vitest run packages/cloudflare/test/pages-settle.test.ts` (181 tests):
+
+```
+=== CF as at 7f87051 (git show HEAD:packages/cloudflare/src/index.ts), R004 tests
+AssertionError: expected 5 to be 1 // Object.is equality      (5 copies: settle calls)
+AssertionError: expected 100 to be 3 // Object.is equality    (100 fresh: settle calls)
+AssertionError: expected 3 to be 1 // Object.is equality      (after a failed build: 200s for 3 copies)
+      Tests  3 failed | 178 passed (181)
+=== mutant: a rejected build is kept (the entry is cleared only after a build that resolved)
+ FAIL  ... > a failed build is not kept: the next request builds again
+AssertionError: expected 3 to be 1 // Object.is equality
+      Tests  1 failed | 180 passed (181)
+=== R004 source
+      Tests  181 passed (181)
+```
+
+On `7f87051` source the third test fails on its cold burst, not on a kept failure (that source keeps nothing). The mutant is what shows the test guards the retry.
+
+**Golden comparison, re-run.** (a) On the R004 tree the golden file passes (27 tests) and `git status` shows no change to `packages/cloudflare/test/__snapshots__/contract-golden.test.ts.snap`: every entry is byte-identical. (b) Section 3's run repeated on the R004 tree (every `packages/*/src` file replaced with `git show main:<path>`, `pnpm exec tsc -b` exit 0, then the golden file): the same result as section 3.
+
+```
+  packages/cloudflare/test/contract-golden.test.ts (27 tests | 2 failed)
+      held                              (snapshot mismatch: only the retry-after / 55 header pair)
+      fourth concurrent payment (A1)    (Test timed out in 5000ms; its snapshot listed obsolete)
+      Tests  2 failed | 25 passed (27)
+```
+
+**Fuzz, re-run.** The second review's harness (`zz-fuzz.test.ts` and `zzlib.ts`, read from the scratchpad its report names in section 6, copied into a throwaway copy of the R004 tree, never into the worktree), under `unshare -rn`, seeds 0 to 4199, the same assertions (a) to (d) as the report's section 2.1. Run twice: warmed as the review ran it, and cold (`FUZZ_COLD=1`, the harness's own switch: no warming request).
+
+| Source | Handler | Schedules | Requests | Settle calls | 200 served | 302 | Violations | Failing seeds |
+|---|---|---|---|---|---|---|---|---|
+| R004 tree | warm | 4,200 | 223,918 | 55,014 | 11,705 | 2,611 | 0 | none |
+| R004 tree | cold | 4,200 | 223,470 | 54,993 | 11,646 | 2,595 | 0 | none |
+| `7f87051` CF, rest R004 tree | cold, seeds 0 to 19 only | 20 | 1,190 | 302 | 72 | not read | present | 1, 5, 7, 11, 16, 19 (`B1: concurrent settle calls for` one payment) |
+| R004 tree | cold, seeds 0 to 19 only | 20 | 1,170 | 299 | 65 | 1 | 0 | none |
+
+The review's cold failures (seeds 1, 5, 7) are reproduced on `7f87051` source and are gone with R004. The request and settle-call totals vary from run to run of the same harness on the same tree (QA's re-run on this tree gave warm 223,652 requests / 54,993 calls and cold 224,035 / 55,092), so only the violation count, 0 cold and 0 warm over seeds 0 to 4199, is the stable result. The totals also differ from the review's head row (223,843 requests, 54,540 calls, on `2abd077`); the cause of that difference was not determined. The review's other probe files (`zz-probe`, `zz-extra`, `zz-win`, `zz-golden`) were not re-run; only the fuzz was asked for.
+
+**Also changed.** The six test comments that said "a cold burst builds one state per request" (PS x3, GOLD x2, BUDGET x1) now say the cold burst is covered by the R004 tests. The warming requests themselves stay, so every existing count and snapshot is taken as before. `packages/cloudflare/README.md` (new paragraph after the damping paragraph: one state per isolate, shared from the first request; a failed build is not kept), `packages/cloudflare/CHANGELOG.md` (one L6 entry under `2.3.0 — Unreleased`, saying it fixes behaviour 2.2.0 and main have today), and `pr-body.md` in this directory (new: there was no PR text file; it carries the L6 paragraph and section 9's A7 cap for the owner).
+
+**Full verify** (the section 6 command) on `7f87051` plus the R004 change, in the worktree, 2026-11-13: **58 test files, 793 tests passed** (790 + the 3 above), bun-hono example OK, bench NFR-1 PASS (added p50 0.012 ms, p99 0.043 ms), exit code **0**. `pnpm lint`: the same 1 warning and 4 infos as section 6, no error.
+
+**Could not determine.** Whether workerd delivers a cold isolate's first requests in the interleaving the tests use (several requests entering the handler before the first build's await resumes). No workerd here; the tests are Node under vitest, as in section 8. The shared build removes the fault whatever the interleaving.

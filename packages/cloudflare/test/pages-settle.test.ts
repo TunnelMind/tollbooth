@@ -6,7 +6,12 @@
 
 import { readFileSync } from "node:fs";
 import { buildOffer } from "@tunnelmindai/fareseal-adapter-x402";
-import { isNoOfferFault, parseConfig } from "@tunnelmindai/fareseal-core";
+import {
+  generateSecretKey,
+  isNoOfferFault,
+  parseConfig,
+  toBase64Url,
+} from "@tunnelmindai/fareseal-core";
 import { fareseal } from "@tunnelmindai/fareseal-hono";
 import {
   corpusFromMap,
@@ -375,7 +380,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
   it("concurrent identical payments settle once and only the first passes", async () => {
     const b = settleBinding({ settled: true, payer: "0xabc", tx: TX }, 20);
     const mw = settlingMw();
-    // Warm the isolate state first: a cold burst builds one state per request.
+    // Warm the isolate state first (a cold burst is covered by the R004 tests).
     await mw(ctx("/r", agent(), envOf(b)));
     const xp = freshPayment();
     const rs = await Promise.all(
@@ -2001,7 +2006,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
   async function viaMiddleware() {
     const h = heldSettle();
     const mw = settlingMw();
-    // Warm the isolate state first: a cold burst builds one state per request.
+    // Warm the isolate state first (a cold burst is covered by the R004 tests).
     await mw(ctx("/r", agent(), envOf(h)));
     const send = (xp: string) =>
       mw(ctx("/r", agent({ "x-payment": xp }), envOf(h)));
@@ -2431,6 +2436,107 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     expect(retry.status).toBe(200);
     expect(h.calls).toBe(2);
   });
+
+  // R004 (second review of 2abd077, L6). The handler used to build one state
+  // per request that arrived during the first build, so on a cold isolate
+  // every concurrent first request had its own in-flight map, bucket and
+  // reservations. main has the same fault. These tests send the first burst
+  // at a handler that has never answered a request.
+  describe("cold handler: the first burst shares one state (R004, L6)", () => {
+    const outcomes = async (rs: Response[]) =>
+      (
+        await Promise.all(
+          rs.map(async (r) => ({
+            status: r.status,
+            receipt: r.headers.get("x-payment-response") !== null,
+            error: r.status === 200 ? undefined : await errorOf(r),
+          })),
+        )
+      )
+        .map((o) => JSON.stringify(o))
+        .sort();
+
+    it("5 concurrent copies of one payment → 1 settle call, one receipt, as on a warm handler", async () => {
+      // A stub that confirms every call it gets: only the join keeps it at 1.
+      const burst = async (warm: boolean) => {
+        const b = settleBinding({ settled: true, payer: "0xabc", tx: TX }, 20);
+        const mw = settlingMw();
+        if (warm) await mw(ctx("/r", agent(), envOf(b)));
+        const xp = freshPayment();
+        const rs = await Promise.all(
+          Array.from({ length: 5 }, () =>
+            mw(ctx("/r", agent({ "x-payment": xp }), envOf(b))),
+          ),
+        );
+        return { calls: b.settles.length, rs };
+      };
+      const cold = await burst(false);
+      expect(cold.calls).toBe(1);
+      const served = cold.rs.filter((r) => r.status === 200);
+      expect(served.length).toBe(1);
+      expect(served[0]?.headers.get("x-payment-response")).not.toBeNull();
+      expect(cold.rs.filter((r) => r.status === 402).length).toBe(4);
+      const warm = await burst(true);
+      expect(warm.calls).toBe(1);
+      expect(await outcomes(cold.rs)).toEqual(await outcomes(warm.rs));
+    });
+
+    it("100 concurrent fresh payments from one payer → 3 settle calls, 97 x 402 payer-cooldown", async () => {
+      const h = heldSettle();
+      const mw = settlingMw(); // not warmed
+      let answered = 0;
+      const rs = Array.from({ length: 100 }, () =>
+        mw(ctx("/r", agent({ "x-payment": freshPayment() }), envOf(h))).then(
+          (r) => {
+            answered += 1;
+            return r;
+          },
+        ),
+      );
+      await vi.waitFor(() => expect(h.calls + answered).toBe(100), {
+        timeout: 10_000,
+      });
+      expect(h.calls).toBe(3);
+      expect(answered).toBe(97);
+      while (h.waiting.length > 0) h.answer(200, OK);
+      const all = await Promise.all(rs);
+      const served = all.filter((r) => r.status === 200);
+      expect(served.length).toBe(3);
+      for (const r of served)
+        expect(r.headers.get("x-payment-response")).not.toBeNull();
+      const refused = all.filter((r) => r.status === 402);
+      expect(refused.length).toBe(97);
+      for (const r of refused) expect(await errorOf(r)).toBe(COOLING);
+      expect(h.calls).toBe(3);
+    }, 30_000);
+
+    it("a failed build is not kept: the next request builds again", async () => {
+      const b = settleBinding({ settled: true, payer: "0xabc", tx: TX });
+      const mw = settlingMw();
+      const err = vi.spyOn(console, "error").mockImplementation(() => {});
+      // An undecodable site key makes the build reject. The cache key only
+      // records that a site key is set, so the repaired env has the same key
+      // and would be handed a cached rejection if one were kept.
+      const bad = { ...envOf(b), TOLLBOOTH_SITE_KEY: "!!!" };
+      const failed = await Promise.all(
+        [1, 2, 3].map(() => mw(ctx("/r", agent(), bad))),
+      );
+      // Existing behaviour for a non-config build error: fail open.
+      for (const r of failed) expect(await r.text()).toBe("site content");
+      expect(err).toHaveBeenCalledTimes(3);
+      const good = {
+        ...envOf(b),
+        TOLLBOOTH_SITE_KEY: toBase64Url(generateSecretKey()),
+      };
+      const xp = freshPayment();
+      const rs = await Promise.all(
+        [1, 2, 3].map(() => mw(ctx("/r", agent({ "x-payment": xp }), good))),
+      );
+      expect(rs.filter((r) => r.status === 200).length).toBe(1);
+      expect(rs.filter((r) => r.status === 402).length).toBe(2);
+      expect(b.settles.length).toBe(1);
+    });
+  });
 });
 
 // Spec 006 T005, R-O4 (rows A4-A7; L3's case). A payment held as early whose
@@ -2499,7 +2605,7 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
     ];
     const f = facilitator(xps);
     const mw = settlingMw();
-    // Warm the isolate state first: a cold burst builds one state per request.
+    // Warm the isolate state first (a cold burst is covered by the R004 tests).
     await mw(ctx("/r", agent(), envOf(f)));
     const send = (xp: string) =>
       mw(ctx("/r", agent({ "x-payment": xp }), envOf(f)));

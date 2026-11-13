@@ -71,6 +71,17 @@ failures plus in-flight settles already total three is refused as
 offer recorded), so 100 concurrent fresh payments from one payer make 3
 settle calls, not 20. Eviction is amnesty.
 
+The cache, the bucket and the per-payer counts live in one state per
+isolate, built by the first request. Requests that arrive while it is being
+built wait for that one build and share its state, so the limits above hold
+from the first request of a cold isolate (before 2.3.0 each of those
+requests built its own state: 5 concurrent copies of one payment made 5
+settle calls, 100 fresh payments from one payer made 100). A build that
+fails is not kept: the requests waiting on it get the error (rethrown for a
+config or binding error, failed open otherwise, as before) and the next
+request builds again. Each isolate still has its own state; across isolates
+only the chain refuses a reused nonce.
+
 Each settle answer is classified by this table; the first row that matches
 wins. Operator rows never burn the payer's nonce or cooldown, so the same
 `X-PAYMENT` can be retried once settlement is healthy.

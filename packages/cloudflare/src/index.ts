@@ -598,6 +598,11 @@ export function createPagesMiddleware(
 ): PagesMiddleware {
   let state: State | null = null;
   let stateKey: string | null = null;
+  // The build in progress, if any. Requests that arrive during it await this
+  // one promise, so a cold isolate's first burst shares one State (one
+  // in-flight map, one bucket, one set of reservations) instead of each
+  // request building its own.
+  let building: { key: string; p: Promise<State> } | null = null;
   let isolateId: string | null = null;
   let seq = 0;
   let lastFlushMs = 0;
@@ -759,11 +764,26 @@ export function createPagesMiddleware(
         opts.binding !== undefined && context.env[opts.binding] ? "b" : "",
         readEnv(context.env, "ENV"),
       ].join("|");
-      if (state === null || stateKey !== key) {
-        state = await buildState(context.env, toml);
-        stateKey = key;
+      let s: State;
+      if (state !== null && stateKey === key) {
+        s = state;
+      } else {
+        if (building === null || building.key !== key) {
+          const p: Promise<State> = buildState(context.env, toml)
+            .then((built) => {
+              state = built;
+              stateKey = key;
+              return built;
+            })
+            // Settled either way, the entry goes: a rejected build is not
+            // kept, so the next request builds again.
+            .finally(() => {
+              if (building?.p === p) building = null;
+            });
+          building = { key, p };
+        }
+        s = await building.p;
       }
-      const s = state;
       const resp = await s.app.fetch(context.request, {
         NEXT: () => context.next(),
         // null (not undefined) tells the hono layer a receipt here would be
