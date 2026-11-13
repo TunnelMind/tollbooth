@@ -105,7 +105,9 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 an offer unless `isNoOfferFault`, and skips only the ledger write for
 `not-yet-valid-held`): it counts toward the maze for a verified agent.
 Row 5's "held repeats: no" holds for the first 60 held repeats per verified
-agent key per offer window (`toll.window`); from the 61st the held repeat
+agent key in a held window of `toll.window`, opened by the first held repeat
+and cleared when the offer window rolls or the key pays; from the 61st the
+held repeat
 gets the same 402 with `Retry-After` and an offer is recorded, and once
 `offer_grace` is spent the agent gets the usual 302 to the maze.
 `test/pages-settle.test.ts` ("README table") checks every row of
@@ -147,7 +149,7 @@ payer got a settle call on every request while the outage lasted. The cap of
 (`DUE_FAULT_LIMIT`). A row 5 answer whose `validAfter` is already
 past by our clock is never held, on the first attempt too, so each retry of
 it is an ordinary attempt that counts toward the cooldown.
-Held repeats are bounded by the cap of 60 per window: a verified agent
+Held repeats are bounded by the cap of 60 per held window: a verified agent
 sending one held payment at 10 requests/s gets its first 302 by request 64
 (1 first attempt + 60 free held repeats + 3 offers of grace) with 1 settle
 call, and an honest agent polling once a second for 60 s on one held payment
