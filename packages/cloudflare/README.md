@@ -90,10 +90,10 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 |---|---|---|---|---|---|---|
 | 0a | no settle token configured | operator | `settlement-unconfigured` | no | no | no |
 | 0b | the per-isolate settle bucket is empty (any client can empty it, so an offer is still recorded) | operator | `settle-throttled` | no | no | yes |
-| 0c | the settle call throws or times out (10 s), or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
+| 0c | the settle call throws (connection failure), or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
 | 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared | n/a (served) |
 | 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault (the payer may have paid; no offer recorded) | `no-transaction-id` | yes | no | no |
-| 3a | any non-2xx with `data.settled === true` (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
+| 3a | any non-2xx with `data.settled === true`, or the settle call times out (10 s) (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
 | 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no | no |
 | 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no | no |
 | 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`, plus a `Retry-After` header: whole seconds until `validAfter`, at least 1). Once `validAfter` has passed the payment is due: it gets one attempt that goes to settle even if the payer is cooled down. A due attempt that meets an empty settle bucket (row 0b) or an operator fault stays due. A due attempt answered row 5 again is not held again: the next retry is an ordinary attempt (`payer-cooldown` if the payer is cooled down, else a settle call) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
@@ -109,8 +109,9 @@ agent key per offer window (`toll.window`); from the 61st the held repeat
 gets the same 402 with `Retry-After` and an offer is recorded, and once
 `offer_grace` is spent the agent gets the usual 302 to the maze.
 `test/pages-settle.test.ts` ("README table") checks every row of
-this table against the code. A timeout is row 0c: the settle fetch is
-aborted after 10 s and answered like any other failed call. A settle in
+this table against the code. A timeout is row 3a: the settle fetch is
+aborted after 10 s and answered `settle-unconfirmed`, because the transfer
+may already have been broadcast. A settle in
 flight stops counting toward its payer's limit after 30 s (the timeout plus
 a margin), so a settle whose request the runtime cancelled cannot keep the
 payer locked out.

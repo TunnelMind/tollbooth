@@ -86,8 +86,9 @@ const SETTLE_REFILL_PER_S = 5;
 // Hard limit on one settle call (spec 006 R002, second review M1). Without it
 // a settle route that never answers holds the request, its per-payer
 // reservation and its `inflight` entry for the life of the isolate. A timeout
-// is answered like any other fetch reject: settle-unreachable, not cached,
-// not counted. 10 s is judgment, not measured facilitator latency.
+// is answered as settle-unconfirmed (row 3a, R006), not settle-unreachable:
+// the facilitator may have broadcast the transfer before we gave up. Not
+// cached, not counted. 10 s is judgment, not measured facilitator latency.
 const SETTLE_TIMEOUT_MS = 10_000;
 // A per-payer reservation older than this no longer counts and is removed
 // when next read. It covers the case the timeout cannot: on Workers a client
@@ -488,7 +489,13 @@ export function makeSettlingVerify(
           untilMs: t + PAYER_COOLDOWN_MS,
         });
         return { ok: false, payer: null, reason };
-      } catch {
+      } catch (err) {
+        // Row 3a (R006): our timeout, on the fetch or the body read, can fire
+        // after the facilitator broadcast the transfer. So never "retry the
+        // same payment": unconfirmed, not cached, not counted. Any other
+        // throw (connection failure, a 2xx that is not JSON) is row 0c.
+        if ((err as { name?: unknown } | null)?.name === "TimeoutError")
+          return { ok: false, payer: null, reason: "settle-unconfirmed" };
         return { ok: false, payer: null, reason: "settle-unreachable" };
       }
     };

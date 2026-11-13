@@ -736,13 +736,15 @@ describe("createPagesMiddleware — mainnet (B008)", () => {
 // the reason, whether the nonce is cached (a second identical try reaches
 // settle or not) and whether the payer is counted toward the cooldown.
 describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
-  /** A settle stub whose answer can change between calls; `throws` = transport error. */
+  /** A settle stub whose answer can change between calls; `throws` = transport
+   * error (true → a TypeError, or the error to throw). */
   function table(status: number, body: unknown, token = "settle-secret") {
-    const s = { calls: 0, status, body, throws: false };
+    const s = { calls: 0, status, body, throws: false as boolean | Error };
     const fetch = async (req: Request) => {
       if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
       s.calls += 1;
-      if (s.throws) throw new TypeError("fetch failed");
+      if (s.throws)
+        throw s.throws === true ? new TypeError("fetch failed") : s.throws;
       const b = s.body;
       return new Response(typeof b === "string" ? b : JSON.stringify(b), {
         status: s.status,
@@ -912,6 +914,54 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       expect(error).toBe(UNCONFIRMED);
       expect(error).not.toContain("retry the same payment");
     });
+
+  // Row 3a (R006): the settle call timed out. The facilitator may already
+  // have broadcast the transfer, so it is not "retry the same payment".
+  const timedOut = () =>
+    new DOMException("The operation timed out", "TimeoutError");
+  it("row 3a (R006): the settle fetch times out → settle-unconfirmed, not cached, not counted, not served", async () => {
+    const t = table(200, {});
+    t.s.throws = timedOut();
+    // Second identical try calls settle again; four more fresh payments from
+    // the same payer never meet payer-cooldown.
+    await expectOperator(t, "settle-unconfirmed");
+    // The payer's next fresh payment, once healthy, is settled.
+    t.s.throws = false;
+    t.s.body = { ok: true, data: { settled: true, tx: TX } };
+    expect((await t.verify(freshPayment(), t.cfg)).ok).toBe(true);
+    const m = table(200, {});
+    m.s.throws = timedOut();
+    const r = await settlingMw()(
+      ctx("/r", agent({ "x-payment": freshPayment() }), envOf(m)),
+    );
+    expect(r.status).toBe(402);
+    expect(r.headers.get("x-payment-response")).toBeNull();
+    expect((await r.json()).error).toBe(UNCONFIRMED);
+  });
+
+  it("row 3a (R006): the timeout fires during the body read → settle-unconfirmed, not cached, not counted", async () => {
+    const t = table(200, {});
+    const verify = makeSettlingVerify(
+      async () => {
+        t.s.calls += 1;
+        return new Response(
+          new ReadableStream({ start: (c) => c.error(timedOut()) }),
+          { status: 200 },
+        );
+      },
+      SETTLE_URL,
+      "settle-secret",
+    );
+    await expectOperator({ ...t, verify }, "settle-unconfirmed");
+  });
+
+  it("row 0c (R006): a connection failure (TypeError) and a non-timeout abort stay settle-unreachable", async () => {
+    const t = table(200, {});
+    t.s.throws = new TypeError("fetch failed");
+    await expectOperator(t, "settle-unreachable");
+    t.s.throws = new DOMException("aborted", "AbortError");
+    await expectOperator(t, "settle-unreachable");
+  });
 
   // Row 4, the status form: whatever the body (settled:true is row 3a).
   // 404/405 (R002 L1): a wrong settle URL or method is ours, never the payer's.
@@ -2202,8 +2252,6 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
   // kept its reservation for the life of the isolate: three of them locked
   // the payer out for good.
   const TTL_MS = 30_000;
-  const UNREACHABLE =
-    "settlement unavailable (operator fault); retry the same payment";
   const okResponse = () => new Response(JSON.stringify(OK), { status: 200 });
   /** AbortSignal.timeout is native and runs on real time, which a mocked
    * Date.now does not move. Replace it with signals the test fires by hand;
@@ -2414,7 +2462,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     await Promise.all(again);
   });
 
-  it("R002 M1 test 6: a hung settle is aborted at SETTLE_TIMEOUT_MS → settle-unreachable, not served, nonce not cached", async () => {
+  it("R002 M1 test 6: a hung settle is aborted at SETTLE_TIMEOUT_MS → settle-unconfirmed (row 3a, R006), not served, nonce not cached", async () => {
     const t = manualTimeouts();
     const h = hungSettle();
     const mw = settlingMw();
@@ -2428,7 +2476,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     t.fire();
     const timedOut = await r;
     expect(timedOut.status).toBe(402);
-    expect(await errorOf(timedOut)).toBe(UNREACHABLE);
+    expect(await errorOf(timedOut)).toBe(UNCONFIRMED);
     expect(timedOut.headers.get("x-payment-response")).toBeNull();
     // Not cached and not counted: the same X-PAYMENT settles once healthy.
     h.hang = false;
