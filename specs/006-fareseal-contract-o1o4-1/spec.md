@@ -69,6 +69,8 @@ Current code these rules edit: `makeSettlingVerify` CF:204-408 — hold check CF
 | A6 | Due attempt meets an empty bucket | 402 `settle-throttled`; the hold is gone, so the retry is an ordinary attempt | 402 `settle-throttled` (same bytes); the hold stays, so the retry is still the due attempt |
 | A7 | Due attempt gets an operator fault | 402 operator-fault text; the hold is gone | same 402; the hold is put back, so the retry is still the due attempt. At most twice: the third operator-fault answer for one hold drops the hold (R003), so the next request is an ordinary attempt that meets the cooldown |
 | A8 | When a cooldown ends (L2) | start time of the failing settle + 600 s | time its failure was written + 600 s. No response shape changes |
+| A9 | A settle call that has not answered, body included, after 10 s (R006) | no timeout: the request waits; a settle answering after more than 10 s is served per the README table (200 + `x-payment-response` on success) | 402, `error: "settlement status unconfirmed; do not pay again, contact the operator"` (reason `settle-unconfirmed`, the existing reason and text), not cached, not counted, no offer recorded. The payer is not served and their money may already have moved |
+| A10 | A payer's reservation (A1) whose settle has not answered, or whose release never ran, 30 s after the settle call started (R002) | — (main has no reservations; under A1 alone it would count until released) | it stops counting and is removed when the payer's reservations are next read (no timer). No response shape changes |
 | T1 | Exported types | — | `X402VerifyResult.retryAfterS?: number` (hono, optional); `OfferState.heldInWindow: number` and `OfferLedger.recordHeld()` (core). The `@internal` `makeSettlingVerify` return value gains a `_sizes()` test hook |
 
 **No new reason string, no new 402 text, no new status code.** `settle-throttled` 402, first `not-yet-valid` 402, the x402 discovery shapes (`x-payment-required` header and `accepts` from `buildOffer`), receipts, signed bytes, log formats and exit codes are unchanged. The golden test (FR-001) pins these 26 shapes through the Worker handler, the reviewer's list: no payment, garbage, JSON that is not a payment, unfunded, replay, early, held, cooldown, throttled, unreachable, 500, no tx id, unconfirmed, 400, 404, 2xx HTML, retryable, success, replay after success, expired, amount too low, too early, no token, three concurrent failures, plus a mazed agent (302) and a human pass (200). Only A2 changes one of them (held: plus `retry-after`).
@@ -131,7 +133,7 @@ Through `createPagesMiddleware` with a recording settle stub and a mocked clock:
 - A due attempt while the bucket is empty → `settle-throttled`. The entry stays. It must not be deleted before the token is taken.
 - A due attempt answered row 5 again with a `validAfter` still in the future by our clock (both clocks disagree). Rule: not held again. Next retry is ordinary. Document it.
 - `retryAfterS` when `opts.nowS` is given (tests, hono `options.nowS`): uses that clock, not wall time.
-- A payer whose first settle hangs forever holds one reservation forever. That is bounded by in-flight settles and released when the runtime ends the request. It is recorded with the existing no-timeout cost (README).
+- A payer whose first settle hangs: the settle call times out at 10 s and is answered `settle-unconfirmed` (R006, row A9), which releases the reservation. If the release never runs (the runtime cancelled the request), the reservation stops counting after 30 s (R002, row A10).
 - `recordHeld` on a key evicted from the ledger LRU starts at 1 (eviction is amnesty, LEDGER header comment).
 - R-O1's merged check must not change any sequential test: with nothing in flight `live + 0 >= 3` ⇔ `n >= 3 && now < untilMs`.
 - Signing is slow (secp256k1). Loops of 100+ signatures use the 30_000 ms timeout the M1 tests use.
@@ -141,7 +143,7 @@ Through `createPagesMiddleware` with a recording settle stub and a mocked clock:
 - "tollbooth#16" is the merged fareseal-pay-lows-2 PR; main `6825c30` is its merge. The repo slug stays `tollbooth`; the product is Fareseal.
 - No version bump: entries go under CHANGELOG `2.3.0 — Unreleased`.
 - O1–O4 refine ADR-004 ("a payer with repeated fresh failures gets a cooldown") and do not contradict the root `plan.md`, so constitution Art. VII.24 needs no ADR. GATE 0 may overrule this, in which case an ADR task is inserted before T004.
-- "Timeout" in the release paths means the settle fetch rejecting (an abort or a runtime timeout). The code has no timeout of its own and none is added.
+- "Timeout" in the release paths means the settle fetch rejecting (an abort or a runtime timeout). The settle fetch has a 10 s timeout of its own (R006, row A9), and a reservation has a 30 s limit (R002, row A10).
 
 ## Open Questions (GATE 0 — each has a stated default; the tasks follow the default unless GATE 0 says otherwise)
 
@@ -153,6 +155,6 @@ Through `createPagesMiddleware` with a recording settle stub and a mocked clock:
 ## Out of Scope
 
 - Any Stripe code (`packages/adapter-stripe/**`, `packages/core/src/voucher.ts`). No Stripe line is removed.
-- A settle timeout, a new config key, a new dependency, a refactor of `makeSettlingVerify` beyond the rules above.
+- A new config key, a new dependency, a refactor of `makeSettlingVerify` beyond the rules above. (The settle timeout was out of scope at first and is now in scope: the 10 s timeout is R006 and the 30 s reservation limit is R002, rows A9 and A10.)
 - x402 discovery shapes (`buildOffer`, `x-payment-required`, `accepts`), receipts and signed bytes, CLI exit codes.
 - Live facilitator, workerd or Pages measurements, deploys, npm publish, merges (owner).

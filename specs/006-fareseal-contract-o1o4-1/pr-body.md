@@ -25,7 +25,6 @@ Found by the second review (M1): a settle that never answered held its payer's r
 - The settle call now has a hard timeout of **10 s** (judgment, not measured facilitator latency; not yet approved, see "Choices for the owner"). A timeout is answered `settle-unconfirmed` (row 3a: do not pay again), not cached and not counted, because the transfer may already have been broadcast.
 - A per-payer reservation stops counting after **30 s** (the timeout plus a margin). The limit is checked on read; there is no timer.
 - **Not built:** running the settle under `waitUntil`. The verifier is built once per isolate and hono passes it no request context. If the runtime cancels a request, the reservation is released by the 30 s limit, not at once.
-- No CHANGELOG line yet for the timeout or the limit.
 
 Closeout section 8b. The held-repeat window fix (H1) is in section 8a.
 
