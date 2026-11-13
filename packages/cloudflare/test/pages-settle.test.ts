@@ -1260,6 +1260,53 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
+  // Spec 006 R-O2 (row A2): the held repeat says how long is left.
+  it("held at T0, repeated at T0+10 s → 402 with retry-after: 45; the first answer has none", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const mw = settlingMw();
+      const xp = earlyPayment(T0); // 55 s ahead
+      const send = () => mw(ctx("/r", agent({ "x-payment": xp }), envOf(t)));
+      // The facilitator's own "not yet": no header (not the held path).
+      const first = await send();
+      expect(first.status).toBe(402);
+      expect(first.headers.has("retry-after")).toBe(false);
+      clock.mockReturnValue((T0 + 10) * 1000);
+      const held = await send();
+      expect(held.status).toBe(402);
+      expect(held.headers.get("retry-after")).toBe("45");
+      expect((await held.json()).error).toBe("authorization not yet valid");
+      expect(t.s.calls).toBe(1); // held: no settle call
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("the settle-throttled 402 has no retry-after", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      // Operator faults drain the bucket without counting against the payer.
+      const s = { calls: 0 };
+      const b = {
+        fetch: async (req: Request) => {
+          if (req.url === SETTLE_URL) s.calls += 1;
+          return new Response("{}", { status: 503 });
+        },
+      };
+      const mw = settlingMw();
+      const send = () =>
+        mw(ctx("/r", agent({ "x-payment": freshPayment() }), envOf(b)));
+      for (let i = 0; i < SETTLE_BUCKET_CAP; i++) await send();
+      const r = await send();
+      expect(r.status).toBe(402);
+      expect(s.calls).toBe(SETTLE_BUCKET_CAP); // throttled: no settle call
+      expect(r.headers.has("retry-after")).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("after validAfter exactly one settle attempt is allowed, served once, replay 402", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
     try {

@@ -264,8 +264,14 @@ export function makeSettlingVerify(
     if (early !== undefined) {
       // Its own reason so core records no offer for it (R004 L-b); hono
       // shows the payer the same "not yet valid" text.
+      // retryAfterS: hono turns it into `Retry-After` on this 402 only.
       if (nowS < early)
-        return { ok: false, payer: null, reason: "not-yet-valid-held" };
+        return {
+          ok: false,
+          payer: null,
+          reason: "not-yet-valid-held",
+          retryAfterS: Number(early - nowS),
+        };
       notYetValid.delete(key);
     }
     const pending = inflight.get(key);

@@ -70,6 +70,13 @@ export interface X402VerifyResult {
   reason?: string;
   /** On-chain transaction hash, when a settling verifier has one. */
   transaction?: string;
+  /**
+   * Whole seconds until a held payment's validAfter. Set only on a held
+   * refusal (`ok: false`, the verifier is holding an early payment and
+   * answered without a settle call); the 402 then carries it as
+   * a `Retry-After` header. Absent on every other result.
+   */
+  retryAfterS?: number;
 }
 
 /** @tunnelmindai/fareseal-maze's makeMazeHandler satisfies this structurally. */
@@ -712,6 +719,15 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
         "link",
         `<${cfg.toll.stripe.payment_link}>; rel="payment"; title="stripe-voucher"`,
       );
+    // A held early payment: tell the payer when the same payment can be
+    // retried. Only here, so a 302 consequence never carries it.
+    if (
+      c.req.header("x-payment") !== undefined &&
+      rejected?.ok === false &&
+      Number.isSafeInteger(rejected.retryAfterS) &&
+      (rejected.retryAfterS as number) > 0
+    )
+      c.header("retry-after", String(rejected.retryAfterS));
     // An offer is per-request (price, payment state): never cache a 402.
     c.header("cache-control", "no-store");
     return c.json({ ...body, ...x402Body }, 402);

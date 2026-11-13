@@ -271,3 +271,91 @@ describe("FR-006 - no maze for a payment we failed", () => {
     },
   );
 });
+
+// Spec 006 R-O2 (row A2): only a rejected payment that carries `retryAfterS`
+// gets a `retry-after` header, and only on the 402 offer.
+describe("R-O2 - retry-after on a held 402 only", () => {
+  const held =
+    (extra: { retryAfterS?: number }): Verify =>
+    async () => ({
+      ok: false,
+      payer: null,
+      reason: "not-yet-valid-held",
+      ...extra,
+    });
+  const get = (a: Hono, headers: Record<string, string>) =>
+    a.request("http://example.com/article", { headers });
+  const paying = { ...curl, "x-payment": "anything" };
+
+  it("a rejected result with retryAfterS 45 -> 402 with retry-after: 45", async () => {
+    const r = await get(app(held({ retryAfterS: 45 })), paying);
+    expect(r.status).toBe(402);
+    expect(r.headers.get("retry-after")).toBe("45");
+    expect((await r.json()).error).toBe("authorization not yet valid");
+  });
+
+  it("a rejected result without retryAfterS -> no retry-after", async () => {
+    const r = await get(app(held({})), paying);
+    expect(r.status).toBe(402);
+    expect(r.headers.has("retry-after")).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])(
+    "retryAfterS %s is not a wait of whole seconds -> no retry-after",
+    async (retryAfterS) => {
+      const r = await get(app(held({ retryAfterS })), paying);
+      expect(r.status).toBe(402);
+      expect(r.headers.has("retry-after")).toBe(false);
+    },
+  );
+
+  it("ok: true never carries it, served or not", async () => {
+    const r = await get(
+      app(async () => ({ ok: true, payer: PAY_TO, retryAfterS: 45 })),
+      paying,
+    );
+    expect(r.status).toBe(200);
+    expect(r.headers.has("retry-after")).toBe(false);
+  });
+
+  it("a 302 consequence carries none", async () => {
+    const agent = await makeAgent();
+    const cfg = `${TOLL}\n[toll]\noffer_grace = 0\n`;
+    const a = new Hono();
+    a.use(
+      fareseal({
+        config: cfg,
+        // "expired" records an offer, so the agent runs out of grace; the
+        // field rides along to prove the redirect drops it.
+        x402: {
+          buildOffer,
+          verifyProof: async () => ({
+            ok: false,
+            payer: null,
+            reason: "expired",
+            retryAfterS: 45,
+          }),
+        },
+        maze: makeMazeHandler({
+          corpus: corpusFromMap(generateCorpus({ seed: "ro2", pages: 10 })),
+          cfg: parseConfig(cfg),
+          sleep: async () => {},
+        }),
+        fetchDirectory: dirWith(agent.jwk),
+        nowS: () => NOW,
+      }),
+    );
+    a.get("*", (c) => c.text("content"));
+    const wba = await signedRequest(agent, { expires: NOW + 300 });
+    let r = new Response();
+    for (let i = 0; i < 3; i++)
+      r = await get(a, {
+        ...paying,
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      });
+    expect(r.status).toBe(302);
+    expect(r.headers.has("retry-after")).toBe(false);
+  });
+});
