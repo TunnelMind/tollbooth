@@ -882,7 +882,10 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
       const nowSec = nowS ?? Math.floor(Date.now() / 1000);
       const agentKey =
         decision.identity?.kind === "agent" ? decision.identity.agentKey : null;
-      const state = agentKey === null ? undefined : ledger.get(agentKey);
+      // usableState, not get: an entry only held repeats have written has
+      // no offer window, and must not date the receipt (R005).
+      const state =
+        agentKey === null ? undefined : ledger.usableState(agentKey);
       const window = state
         ? {
             count: Math.max(state.offersInWindow, 1),

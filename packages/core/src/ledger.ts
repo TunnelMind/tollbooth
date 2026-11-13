@@ -136,6 +136,16 @@ export class OfferLedger {
     return this.map.get(key);
   }
 
+  /**
+   * Peek for readers that describe a key's offer window (the signed
+   * receipt). A held-only entry has no offer window yet, so it reads as no
+   * entry, as it did before recordHeld existed (review R005).
+   */
+  usableState(key: string): OfferState | undefined {
+    const state = this.map.get(key);
+    return state && !OfferLedger.heldOnly(state) ? state : undefined;
+  }
+
   get size(): number {
     return this.map.size;
   }
