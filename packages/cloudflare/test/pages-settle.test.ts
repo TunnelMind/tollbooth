@@ -1477,6 +1477,181 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
+  // T002 (spec 006, L1 + L4): the tests below pin the payer-count
+  // bookkeeping of rows 5 and 6/7. Each names the source mutant it kills.
+
+  // Kills m01 (row 5 counting from the pre-await `fails`, not the re-read
+  // `cur`): the row-5 half of N1.
+  it("L1: three concurrent early payments from one payer cool it down", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = stubbed();
+      const results = await Promise.all(
+        [earlyPayment(T0), earlyPayment(T0), earlyPayment(T0)].map((xp) =>
+          t.verify(xp, t.cfg),
+        ),
+      );
+      expect(results.map((r) => r.reason)).toEqual([
+        "not-yet-valid",
+        "not-yet-valid",
+        "not-yet-valid",
+      ]);
+      expect(t.s.calls).toBe(3);
+      expect((await t.verify(earlyPayment(T0), t.cfg)).reason).toBe(
+        "payer-cooldown",
+      );
+      expect(t.s.calls).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // Kills m04 (rows 6/7 written `cur ? cur.n : 0`): N2's twin for row 6.
+  it("L4: a row-6 count from an expired cooldown window restarts at 1", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const t = facilitator();
+      for (let i = 0; i < 2; i++)
+        expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+          "insufficient_funds",
+        );
+      ms += 600_001; // PAYER_COOLDOWN_MS + 1: the first window is over
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "insufficient_funds",
+      );
+      expect(t.s.calls).toBe(3);
+      // One failure in this window, not three: the next payment reaches
+      // settle. With the old count carried over it would be cooled down.
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "insufficient_funds",
+      );
+      expect(t.s.calls).toBe(4);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // The next three run once per count write: row 5 (an early payment) and
+  // row 6 (an unfunded one), so a mutant in either write is killed alone.
+  const ROWS = [
+    {
+      row: "row 5",
+      reason: "not-yet-valid",
+      data: NYV.data,
+      failing: (nowS: number) => earlyPayment(nowS),
+    },
+    {
+      row: "row 6",
+      reason: "insufficient_funds",
+      data: { settled: false, reason: "insufficient_funds" },
+      failing: (_nowS: number) => freshPayment(),
+    },
+  ];
+
+  // Kills m09 (row 5) / m10 (rows 6/7): `untilMs` kept from the live entry
+  // instead of restarted by the new failure.
+  it.each(ROWS)(
+    "L4: $row failures at t, t+1 s, t+300 s cool the payer until t+900 s",
+    async ({ reason, failing }) => {
+      let ms = T0 * 1000;
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+      try {
+        const t = facilitator();
+        for (const at of [0, 1_000, 300_000]) {
+          ms = T0 * 1000 + at;
+          expect(
+            (await t.verify(failing(Math.floor(ms / 1000)), t.cfg)).reason,
+          ).toBe(reason);
+        }
+        expect(t.s.calls).toBe(3);
+        ms = T0 * 1000 + 899_999; // 1 ms short of the last failure + 600 s
+        expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+          "payer-cooldown",
+        );
+        expect(t.s.calls).toBe(3);
+        ms = T0 * 1000 + 900_000;
+        expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+          "insufficient_funds",
+        );
+        expect(t.s.calls).toBe(4);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  // Kills m19 (row 5) / m20 (rows 6/7): `now < cur.untilMs` → `<=`.
+  it.each(ROWS)(
+    "L4: a $row failure written exactly at untilMs starts at 1",
+    async ({ reason, failing }) => {
+      let ms = T0 * 1000;
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+      try {
+        const t = facilitator();
+        for (let i = 0; i < 2; i++) await t.verify(failing(T0), t.cfg);
+        ms += 600_000; // exactly untilMs: the window is over
+        expect((await t.verify(failing(T0 + 600), t.cfg)).reason).toBe(reason);
+        expect(t.s.calls).toBe(3);
+        // n = 1, not 3: the next payment reaches settle.
+        expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+          "insufficient_funds",
+        );
+        expect(t.s.calls).toBe(4);
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
+  // Kills m21 (row 5) / m22 (rows 6/7): n from max(pre-await snapshot,
+  // re-read). A success that lands while a failure is in flight clears the
+  // count, and that failure must then count from zero, not from what it saw
+  // going in. At most 2 settles are in flight, which T004's per-payer
+  // reservation (R-O1) still allows.
+  it.each(ROWS)(
+    "L4 (P2d): a success landing before an in-flight $row failure clears the count that failure adds to",
+    async ({ reason, data, failing }) => {
+      const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+      try {
+        // Each settle call waits here until the test answers it, oldest first.
+        const answers: ((data: Record<string, unknown>) => void)[] = [];
+        const verify = makeSettlingVerify(
+          () =>
+            new Promise<Response>((resolve) => {
+              answers.push((d) =>
+                resolve(new Response(JSON.stringify({ ok: true, data: d }))),
+              );
+            }),
+          SETTLE_URL,
+          "settle-secret",
+        );
+        const cfg = parseConfig(toml());
+        const answer = (d: Record<string, unknown>) => answers.shift()?.(d);
+        const settled = { settled: true, tx: TX };
+
+        const first = verify(failing(T0), cfg);
+        answer(data);
+        expect((await first).reason).toBe(reason); // n = 1
+        const funded = verify(freshPayment(), cfg);
+        const unfunded = verify(failing(T0), cfg); // both saw n = 1
+        expect(answers.length).toBe(2); // both in flight
+        answer(settled);
+        expect(await funded).toMatchObject({ ok: true }); // count cleared
+        answer(data);
+        expect((await unfunded).reason).toBe(reason); // n = 1 (mutant: 2)
+        const again = verify(failing(T0), cfg);
+        answer(data);
+        expect((await again).reason).toBe(reason); // n = 2 (mutant: 3)
+        const last = verify(freshPayment(), cfg);
+        answer(settled); // mutant: payer-cooldown, no settle call to answer
+        expect(await last).toMatchObject({ ok: true });
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
   it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
