@@ -199,13 +199,23 @@ function tagged(fetchFn: FetchLike, marker: string): FetchLike {
  * Local verifyProof (fast, free reject), then settle over the routed fetch.
  * Passes ONLY on a successful settle; never throws into the pipeline.
  * Transport/config failures are the operator's own and never damp a payer.
- * @internal Exported for tests only; not part of the supported API.
+ * @internal Exported for tests only; not part of the supported API. So is
+ * `_sizes()` on the returned function: the sizes of the per-isolate maps.
  */
 export function makeSettlingVerify(
   routedFetch: FetchLike,
   settleUrl: string,
   settleToken: string,
-): X402Adapter["verifyProof"] {
+): X402Adapter["verifyProof"] & {
+  /** @internal Test hook; not part of the supported API. */
+  _sizes(): {
+    seen: number;
+    payerFails: number;
+    notYetValid: number;
+    inflight: number;
+    payerInflight: number;
+  };
+} {
   // Keyed `${from}:${nonce}` — the EIP-3009 identity — so a re-encoded copy
   // of the same authorization is still the same payment.
   const seenPayments = new Map<string, string>();
@@ -217,8 +227,18 @@ export function makeSettlingVerify(
   // The x402 resource is not in the signed EIP-3009 authorization, so sharing
   // ok:true would let one payment sent to many paths unlock all of them.
   const inflight = new Map<string, Promise<X402VerifyResult>>();
+  // Settle calls started per payer and not finished (R-O1, spec 006). They
+  // count toward PAYER_FAIL_LIMIT with the recorded failures; otherwise a
+  // concurrent burst from one payer all passes the cooldown check before the
+  // first answer lands, one settle call each. An entry lives only while a
+  // settle for that payer runs, so this map is never larger than `inflight`.
+  const payerInflight = new Map<string, number>();
   const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
-  return async (xPayment, cfg, opts = {}) => {
+  const verify: X402Adapter["verifyProof"] = async (
+    xPayment,
+    cfg,
+    opts = {},
+  ) => {
     const local = verifyProof(xPayment, cfg, opts);
     if (!local.ok || local.payer === null) return local;
     const payer = local.payer;
@@ -259,7 +279,11 @@ export function makeSettlingVerify(
     }
     const now = Date.now();
     const fails = payerFails.get(payer);
-    if (fails && fails.n >= PAYER_FAIL_LIMIT && now < fails.untilMs)
+    // Live failures plus settles in flight. With nothing in flight this is
+    // the plain cooldown check. Known cost: an honest payer's 4th concurrent
+    // payment is refused too (not cached, so it can be sent again).
+    const live = fails && now < fails.untilMs ? fails.n : 0;
+    if (live + (payerInflight.get(payer) ?? 0) >= PAYER_FAIL_LIMIT)
       return { ok: false, payer: null, reason: "payer-cooldown" };
     bucket.tokens = Math.min(
       SETTLE_BUCKET_CAP,
@@ -270,6 +294,9 @@ export function makeSettlingVerify(
     if (bucket.tokens < 1)
       return { ok: false, payer: null, reason: "settle-throttled" };
     bucket.tokens -= 1;
+    // Reserve in the same synchronous run as the check above: no await
+    // between them, so concurrent requests cannot all pass first.
+    payerInflight.set(payer, (payerInflight.get(payer) ?? 0) + 1);
     const settle = async (): Promise<X402VerifyResult> => {
       try {
         const resp = await routedFetch(settleUrl, {
@@ -407,8 +434,21 @@ export function makeSettlingVerify(
       return await p;
     } finally {
       inflight.delete(key);
+      // Release on every outcome; settle() itself never rejects.
+      const left = (payerInflight.get(payer) ?? 1) - 1;
+      if (left > 0) payerInflight.set(payer, left);
+      else payerInflight.delete(payer);
     }
   };
+  return Object.assign(verify, {
+    _sizes: () => ({
+      seen: seenPayments.size,
+      payerFails: payerFails.size,
+      notYetValid: notYetValid.size,
+      inflight: inflight.size,
+      payerInflight: payerInflight.size,
+    }),
+  });
 }
 
 /**

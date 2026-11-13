@@ -14,7 +14,15 @@ import {
   makeMazeHandler,
 } from "@tunnelmindai/fareseal-maze";
 import { Hono } from "hono";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   freshKeyPayment,
   makeAuth,
@@ -1881,5 +1889,254 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     } finally {
       clock.mockRestore();
     }
+  });
+});
+
+// T004 (spec 006, R-O1 / row A1): settle calls a payer has started and not
+// finished count toward the per-payer limit of 3, next to recorded failures.
+// Before, every concurrent payment passed the cooldown check ahead of the
+// first answer, so one free key cost a settle call per request up to the
+// whole bucket (20).
+describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () => {
+  const T0 = 1_800_000_000;
+  const COOLING = "payer cooling down after repeated failures; retry later";
+  const OK = { ok: true, data: { settled: true, payer: "0xabc", tx: TX } };
+  const UNFUNDED = {
+    ok: true,
+    data: { settled: false, reason: "insufficient_funds" },
+  };
+  let ms = T0 * 1000;
+  beforeEach(() => {
+    ms = T0 * 1000;
+    vi.spyOn(Date, "now").mockImplementation(() => ms);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** A settle endpoint whose calls wait until the test ends them by hand,
+   * oldest first. With `throws` set the fetch itself throws and nothing waits. */
+  function heldSettle() {
+    const waiting: {
+      resolve: (r: Response) => void;
+      reject: (e: unknown) => void;
+    }[] = [];
+    const h = {
+      calls: 0,
+      throws: false,
+      waiting,
+      fetch: (req: Request): Promise<Response> => {
+        if (req.url !== SETTLE_URL)
+          return Promise.resolve(new Response("{}", { status: 200 }));
+        h.calls += 1;
+        if (h.throws) throw new TypeError("fetch failed");
+        return new Promise((resolve, reject) => {
+          waiting.push({ resolve, reject });
+        });
+      },
+      /** End the oldest waiting call with this answer (a string is sent raw). */
+      answer: (status: number, body: unknown) =>
+        waiting.shift()?.resolve(
+          new Response(typeof body === "string" ? body : JSON.stringify(body), {
+            status,
+          }),
+        ),
+      reject: (e: unknown) => waiting.shift()?.reject(e),
+    };
+    return h;
+  }
+  type Held = ReturnType<typeof heldSettle>;
+
+  async function viaMiddleware() {
+    const h = heldSettle();
+    const mw = settlingMw();
+    // Warm the isolate state first: a cold burst builds one state per request.
+    await mw(ctx("/r", agent(), envOf(h)));
+    const send = (xp: string) =>
+      mw(ctx("/r", agent({ "x-payment": xp }), envOf(h)));
+    return { h, send };
+  }
+  const errorOf = async (r: Response) =>
+    ((await r.json()) as { error?: string }).error;
+  /** `n` settle calls have reached the endpoint (and wait there). */
+  const inFlight = (h: Held, n: number) =>
+    vi.waitFor(() => expect(h.calls).toBe(n));
+
+  it("100 concurrent fresh payments from one payer → 3 settle calls, 97 x 402 payer-cooldown", async () => {
+    const { h, send } = await viaMiddleware();
+    const xps = Array.from({ length: 100 }, () => freshPayment());
+    let answered = 0;
+    const rs = xps.map((xp) =>
+      send(xp).then((r) => {
+        answered += 1;
+        return r;
+      }),
+    );
+    // Every request is now either waiting at the settle endpoint or answered.
+    await vi.waitFor(() => expect(h.calls + answered).toBe(100), {
+      timeout: 10_000,
+    });
+    expect(h.calls).toBe(3);
+    expect(answered).toBe(97);
+    while (h.waiting.length > 0) h.answer(200, OK);
+    const all = await Promise.all(rs);
+    const served = all.filter((r) => r.status === 200);
+    expect(served.length).toBe(3);
+    for (const r of served)
+      expect(r.headers.get("x-payment-response")).not.toBeNull();
+    const refused = all.filter((r) => r.status === 402);
+    expect(refused.length).toBe(97);
+    for (const r of refused) expect(await errorOf(r)).toBe(COOLING);
+    expect(h.calls).toBe(3);
+  }, 30_000);
+
+  it("an honest funded payer with 3 in flight: the 4th is payer-cooldown with no settle call; after they land it and a 5th are served", async () => {
+    const { h, send } = await viaMiddleware();
+    const three = [1, 2, 3].map(() => send(freshPayment()));
+    await inFlight(h, 3);
+    const fourthXp = freshPayment();
+    const fourth = await send(fourthXp);
+    expect(fourth.status).toBe(402);
+    expect(await errorOf(fourth)).toBe(COOLING);
+    expect(h.calls).toBe(3); // no settle call for the 4th
+    while (h.waiting.length > 0) h.answer(200, OK);
+    for (const r of await Promise.all(three)) {
+      expect(r.status).toBe(200);
+      expect(r.headers.get("x-payment-response")).not.toBeNull();
+    }
+    // The refused payment was not cached for its nonce: the same X-PAYMENT
+    // settles now. Then a fresh 5th payment.
+    for (const xp of [fourthXp, freshPayment()]) {
+      const before = h.calls;
+      const r = send(xp);
+      await inFlight(h, before + 1);
+      h.answer(200, OK);
+      expect((await r).status).toBe(200);
+    }
+    expect(h.calls).toBe(5);
+  });
+
+  // Every way a settle call can end must give the reservation back.
+  const PATHS: {
+    path: string;
+    throws?: true;
+    end: (h: Held) => unknown;
+  }[] = [
+    { path: "success", end: (h) => h.answer(200, OK) },
+    { path: "insufficient_funds", end: (h) => h.answer(200, UNFUNDED) },
+    {
+      path: "settle 503",
+      end: (h) => h.answer(503, { ok: false, error: "down" }),
+    },
+    {
+      path: "fetch rejecting after a delay (timeout/abort)",
+      end: async (h) => {
+        await new Promise((r) => setTimeout(r, 5));
+        h.reject(new DOMException("The operation was aborted", "AbortError"));
+      },
+    },
+    { path: "fetch throwing", throws: true, end: () => {} },
+    { path: "2xx non-JSON", end: (h) => h.answer(200, "<html>ok</html>") },
+  ];
+
+  /** Three settles from one payer all end by `p`; then three more must start
+   * and a fourth must not. `released` runs once the first three are over.
+   * Resolves to the answer that fourth got. */
+  async function releaseScenario<R>(
+    h: Held,
+    send: (xp: string) => Promise<R>,
+    p: (typeof PATHS)[number],
+    released: () => void = () => {},
+  ): Promise<R> {
+    h.throws = p.throws === true;
+    const first = [1, 2, 3].map(() => send(freshPayment()));
+    await inFlight(h, 3);
+    for (let i = 0; i < 3; i++) await p.end(h);
+    await Promise.all(first);
+    h.throws = false;
+    released();
+    // Step past any cooldown the path itself earned (3 x insufficient_funds).
+    // A reservation has no expiry, so a leaked one would still refuse here.
+    ms += 600_000;
+    const again = [1, 2, 3].map(() => send(freshPayment()));
+    await inFlight(h, 6);
+    // Exactly three: a count released twice would let a fourth through.
+    const fourth = await send(freshPayment());
+    expect(h.calls).toBe(6);
+    while (h.waiting.length > 0) h.answer(200, OK);
+    await Promise.all(again);
+    released();
+    return fourth;
+  }
+
+  it.each(PATHS)(
+    "released after $path: 3 concurrent settles start again (Pages middleware)",
+    async (p) => {
+      const { h, send } = await viaMiddleware();
+      const fourth = await releaseScenario(h, send, p);
+      expect(fourth.status).toBe(402);
+      expect(await errorOf(fourth)).toBe(COOLING);
+    },
+  );
+
+  // The same scenario on the verify function itself, which is where the
+  // `_sizes()` test hook lives (the middleware does not expose it).
+  it.each(PATHS)(
+    "released after $path: _sizes().payerInflight is 0",
+    async (p) => {
+      const h = heldSettle();
+      const verify = makeSettlingVerify(
+        (url, init) => h.fetch(new Request(url, init)),
+        SETTLE_URL,
+        "settle-secret",
+      );
+      const cfg = parseConfig(toml());
+      let checks = 0;
+      const fourth = await releaseScenario(
+        h,
+        async (xp) => verify(xp, cfg),
+        p,
+        () => {
+          expect(verify._sizes()).toMatchObject({
+            inflight: 0,
+            payerInflight: 0,
+          });
+          checks += 1;
+        },
+      );
+      expect(checks).toBe(2);
+      expect(fourth.reason).toBe("payer-cooldown");
+    },
+  );
+
+  it("_sizes() counts payers with a settle in flight, not settles", async () => {
+    const h = heldSettle();
+    const verify = makeSettlingVerify(
+      (url, init) => h.fetch(new Request(url, init)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const cfg = parseConfig(toml());
+    const two = [1, 2].map(() => verify(freshPayment(), cfg));
+    await inFlight(h, 2);
+    expect(verify._sizes()).toEqual({
+      seen: 0,
+      payerFails: 0,
+      notYetValid: 0,
+      inflight: 2,
+      payerInflight: 1,
+    });
+    h.answer(200, OK);
+    await two[0];
+    expect(verify._sizes()).toMatchObject({ inflight: 1, payerInflight: 1 });
+    h.answer(200, UNFUNDED);
+    await two[1];
+    expect(verify._sizes()).toEqual({
+      seen: 2,
+      payerFails: 1,
+      notYetValid: 0,
+      inflight: 0,
+      payerInflight: 0,
+    });
   });
 });

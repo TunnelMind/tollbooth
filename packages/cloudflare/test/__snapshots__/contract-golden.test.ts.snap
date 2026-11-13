@@ -189,6 +189,27 @@ exports[`golden contract (spec 006 FR-001) > expired 1`] = `
 }
 `;
 
+exports[`golden contract (spec 006 FR-001) > fourth concurrent payment (A1) 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"payer cooling down after repeated failures; retry later","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
 exports[`golden contract (spec 006 FR-001) > garbage 1`] = `
 {
   "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"malformed X-PAYMENT header","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",

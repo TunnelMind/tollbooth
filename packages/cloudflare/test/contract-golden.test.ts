@@ -259,6 +259,33 @@ describe("golden contract (spec 006 FR-001)", () => {
     expect(s.calls).toBe(3);
   });
 
+  it("fourth concurrent payment (A1)", async () => {
+    // Spec 006 row A1: three settles from one payer are still in flight, so
+    // the fourth payment is refused without a settle call. Same bytes as
+    // "cooldown".
+    const s = settleStub(200, SETTLED);
+    let release = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    // Count the call on arrival, hold the answer until released.
+    const answer = s.fetch;
+    s.fetch = async (req) => {
+      const r = await answer(req);
+      if (req.url === SETTLE_URL) await gate;
+      return r;
+    };
+    const mw = settlingMw();
+    // Warm the isolate state first: a cold burst builds one state per request.
+    await mw(ctx("/research", agent(), envOf(s)));
+    const three = [1, 2, 3].map((n) => paid(mw, s, pay(n)));
+    await vi.waitFor(() => expect(s.calls).toBe(3));
+    expect(await shape(await paid(mw, s, pay(4)))).toMatchSnapshot();
+    expect(s.calls).toBe(3);
+    release();
+    for (const r of await Promise.all(three)) expect(r.status).toBe(200);
+  });
+
   it("mazed agent (302)", async () => {
     // Only a verified (Web Bot Auth) agent is mazed. Fixed Ed25519 key, so
     // the agent key and the signature are the same bytes every run.
