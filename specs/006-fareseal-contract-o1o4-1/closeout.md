@@ -270,8 +270,7 @@ Red/green as recorded in `376f65c`: **7 red** on HEAD's ledger, **63 green** on 
 
 1. **Receipt window start: open at R001, closed since by R005 (`e9adf06`).** After R001, for a key whose only ledger entry came from a held repeat, the hono receipt read the first held time where main uses the current second. The receipt now reads the ledger through `usableState` (LEDGER:144-147, HONO:887-888), so such a key gets the current second (HONO:895). Test: `packages/hono/test/reporter-wiring.test.ts`:132 `R005: a held-only ledger entry does not set the receipt window`.
 2. **LRU side effect: open, not fixed.** `recordHeld` still calls `touch()` (LEDGER:94). On a full ledger a held repeat from a new key evicts the oldest key (LEDGER:33-36), and a held repeat from a known key refreshes its place. Main writes nothing for a held repeat. R-O3 (spec.md line 42) mandates the touch.
-3. **Docs that stated the old rule: README, CHANGELOG and this file resolved by R008; spec.md owner-pending.**
-   - Owner-pending (the supervisor owns spec.md): spec.md line 41 ("per offer window"), line 42 ("roll the window exactly as `recordOffer` does"), line 66 (row A3, "in the offer window") and line 103 (FR-007, "window roll").
+3. **Docs that stated the old rule: README, CHANGELOG and this file resolved by R008; spec.md resolved by R011.**
    - Resolved by R008: `packages/cloudflare/README.md`:107-110 and :152 now state the held-window rule.
    - Resolved by R008: `packages/cloudflare/CHANGELOG.md`:10 (A3) now states the held-window rule.
    - Resolved by R008: this file's row A3 (line 24), row T1 (line 30) and the OQ4 line in section 7 now cite the current `ledger.ts` lines, test names and rule. The rest of sections 1 to 8 stands as T010 wrote it at `2d680f1`.
