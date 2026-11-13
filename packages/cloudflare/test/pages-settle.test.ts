@@ -1425,6 +1425,31 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
+  // Kills mutant M13 (row 5 written `fails ? fails.n : 0`): the row-5 reject
+  // itself must restart the count when the previous window has expired.
+  it("N2: a row-5 count from an expired cooldown window is dropped", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const t = facilitator();
+      const early = () => earlyPayment(Math.floor(ms / 1000));
+      expect((await t.verify(early(), t.cfg)).reason).toBe("not-yet-valid");
+      expect(t.s.calls).toBe(1);
+      ms += 600_001; // PAYER_COOLDOWN_MS + 1: the first window is over
+      for (let i = 0; i < 2; i++)
+        expect((await t.verify(early(), t.cfg)).reason).toBe("not-yet-valid");
+      expect(t.s.calls).toBe(3);
+      // Two failures in this window, not three: the next payment reaches
+      // settle. With the old count carried over it would be cooled down.
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "insufficient_funds",
+      );
+      expect(t.s.calls).toBe(4);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
