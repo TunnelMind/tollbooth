@@ -8,6 +8,8 @@
 export interface OfferState {
   offersSent: number;
   offersInWindow: number;
+  /** R-O3: held early-payment repeats in the same window as the offers. */
+  heldInWindow: number;
   windowStart: number;
   firstSeen: number;
   lastSeen: number;
@@ -31,6 +33,7 @@ export class OfferLedger {
       state = {
         offersSent: 0,
         offersInWindow: 0,
+        heldInWindow: 0,
         windowStart: nowMs,
         firstSeen: nowMs,
         lastSeen: nowMs,
@@ -42,15 +45,33 @@ export class OfferLedger {
     return state;
   }
 
-  recordOffer(key: string, nowMs: number, windowMs: number): OfferState {
-    const state = this.touch(key, nowMs);
-    state.offersSent += 1;
+  /** One window for both counts: when it expires, both start over. */
+  private roll(state: OfferState, nowMs: number, windowMs: number): void {
     if (nowMs - state.windowStart > windowMs) {
       state.windowStart = nowMs;
       state.offersInWindow = 0;
+      state.heldInWindow = 0;
     }
+  }
+
+  recordOffer(key: string, nowMs: number, windowMs: number): OfferState {
+    const state = this.touch(key, nowMs);
+    state.offersSent += 1;
+    this.roll(state, nowMs, windowMs);
     state.offersInWindow += 1;
     return state;
+  }
+
+  /**
+   * R-O3: counts a held early-payment repeat and returns the count in the
+   * window. Records no offer; the pipeline decides when the repeats stop
+   * being free.
+   */
+  recordHeld(key: string, nowMs: number, windowMs: number): number {
+    const state = this.touch(key, nowMs);
+    this.roll(state, nowMs, windowMs);
+    state.heldInWindow += 1;
+    return state.heldInWindow;
   }
 
   /**
@@ -62,6 +83,7 @@ export class OfferLedger {
     const state = this.touch(key, nowMs);
     state.paidEver = true;
     state.offersInWindow = 0;
+    state.heldInWindow = 0;
     state.windowStart = nowMs;
   }
 

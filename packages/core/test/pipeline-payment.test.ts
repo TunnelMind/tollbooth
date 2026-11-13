@@ -243,6 +243,47 @@ pay_to = "0xabc"
     expect(ledger.get(key)?.offersSent).toBe(3);
   });
 
+  // R-O3: 60 held repeats per window are free (an honest agent polling once
+  // a second through the 60 s skew never needs more). From the 61st each one
+  // records an offer, so a held payment cannot keep the offer open for ever.
+  it("held repeats: 60 record no offer, the 61st does, then the grace runs out", async () => {
+    const { agent, ledger, req, deps } = await setup("not-yet-valid-held");
+    const key = agent.jwk.x as string;
+    for (let i = 0; i < 60; i++)
+      expect((await decide(req, CFG, deps)).action).toBe("offer");
+    expect(ledger.get(key)).toMatchObject({ offersSent: 0, heldInWindow: 60 });
+    expect((await decide(req, CFG, deps)).action).toBe("offer");
+    expect(ledger.get(key)?.offersSent).toBe(1);
+    // Repeats 62 and 63 spend the rest of the grace (3); 64 is the maze.
+    const actions: string[] = [];
+    for (let i = 0; i < 3; i++)
+      actions.push((await decide(req, CFG, deps)).action);
+    expect(actions).toEqual(["offer", "offer", "consequence"]);
+    expect(ledger.get(key)?.offersSent).toBe(3);
+  });
+
+  it("held repeats at the cap with the grace already spent: the consequence", async () => {
+    const { agent, ledger, req, deps } = await setup("not-yet-valid-held");
+    const key = agent.jwk.x as string;
+    for (let i = 0; i < 2; i++) ledger.recordOffer(key, NOW * 1000, 600_000);
+    for (let i = 0; i < 61; i++)
+      expect((await decide(req, CFG, deps)).action).toBe("offer");
+    expect(ledger.get(key)?.offersSent).toBe(3);
+    expect((await decide(req, CFG, deps)).action).toBe("consequence");
+  });
+
+  it("held repeats from an anonymous agent are never ledgered", async () => {
+    const { ledger, deps } = await setup("not-yet-valid-held");
+    // No signature headers: anonymous-agent, the same deps and ledger.
+    const anon = { ...crawler, payment: "xp" };
+    for (let i = 0; i < 65; i++) {
+      const decision = await decide(anon, CFG, deps);
+      expect(decision.action).toBe("offer");
+      expect(decision.identity?.kind).toBe("anonymous-agent");
+    }
+    expect(ledger.size).toBe(0);
+  });
+
   it("an already-exhausted agent with an operator-fault payment gets the offer", async () => {
     const { agent, ledger, req, deps } = await setup("settle-retryable");
     const key = agent.jwk.x as string;
