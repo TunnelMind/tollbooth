@@ -64,7 +64,12 @@ rather than failing open.
 Facilitator damping is built in (ADR-004): an exact payment already seen —
 settled or failed on-chain — is rejected from a capped per-isolate cache,
 and a payer with three fresh failures inside ten minutes is cooled down
-locally instead of burning your facilitator quota. Eviction is amnesty.
+locally instead of burning your facilitator quota. Settles still in flight
+count toward that per-payer limit: a fresh payment from a payer whose live
+failures plus in-flight settles already total three is refused as
+`payer-cooldown` (the same 402, no settle call, not cached, not counted,
+offer recorded), so 100 concurrent fresh payments from one payer make 3
+settle calls, not 20. Eviction is amnesty.
 
 Each settle answer is classified by this table; the first row that matches
 wins. Operator rows never burn the payer's nonce or cooldown, so the same
@@ -80,14 +85,19 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 | 3a | any non-2xx with `data.settled === true` (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
 | 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no | no |
 | 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no | no |
-| 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
+| 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`, plus a `Retry-After` header: whole seconds until `validAfter`, at least 1). Once `validAfter` has passed the payment is due: it gets one attempt that goes to settle even if the payer is cooled down. A due attempt that meets an empty settle bucket (row 0b) or an operator fault stays due. A due attempt answered row 5 again is not held again: the next retry is an ordinary attempt (`payer-cooldown` if the payer is cooled down, else a settle call) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
 | 6 | HTTP 2xx `settled:false` with any other reason | payer | `data.reason`, else `settle-failed` | yes | yes | yes |
 | 6b | HTTP 2xx JSON with no `data.settled` (`{}`, `null`, `[]`) | payer | `settle-failed` | yes | yes | yes |
 | 7 | any other HTTP status (a 3xx, or a 4xx the client caused, e.g. 400, 413, 422), whatever the body | payer | `data.reason` if a string, else `settle-failed` | yes | yes | yes |
 
 "Offer recorded" is what core's `decide` does with the reason (it records
 an offer unless `isNoOfferFault`, and skips only the ledger write for
-`not-yet-valid-held`): it counts toward the maze for a verified agent. `test/pages-settle.test.ts` ("README table") checks every row of
+`not-yet-valid-held`): it counts toward the maze for a verified agent.
+Row 5's "held repeats: no" holds for the first 60 held repeats per verified
+agent key per offer window (`toll.window`); from the 61st the held repeat
+gets the same 402 with `Retry-After` and an offer is recorded, and once
+`offer_grace` is spent the agent gets the usual 302 to the maze.
+`test/pages-settle.test.ts` ("README table") checks every row of
 this table against the code. There is no timeout row: the settle fetch has
 no timeout of its own, so a hung settle route holds the request until the
 runtime ends it.
@@ -99,18 +109,47 @@ back with an unusable tx id may have paid and is not served; it is not
 mazed either (no offer recorded). Row 5: an early payment counts once
 toward the payer's cooldown (a later successful settle clears it), so a
 payer whose clock runs ahead can be cooled down by three early payments.
-A row 5 reject whose `validAfter` is already past by our clock (the
-facilitator's clock behind ours) is not held, so each retry of it counts
-toward the cooldown.
-Held repeats stretch the offer grace: a verified unfunded agent sending one
-held early payment per 60 s from throwaway payer keys got 402 for 121
-requests at 1 request/s before the first 302 (main: 3), with 5 settle calls
-in 280 s, as measured by the second review on dd35fc2; no content is served,
-a held repeat makes no settle call, and the agent is mazed once three first
-attempts are recorded.
-Concurrent failures from one payer each count toward the cooldown, but the
-cooldown is checked before the settle call, so a concurrent burst from one
-payer still reaches the settle bucket (20 calls) before the cooldown applies.
+That payer is now served: each held payment gets its one due attempt
+through the cooldown, so 3 early payments sent at once by a funded payer
+55 s fast, each repeated after its `validAfter`, are all served (6 settle
+calls, 2 per nonce); before, all three were refused as `payer-cooldown`.
+The price is the early-nonce ceiling: an unfunded payer streaming early
+nonces whose holds come due can cause at most 6 settle calls per payer in
+any 600 s window (3 first attempts + 3 due attempts), where fresh unfunded
+nonces cost 3. Per nonce: a payer who is cooled down or reserved out gets at
+most 2 payer-attributable settle calls per nonce (the first attempt and the
+due attempt). A lone early nonce against a lagging facilitator (its clock
+behind ours, so the due attempt is answered row 5 again) may cost 3 settle
+calls: the first attempt, the due attempt, and one ordinary retry, which is
+the payer's third failure; after that it is `payer-cooldown`. That is no
+more than before for that case. A row 5 answer whose `validAfter` is already
+past by our clock is never held, on the first attempt too, so each retry of
+it is an ordinary attempt that counts toward the cooldown.
+Held repeats are bounded by the cap of 60 per window: a verified agent
+sending one held payment at 10 requests/s gets its first 302 by request 64
+(1 first attempt + 60 free held repeats + 3 offers of grace) with 1 settle
+call, and an honest agent polling once a second for 60 s on one held payment
+is never mazed and is then served (2 settle calls). Before the cap, a
+verified unfunded agent sending one held early payment per 60 s from
+throwaway payer keys got 402 for 121 requests at 1 request/s before the
+first 302, as measured by the second review on dd35fc2. No
+content is served to an unfunded agent either way, and a held repeat makes
+no settle call.
+In-flight settles count toward the per-payer limit, so a fourth concurrent
+payment from an honest payer is refused with the `payer-cooldown` text
+("payer cooling down after repeated failures; retry later") although nothing
+has failed, and an offer is recorded for it: an agent sending 7 or more
+payments at once from one wallet could reach the maze before its paid ones
+land.
+A cooldown now ends 600 s after the failure was written (when its settle
+answer came back), not 600 s after that settle call started, so a slow
+settle answer no longer shortens it.
+The current numbers above (3, 2 and 6 settle calls, request 64, the cap of
+60) are asserted in `test/settle-budget.test.ts` and
+`test/pages-settle.test.ts` (rows A4–A7 and "lagging facilitator"). The
+121-request figure is a historical measurement from before the cap, and
+"7 or more payments at once" is the design estimate from spec 006 (OQ3);
+neither has a test.
 
 Prefer wiring the pieces yourself (or Stripe-only without chain code)?
 Use [`@tunnelmindai/fareseal-hono`](../hono) — it stays injection-only by design.

@@ -1,6 +1,6 @@
 # Closeout: fareseal-pay-lows-2
 
-Branch `crew/fareseal-pay-lows-2` at HEAD `825f88a`, on main `705cc57`. Written by T004 (2026-11-13).
+Branch `crew/fareseal-pay-lows-2` at HEAD `f24a66e`, on main `705cc57`. Written by T004 (2026-11-13).
 CF = `packages/cloudflare/src/index.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, README = `packages/cloudflare/README.md`, CHANGELOG = `packages/cloudflare/CHANGELOG.md`. All line numbers are at HEAD.
 
 ## 1. Lows
