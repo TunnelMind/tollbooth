@@ -87,7 +87,7 @@ const TABLE: [string, string][] = [
   // R002 L7: a non-2xx that claimed settled:true; money may have moved.
   [
     "settle-unconfirmed",
-    "settlement status unconfirmed; do not pay again, contact the operator",
+    "settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator",
   ],
   ["settle-failed(400)", "settle failed"],
   ["verify-failed(402)", "settle failed"],

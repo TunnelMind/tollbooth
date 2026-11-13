@@ -92,8 +92,8 @@ const SETTLE_REFILL_PER_S = 5;
 // NOT MEASURED (R010): 10 s is a choice the owner has not yet approved. No
 // latency data backs it; nothing shows the data-api settle route answers
 // under 10 s at p99, on-chain wait included. The consequence if it does not:
-// a settle answer slower than 10 s is answered settle-unconfirmed ("do not
-// pay again") and the payer is not served, while the transfer may already
+// a settle answer slower than 10 s is answered settle-unconfirmed (an
+// error-only 402) and the payer is not served, while the transfer may already
 // have confirmed. The owner decides: see "Choices for the owner" in
 // specs/006-fareseal-contract-o1o4-1/pr-body.md.
 const SETTLE_TIMEOUT_MS = 10_000;
@@ -103,6 +103,16 @@ const SETTLE_TIMEOUT_MS = 10_000;
 // runs. 30 s = the settle timeout plus a 20 s margin (judgment), so a
 // reservation does not expire while its own settle can still be running.
 const RESERVATION_TTL_MS = 30_000;
+// Payments whose last settle answer was settle-unconfirmed are remembered
+// (R012, second review 2 M2), so that a later payer-class answer for the same
+// payment (typically "nonce used", because the first transfer did land) is
+// not blamed on the payer. Capped like the other damping maps, oldest out.
+// The age limit is a judgment, not a measurement: 10 min is longer than a
+// payment can live (verifyProof refuses one more than 300 s + skew ahead of
+// its validBefore), so in practice an entry lasts as long as its payment.
+// Exported for tests only.
+export const UNCONFIRMED_CAP = DAMP_CAP;
+export const UNCONFIRMED_TTL_MS = 600_000;
 // Operator-fault answers one hold's due pass survives (row A7, R003 L1).
 // ponytail: a fixed cap, the owner's choice; make it config if 3 proves wrong.
 const DUE_FAULT_LIMIT = 3;
@@ -237,6 +247,7 @@ export function makeSettlingVerify(
     notYetValid: number;
     inflight: number;
     payerInflight: number;
+    unconfirmed: number;
   };
 } {
   // Keyed `${from}:${nonce}` — the EIP-3009 identity — so a re-encoded copy
@@ -271,6 +282,9 @@ export function makeSettlingVerify(
     else payerInflight.delete(payer);
     return live;
   };
+  // key -> when (ms) its settle was last answered settle-unconfirmed by the
+  // settle call itself (row 3a). See UNCONFIRMED_TTL_MS.
+  const unconfirmed = new Map<string, number>();
   const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
   const verify: X402Adapter["verifyProof"] = async (
     xPayment,
@@ -359,6 +373,12 @@ export function makeSettlingVerify(
       ...(payerInflight.get(payer) ?? []),
       reservation,
     ]);
+    // Row 3a's answer, remembered for the key. Not cached in seenPayments
+    // and not counted: the same payment can be sent again.
+    const answerUnconfirmed = (): X402VerifyResult => {
+      remember(unconfirmed, key, Date.now(), UNCONFIRMED_CAP);
+      return { ok: false, payer: null, reason: "settle-unconfirmed" };
+    };
     const settle = async (): Promise<X402VerifyResult> => {
       try {
         const resp = await routedFetch(settleUrl, {
@@ -408,6 +428,7 @@ export function makeSettlingVerify(
           }
           remember(seenPayments, key, "already-settled"); // EIP-3009 nonces are single-use
           payerFails.delete(payer);
+          unconfirmed.delete(key); // confirmed now
           return {
             ok: true,
             payer: typeof data.payer === "string" ? data.payer : payer,
@@ -424,8 +445,7 @@ export function makeSettlingVerify(
         // Row 3a (R002 L7): a non-2xx that says settled:true. Money may have
         // moved, so it is neither served nor "retry the same payment", and
         // not the payer's fault: not cached, not counted, no offer in core.
-        if (data.settled === true)
-          return { ok: false, payer: null, reason: "settle-unconfirmed" };
+        if (data.settled === true) return answerUnconfirmed();
         // Row 3: the settle route says it is ours (its config, or the
         // facilitator refusing our credentials/rate or failing with a 5xx).
         // core's isOperatorFault is the one classifier (R002 L5), so a reason
@@ -487,6 +507,19 @@ export function makeSettlingVerify(
         // payer's: cached for the nonce and counted toward the cooldown.
         // Known cost (R002 L1): the data-api route answers OUR bad price_usd
         // with a 400 too, so that misconfiguration is charged to the payer.
+        // Except (R012 M2): this payment's earlier settle was unconfirmed.
+        // The transfer may have landed then, and a spent nonce (or the now
+        // lower balance) is exactly what the route answers on the retry. The
+        // payer did nothing wrong: unconfirmed again, not cached, not
+        // counted. The entry's time is NOT renewed here, so the uncounted
+        // retries of one payment end at the age limit (each still costs a
+        // bucket token).
+        const since = unconfirmed.get(key);
+        if (since !== undefined) {
+          if (Date.now() - since < UNCONFIRMED_TTL_MS)
+            return { ok: false, payer: null, reason: "settle-unconfirmed" };
+          unconfirmed.delete(key); // too old: an ordinary answer from here on
+        }
         remember(seenPayments, key, reason);
         // Count and clock re-read at write time, as in row 5.
         const cur = payerFails.get(payer);
@@ -498,11 +531,12 @@ export function makeSettlingVerify(
         return { ok: false, payer: null, reason };
       } catch (err) {
         // Row 3a (R006): our timeout, on the fetch or the body read, can fire
-        // after the facilitator broadcast the transfer. So never "retry the
-        // same payment": unconfirmed, not cached, not counted. Any other
+        // after the facilitator broadcast the transfer. So never the
+        // operator-fault answer (which comes with a fresh offer):
+        // unconfirmed, not cached, not counted. Any other
         // throw (connection failure, a 2xx that is not JSON) is row 0c.
         if ((err as { name?: unknown } | null)?.name === "TimeoutError")
-          return { ok: false, payer: null, reason: "settle-unconfirmed" };
+          return answerUnconfirmed();
         return { ok: false, payer: null, reason: "settle-unreachable" };
       }
     };
@@ -546,6 +580,7 @@ export function makeSettlingVerify(
       notYetValid: notYetValid.size,
       inflight: inflight.size,
       payerInflight: payerInflight.size,
+      unconfirmed: unconfirmed.size,
     }),
   });
 }

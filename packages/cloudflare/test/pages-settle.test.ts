@@ -45,6 +45,8 @@ import {
   createPagesMiddleware,
   makeSettlingVerify,
   SETTLE_BUCKET_CAP,
+  UNCONFIRMED_CAP,
+  UNCONFIRMED_TTL_MS,
 } from "../src/index.js";
 import { agent, ctx, toml } from "./helpers.js";
 
@@ -534,7 +536,7 @@ describe("createPagesMiddleware — settle-then-serve", () => {
 const OPERATOR_FAULT =
   "settlement unavailable (operator fault); retry the same payment";
 const UNCONFIRMED =
-  "settlement status unconfirmed; do not pay again, contact the operator";
+  "settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator";
 
 /** A settle endpoint answering `status` with `body` verbatim. */
 function rawSettleBinding(status: number, body: unknown) {
@@ -953,6 +955,160 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
       "settle-secret",
     );
     await expectOperator({ ...t, verify }, "settle-unconfirmed");
+  });
+
+  // R012 (second review 2, M2). The unconfirmed 402 used to carry a full
+  // offer beside "do not pay again"; a client acting on `accepts` signs a
+  // new payment and can be charged twice.
+  it("rows 2 and 3a (R012 M2): the maybe-paid 402 is error-only: no x-payment-required, no accepts, no options, no price", async () => {
+    const timeout = table(200, {});
+    timeout.s.throws = timedOut();
+    const cases: [T, string][] = [
+      [timeout, UNCONFIRMED],
+      [table(500, { ok: true, data: { settled: true, tx: TX } }), UNCONFIRMED],
+      [
+        table(200, { ok: true, data: { settled: true } }),
+        "settle failed: no transaction id",
+      ],
+    ];
+    for (const [m, error] of cases) {
+      const r = await settlingMw()(
+        ctx("/r", agent({ "x-payment": freshPayment() }), envOf(m)),
+      );
+      expect(r.status).toBe(402);
+      expect(r.headers.get("x-payment-required")).toBeNull();
+      expect(r.headers.get("link")).toBeNull();
+      expect(r.headers.get("x-payment-response")).toBeNull();
+      expect(r.headers.get("cache-control")).toBe("no-store");
+      // The whole body: no accepts, options, price_usd or v beside the error.
+      expect(await r.json()).toEqual({ x402Version: 1, error });
+    }
+    expect(UNCONFIRMED).toContain("same payment may be retried");
+    // Control: every other rejected payment still gets the full offer.
+    const r = await settlingMw()(
+      ctx(
+        "/r",
+        agent({ "x-payment": freshPayment() }),
+        envOf(table(200, settledFalse("insufficient_funds"))),
+      ),
+    );
+    expect(r.status).toBe(402);
+    expect(r.headers.get("x-payment-required")).not.toBeNull();
+    const body = await r.json();
+    expect(body.accepts).toHaveLength(1);
+    expect(body.options).toBeDefined();
+  });
+
+  // The transfer of a timed-out settle may have landed; the route then
+  // refuses the retry of the same payment (spent nonce, or the balance is
+  // now too low). That is not the payer's fault.
+  for (const [name, status, body] of [
+    ["row 6, 2xx settled:false nonce_used", 200, settledFalse("nonce_used")],
+    ["row 7, HTTP 409", 409, { ok: false, error: "nonce used" }],
+  ] as [string, number, unknown][])
+    it(`row 3a (R012 M2): timeout, then the same payment answered ${name} → settle-unconfirmed again, not cached, payerFails 0`, async () => {
+      const t = table(200, {});
+      t.s.throws = timedOut();
+      const xp = freshPayment();
+      expect((await t.verify(xp, t.cfg)).reason).toBe("settle-unconfirmed");
+      expect(t.verify._sizes().unconfirmed).toBe(1);
+      t.s.throws = false;
+      t.s.status = status;
+      t.s.body = body;
+      for (const calls of [2, 3]) {
+        expect(await t.verify(xp, t.cfg)).toMatchObject({
+          ok: false,
+          reason: "settle-unconfirmed",
+        });
+        expect(t.s.calls).toBe(calls); // not cached: each try reaches settle
+      }
+      expect(t.verify._sizes()).toMatchObject({ seen: 0, payerFails: 0 });
+      // Control: the same answer for a payment with no unconfirmed history
+      // is still the payer's: cached and counted.
+      const other = freshPayment();
+      const reason = (await t.verify(other, t.cfg)).reason;
+      expect(reason).not.toBe("settle-unconfirmed");
+      expect((await t.verify(other, t.cfg)).reason).toBe(reason);
+      expect(t.s.calls).toBe(4);
+      expect(t.verify._sizes()).toMatchObject({ seen: 1, payerFails: 1 });
+      // Once the route confirms the first payment it is served and forgotten.
+      t.s.status = 200;
+      t.s.body = { ok: true, data: { settled: true, tx: TX } };
+      expect((await t.verify(xp, t.cfg)).ok).toBe(true);
+      expect(t.verify._sizes().unconfirmed).toBe(0);
+    });
+
+  it("row 3a (R012 M2): through the middleware, timeout then nonce-used on the retry is the unconfirmed 402 again", async () => {
+    const m = table(200, {});
+    m.s.throws = timedOut();
+    const mw = settlingMw();
+    const xp = freshPayment();
+    const send = () => mw(ctx("/r", agent({ "x-payment": xp }), envOf(m)));
+    expect((await (await send()).json()).error).toBe(UNCONFIRMED);
+    m.s.throws = false;
+    m.s.body = settledFalse("nonce_used");
+    const r = await send();
+    expect(r.status).toBe(402);
+    expect(await r.json()).toEqual({ x402Version: 1, error: UNCONFIRMED });
+    expect(m.s.calls).toBe(2);
+  });
+
+  it("R012 M2: an unconfirmed entry expires at UNCONFIRMED_TTL_MS, and an answer in between does not renew it", async () => {
+    const t0 = Date.now();
+    // The payment's own clock is pinned (opts.nowS), or it would be refused
+    // locally as expired long before the entry's age limit.
+    const opts = { nowS: Math.floor(t0 / 1000) };
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      const t = table(200, {});
+      t.s.throws = timedOut();
+      const xp = freshPayment();
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe(
+        "settle-unconfirmed",
+      );
+      t.s.throws = false;
+      t.s.body = settledFalse("nonce_used");
+      clock.mockReturnValue(t0 + UNCONFIRMED_TTL_MS - 1);
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe(
+        "settle-unconfirmed",
+      );
+      expect(t.verify._sizes()).toMatchObject({ unconfirmed: 1, seen: 0 });
+      clock.mockReturnValue(t0 + UNCONFIRMED_TTL_MS);
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe("nonce_used");
+      expect(t.verify._sizes()).toMatchObject({
+        unconfirmed: 0,
+        seen: 1,
+        payerFails: 1,
+      });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("R012 M2: the unconfirmed map is capped at UNCONFIRMED_CAP, oldest out", async () => {
+    const t0 = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      const t = table(200, {});
+      t.s.throws = timedOut();
+      const first = freshPayment();
+      let last = first;
+      for (let i = 0; i <= UNCONFIRMED_CAP + 2; i++) {
+        // 250 ms apart: the settle bucket refills faster than it is spent.
+        clock.mockReturnValue(t0 + i * 250);
+        if (i > 0) last = freshPayment();
+        expect((await t.verify(last, t.cfg)).reason).toBe("settle-unconfirmed");
+      }
+      expect(t.verify._sizes().unconfirmed).toBe(UNCONFIRMED_CAP);
+      t.s.throws = false;
+      t.s.body = settledFalse("nonce_used");
+      // The newest is still remembered; the oldest was dropped (amnesty lost,
+      // the ordinary payer answer applies).
+      expect((await t.verify(last, t.cfg)).reason).toBe("settle-unconfirmed");
+      expect((await t.verify(first, t.cfg)).reason).toBe("nonce_used");
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("row 0c (R006): a connection failure (TypeError) and a non-timeout abort stay settle-unreachable", async () => {
@@ -2231,6 +2387,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
       notYetValid: 0,
       inflight: 2,
       payerInflight: 1,
+      unconfirmed: 0,
     });
     h.answer(200, OK);
     await two[0];
@@ -2243,6 +2400,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
       notYetValid: 0,
       inflight: 0,
       payerInflight: 0,
+      unconfirmed: 0,
     });
   });
 

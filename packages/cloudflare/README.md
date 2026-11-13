@@ -93,7 +93,7 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 | 0c | the settle call throws (connection failure), or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
 | 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared | n/a (served) |
 | 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault (the payer may have paid; no offer recorded) | `no-transaction-id` | yes | no | no |
-| 3a | any non-2xx with `data.settled === true`, or the settle call times out (10 s) (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (402 `settlement status unconfirmed; do not pay again, contact the operator`) | no | no | no |
+| 3a | any non-2xx with `data.settled === true`, or the settle call times out (10 s) (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (error-only 402 `settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator`) | no (the key is remembered as unconfirmed, see below) | no | no |
 | 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no | no |
 | 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no | no |
 | 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`, plus a `Retry-After` header: whole seconds until `validAfter`, at least 1). Once `validAfter` has passed the payment is due: it gets one attempt that goes to settle even if the payer is cooled down. A due attempt that meets an empty settle bucket (row 0b) or an operator fault stays due. A due attempt answered row 5 again is not held again: the next retry is an ordinary attempt (`payer-cooldown` if the payer is cooled down, else a settle call) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
@@ -113,7 +113,24 @@ gets the same 402 with `Retry-After` and an offer is recorded, and once
 `test/pages-settle.test.ts` ("README table") checks every row of
 this table against the code. A timeout is row 3a: the settle fetch is
 aborted after 10 s and answered `settle-unconfirmed`, because the transfer
-may already have been broadcast. A settle in
+may already have been broadcast.
+
+Rows 2 and 3a are the answers where the payer may already have paid. Their
+402 is error-only: the body is `{"x402Version":1,"error":"…"}` and nothing
+else. No `x-payment-required` header, no `accepts`, no `options` or
+`price_usd`, no Stripe `Link`: nothing a client could act on to sign a new
+payment and pay twice. For row 3a the text says what is safe: send the same
+`X-PAYMENT` again (one authorization moves money at most once), do not sign
+a new one. A payment answered row 3a is remembered per isolate (at most 512
+payments, oldest out, each for 10 minutes from its last row 3a answer, which
+is longer than a payment can live). While it is remembered, a row 6, 6b or 7
+answer for that same payment (typically "nonce used", because the first
+transfer did land) is answered `settle-unconfirmed` again: not cached, not
+counted toward the payer's cooldown. Each such retry is still a settle call
+and a bucket token. The 512 and the 10 minutes are judgments, not
+measurements. Known cost: a payer in this state is served only once the
+settle route confirms that payment; if the route keeps refusing the spent
+nonce, the payer has paid and must contact the operator. A settle in
 flight stops counting toward its payer's limit after 30 s (the timeout plus
 a margin), so a settle whose request the runtime cancelled cannot keep the
 payer locked out.
