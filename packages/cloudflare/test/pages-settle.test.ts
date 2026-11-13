@@ -70,6 +70,17 @@ function rotatingPayerPayment(): string {
   });
 }
 
+/** Signed, unfunded-or-not, valid `ahead` seconds after `nowS` (local skew is 60 s). */
+function earlyPayment(nowS: number, ahead = 55): string {
+  const auth = makeAuth({
+    value: "1000",
+    validAfter: String(nowS + ahead),
+    validBefore: String(nowS + 300),
+    nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
+  });
+  return payment(auth, signAuth(auth));
+}
+
 /** Same payment and signature, nonce field rewritten to `nonce`. */
 function respell(xp: string, nonce: string): string {
   const p = JSON.parse(atob(xp));
@@ -1211,17 +1222,6 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     data: { settled: false, reason: VALID_AFTER },
   };
 
-  /** Signed, unfunded-or-not, valid `ahead` seconds after `nowS` (local skew is 60 s). */
-  function earlyPayment(nowS: number, ahead = 55): string {
-    const auth = makeAuth({
-      value: "1000",
-      validAfter: String(nowS + ahead),
-      validBefore: String(nowS + 300),
-      nonce: `0x${(crypto.randomUUID() + crypto.randomUUID()).replaceAll("-", "")}`,
-    });
-    return payment(auth, signAuth(auth));
-  }
-
   function stubbed(body: unknown = NYV) {
     const s = { calls: 0, body };
     const fetch = async (req: Request) => {
@@ -1330,7 +1330,9 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
-  it("a not-yet-valid answer after the entry expires re-records it", async () => {
+  // Spec 006 row A5 (T005): was "... re-records it". The due attempt is
+  // counted but no longer held again; the old assertions stand, one added.
+  it("a not-yet-valid answer to the due attempt is not held again (row A5)", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
     try {
       const t = stubbed();
@@ -1342,6 +1344,7 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
       clock.mockReturnValue((T0 + 10) * 1000);
       expect((await t.verify(xp, t.cfg)).reason).toBe("not-yet-valid");
       expect(t.s.calls).toBe(2); // the one allowed retry reached settle
+      expect(t.verify._sizes().notYetValid).toBe(0);
     } finally {
       clock.mockRestore();
     }
@@ -2185,5 +2188,216 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
       inflight: 0,
       payerInflight: 0,
     });
+  });
+});
+
+// Spec 006 T005, R-O4 (rows A4-A7; L3's case). A payment held as early whose
+// validAfter has passed is "due": that one attempt reaches settle through a
+// payer cooldown. Every test first cools the payer down with 3 early
+// payments, so only the due pass can explain a settle call.
+describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => {
+  const T0 = 1_800_000_000;
+  const COOLING = "payer cooling down after repeated failures; retry later";
+  const NOT_YET = "authorization not yet valid";
+  const VALID_AFTER = "invalid_exact_evm_payload_authorization_valid_after";
+  let ms = T0 * 1000;
+  beforeEach(() => {
+    ms = T0 * 1000;
+    vi.spyOn(Date, "now").mockImplementation(() => ms);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+  const at = (s: number) => {
+    ms = (T0 + s) * 1000;
+  };
+
+  /** Facilitator stub on the mocked clock, counting calls in total and per
+   * X-PAYMENT: valid_after while a payment is early, then settled for a
+   * `funded` X-PAYMENT, else insufficient_funds. `lagS` sets its clock behind
+   * ours, `status` (non-200) takes the settle route down, `gate` makes every
+   * answer wait. */
+  function facilitator(funded: string[] = []) {
+    const f = {
+      calls: 0,
+      per: new Map<string, number>(),
+      lagS: 0,
+      status: 200,
+      gate: Promise.resolve(),
+      fetch: async (req: Request): Promise<Response> => {
+        if (req.url !== SETTLE_URL) return new Response("{}", { status: 200 });
+        f.calls += 1;
+        const xp = ((await req.json()) as { payment: string }).payment;
+        f.per.set(xp, (f.per.get(xp) ?? 0) + 1);
+        await f.gate;
+        if (f.status !== 200) return new Response("{}", { status: f.status });
+        const { validAfter } = JSON.parse(atob(xp)).payload.authorization;
+        const data =
+          Number(validAfter) > Date.now() / 1000 - f.lagS
+            ? { settled: false, reason: VALID_AFTER }
+            : funded.includes(xp)
+              ? { settled: true, tx: TX }
+              : { settled: false, reason: "insufficient_funds" };
+        return new Response(JSON.stringify({ ok: true, data }), {
+          status: 200,
+        });
+      },
+    };
+    return f;
+  }
+
+  /** One payer, clock 55 s fast: 3 early payments sent at once at T0, each
+   * answered not-yet-valid (3 settle calls), which cools the payer down. */
+  async function cooledByThreeEarly() {
+    const xps: [string, string, string] = [
+      earlyPayment(T0),
+      earlyPayment(T0),
+      earlyPayment(T0),
+    ];
+    const f = facilitator(xps);
+    const mw = settlingMw();
+    // Warm the isolate state first: a cold burst builds one state per request.
+    await mw(ctx("/r", agent(), envOf(f)));
+    const send = (xp: string) =>
+      mw(ctx("/r", agent({ "x-payment": xp }), envOf(f)));
+    for (const r of await Promise.all(xps.map(send))) {
+      expect(r.status).toBe(402);
+      expect(await errorOf(r)).toBe(NOT_YET);
+    }
+    expect(f.calls).toBe(3);
+    // Cooled down: a fresh payment is refused with no settle call.
+    const fresh = await send(freshPayment());
+    expect(await errorOf(fresh)).toBe(COOLING);
+    expect(f.calls).toBe(3);
+    return { f, send, xps };
+  }
+  const errorOf = async (r: Response) =>
+    ((await r.json()) as { error?: string }).error;
+
+  it("(a) L3, row A4: 3 early payments at once from a funded payer 55 s fast, each repeated after validAfter → all 3 served, 6 settle calls", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(54); // still early: held, no call
+    expect((await send(xps[0])).headers.get("retry-after")).toBe("1");
+    expect(f.calls).toBe(3);
+    at(55);
+    // At once: each due attempt passes both the cooldown and the other two's
+    // reservations (R-O1), not just the first.
+    for (const r of await Promise.all(xps.map(send))) {
+      expect(r.status).toBe(200);
+      expect(r.headers.get("x-payment-response")).not.toBeNull();
+    }
+    expect(f.calls).toBe(6);
+    expect(xps.map((xp) => f.per.get(xp))).toEqual([2, 2, 2]);
+    // Settled once: a replay is refused from cache.
+    expect((await send(xps[0])).status).toBe(402);
+    expect(f.calls).toBe(6);
+  });
+
+  it("(b) row A5: a due attempt answered not-yet-valid again is not held again; the cooled-down payer's next retry is payer-cooldown with no call (2 calls for the nonce)", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    f.lagS = 10; // facilitator clock behind ours
+    at(55);
+    const due = await send(xps[0]);
+    expect(due.status).toBe(402);
+    expect(await errorOf(due)).toBe(NOT_YET);
+    // The facilitator's own answer, not a hold: no Retry-After.
+    expect(due.headers.has("retry-after")).toBe(false);
+    expect(f.calls).toBe(4);
+    // Not due any more: an ordinary attempt, and this payer is cooled down.
+    // Still so once the facilitator would accept it (T0+65 s on its clock).
+    for (const s of [55, 56, 70]) {
+      at(s);
+      const r = await send(xps[0]);
+      expect(r.status).toBe(402);
+      expect(await errorOf(r)).toBe(COOLING);
+    }
+    expect(f.calls).toBe(4);
+    // Coordinator ruling 2026-11-13: 2 for a cooled-down payer.
+    expect(f.per.get(xps[0])).toBe(2);
+  });
+
+  // Coordinator ruling 2026-11-13 (option 1), the other bound: a payer who is
+  // NOT cooled down keeps the ordinary retry row A5 allows a payer with fewer
+  // than 3 failures. So 3 calls, as on main for this case: the first attempt,
+  // the due attempt, one ordinary retry (which is the 3rd failure).
+  it("row A5, ruling: a lone early nonce against a lagging facilitator costs exactly 3 settle calls, then payer-cooldown", async () => {
+    const xp = earlyPayment(T0);
+    const f = facilitator([xp]);
+    f.lagS = 3600; // never catches up within this test
+    const mw = settlingMw();
+    const send = () => mw(ctx("/r", agent({ "x-payment": xp }), envOf(f)));
+    const seen: (string | undefined)[] = [];
+    // One request a second from T0 to past validAfter (T0+55 s).
+    for (let s = 0; s <= 70; s++) {
+      at(s);
+      const r = await send();
+      expect(r.status).toBe(402);
+      seen.push(await errorOf(r));
+      // first attempt at 0 s, due attempt at 55 s, ordinary retry at 56 s
+      expect(f.calls).toBe(s < 55 ? 1 : s === 55 ? 2 : 3);
+    }
+    expect(f.calls).toBe(3);
+    expect(seen.slice(0, 57).every((e) => e === NOT_YET)).toBe(true);
+    expect(seen.slice(57).every((e) => e === COOLING)).toBe(true);
+  });
+
+  it("(c) row A6: a due attempt that meets an empty bucket is settle-throttled with no call; after a refill the retry is still the due attempt and is served", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55); // the bucket has refilled since T0; the clock now stands still
+    for (let i = 0; i < SETTLE_BUCKET_CAP; i++)
+      await send(rotatingPayerPayment()); // other payers empty it
+    expect(f.calls).toBe(3 + SETTLE_BUCKET_CAP);
+    for (let i = 0; i < 2; i++) {
+      const throttled = await send(xps[0]);
+      expect(throttled.status).toBe(402);
+      expect(await errorOf(throttled)).toBe(OPERATOR_FAULT);
+    }
+    expect(f.calls).toBe(3 + SETTLE_BUCKET_CAP); // no call, no token
+    at(56); // 5 tokens back
+    // The payer is still cooled down: only the due pass explains this 200.
+    const served = await send(xps[0]);
+    expect(served.status).toBe(200);
+    expect(served.headers.get("x-payment-response")).not.toBeNull();
+    expect(f.per.get(xps[0])).toBe(2);
+  });
+
+  it("(d) row A7: a due attempt answered settle 503 is put back; the retry is the due attempt again and is served", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55);
+    f.status = 503;
+    // Twice: the hold is put back after each operator fault, not just once.
+    for (let i = 0; i < 2; i++) {
+      const down = await send(xps[0]);
+      expect(down.status).toBe(402);
+      expect(await errorOf(down)).toBe(OPERATOR_FAULT);
+    }
+    expect(f.calls).toBe(5);
+    f.status = 200;
+    const served = await send(xps[0]);
+    expect(served.status).toBe(200);
+    expect(served.headers.get("x-payment-response")).not.toBeNull();
+    expect(f.calls).toBe(6);
+  });
+
+  it("(e) rows A4/US5: 20 concurrent copies of a due payment → 1 settle call, 1 x 200", async () => {
+    const { f, send, xps } = await cooledByThreeEarly();
+    at(55);
+    let open = () => {};
+    f.gate = new Promise<void>((r) => {
+      open = r;
+    });
+    const rs = Array.from({ length: 20 }, () => send(xps[0]));
+    await vi.waitFor(() => expect(f.calls).toBe(4));
+    // Let the other 19 reach the verifier while the one settle call waits.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(f.calls).toBe(4);
+    open();
+    const all = await Promise.all(rs);
+    const served = all.filter((r) => r.status === 200);
+    expect(served.length).toBe(1);
+    expect(served[0]?.headers.get("x-payment-response")).not.toBeNull();
+    expect(all.filter((r) => r.status === 402).length).toBe(19);
+    expect(f.calls).toBe(4);
+    expect(f.per.get(xps[0])).toBe(2);
   });
 });

@@ -257,10 +257,15 @@ export function makeSettlingVerify(
     const seen = seenPayments.get(key);
     if (seen !== undefined) return { ok: false, payer: null, reason: seen };
     // Before inflight/cooldown/bucket: no settle call, no token, no count.
-    // Same clock as verifyProof (opts.nowS, else wall time). Once validAfter
-    // has passed the entry goes and exactly one settle attempt is allowed.
+    // Same clock as verifyProof (opts.nowS, else wall time).
     const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
     const early = notYetValid.get(key);
+    // R-O4 (spec 006): once validAfter has passed, the held payment is "due"
+    // and this one attempt goes to settle even if the payer is cooled down.
+    // Otherwise an honest payer with a fast clock, cooled down by its own
+    // early payments, could never settle them. The entry stays until a
+    // bucket token is taken (below), so a throttled due attempt stays due.
+    const due = early !== undefined && nowS >= early;
     if (early !== undefined) {
       // Its own reason so core records no offer for it (R004 L-b); hono
       // shows the payer the same "not yet valid" text.
@@ -272,7 +277,6 @@ export function makeSettlingVerify(
           reason: "not-yet-valid-held",
           retryAfterS: Number(early - nowS),
         };
-      notYetValid.delete(key);
     }
     const pending = inflight.get(key);
     if (pending !== undefined) {
@@ -288,8 +292,9 @@ export function makeSettlingVerify(
     // Live failures plus settles in flight. With nothing in flight this is
     // the plain cooldown check. Known cost: an honest payer's 4th concurrent
     // payment is refused too (not cached, so it can be sent again).
+    // A due attempt (R-O4) skips this once; its outcome is counted as usual.
     const live = fails && now < fails.untilMs ? fails.n : 0;
-    if (live + (payerInflight.get(payer) ?? 0) >= PAYER_FAIL_LIMIT)
+    if (!due && live + (payerInflight.get(payer) ?? 0) >= PAYER_FAIL_LIMIT)
       return { ok: false, payer: null, reason: "payer-cooldown" };
     bucket.tokens = Math.min(
       SETTLE_BUCKET_CAP,
@@ -300,6 +305,10 @@ export function makeSettlingVerify(
     if (bucket.tokens < 1)
       return { ok: false, payer: null, reason: "settle-throttled" };
     bucket.tokens -= 1;
+    // The due pass is spent with the token. Like the reservation below, in
+    // the same synchronous run as the checks: a concurrent copy finds no
+    // entry and joins `inflight` instead of settling again.
+    if (due) notYetValid.delete(key);
     // Reserve in the same synchronous run as the check above: no await
     // between them, so concurrent requests cannot all pass first.
     payerInflight.set(payer, (payerInflight.get(payer) ?? 0) + 1);
@@ -401,9 +410,14 @@ export function makeSettlingVerify(
         // could attach a fresh early unfunded payment to every request and
         // never be mazed, L6); the held repeats above record none (L-b).
         if (reason.includes("valid_after")) {
-          // ponytail: a validAfter already past (facilitator clock behind
-          // ours) is not held, so each retry settles; the cooldown bounds it.
-          remember(notYetValid, key, BigInt(validAfter));
+          // Held only while still early by our clock. A due attempt never
+          // is (R-O4, row A5), so it is not held again and the next retry is
+          // an ordinary attempt that meets the cooldown. The same goes for
+          // any attempt whose validAfter is already past (facilitator clock
+          // behind ours): an entry written then would make the next retry
+          // "due", a pass through the cooldown after every ordinary attempt.
+          if (BigInt(validAfter) > nowS)
+            remember(notYetValid, key, BigInt(validAfter));
           // Re-read at write time, not the pre-await `fails`: concurrent
           // settles from one payer finish out of order and each must count.
           // The clock too (L2): with the pre-await `now`, a slow settle
@@ -437,7 +451,14 @@ export function makeSettlingVerify(
     const p = settle();
     inflight.set(key, p);
     try {
-      return await p;
+      const result = await p;
+      // Row A7: an operator fault ("retry the same payment") must not cost
+      // the payer its due pass. Put the hold back, same validAfter, so the
+      // retry is the due attempt again. settle-unconfirmed and
+      // no-transaction-id are not operator faults: not put back.
+      if (due && !result.ok && isOperatorFault(result.reason))
+        remember(notYetValid, key, early);
+      return result;
     } finally {
       inflight.delete(key);
       // Release on every outcome; settle() itself never rejects.
