@@ -1425,6 +1425,58 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     }
   });
 
+  // Kills mutant M13 (row 5 written `fails ? fails.n : 0`): the row-5 reject
+  // itself must restart the count when the previous window has expired.
+  it("N2: a row-5 count from an expired cooldown window is dropped", async () => {
+    let ms = T0 * 1000;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+    try {
+      const t = facilitator();
+      const early = () => earlyPayment(Math.floor(ms / 1000));
+      expect((await t.verify(early(), t.cfg)).reason).toBe("not-yet-valid");
+      expect(t.s.calls).toBe(1);
+      ms += 600_001; // PAYER_COOLDOWN_MS + 1: the first window is over
+      for (let i = 0; i < 2; i++)
+        expect((await t.verify(early(), t.cfg)).reason).toBe("not-yet-valid");
+      expect(t.s.calls).toBe(3);
+      // Two failures in this window, not three: the next payment reaches
+      // settle. With the old count carried over it would be cooled down.
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "insufficient_funds",
+      );
+      expect(t.s.calls).toBe(4);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  // All three pass the cooldown check before any settle answers, so each
+  // must add to the live count when it lands, not to what it saw going in
+  // (that wrote n=1 three times and left the payer free to keep settling).
+  it("N1: three concurrent failures from one payer cool it down", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(T0 * 1000);
+    try {
+      const t = facilitator();
+      const results = await Promise.all(
+        [freshPayment(), freshPayment(), freshPayment()].map((xp) =>
+          t.verify(xp, t.cfg),
+        ),
+      );
+      expect(results.map((r) => r.reason)).toEqual([
+        "insufficient_funds",
+        "insufficient_funds",
+        "insufficient_funds",
+      ]);
+      expect(t.s.calls).toBe(3);
+      expect((await t.verify(freshPayment(), t.cfg)).reason).toBe(
+        "payer-cooldown",
+      );
+      expect(t.s.calls).toBe(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);

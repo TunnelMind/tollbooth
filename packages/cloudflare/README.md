@@ -102,6 +102,15 @@ payer whose clock runs ahead can be cooled down by three early payments.
 A row 5 reject whose `validAfter` is already past by our clock (the
 facilitator's clock behind ours) is not held, so each retry of it counts
 toward the cooldown.
+Held repeats stretch the offer grace: a verified unfunded agent sending one
+held early payment per 60 s from throwaway payer keys got 402 for 121
+requests at 1 request/s before the first 302 (main: 3), with 5 settle calls
+in 280 s, as measured by the second review on dd35fc2; no content is served,
+a held repeat makes no settle call, and the agent is mazed once three first
+attempts are recorded.
+Concurrent failures from one payer each count toward the cooldown, but the
+cooldown is checked before the settle call, so a concurrent burst from one
+payer still reaches the settle bucket (20 calls) before the cooldown applies.
 
 Prefer wiring the pieces yourself (or Stripe-only without chain code)?
 Use [`@tunnelmindai/fareseal-hono`](../hono) — it stays injection-only by design.
