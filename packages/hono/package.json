@@ -1,7 +1,7 @@
 {
   "name": "@tunnelmindai/fareseal-hono",
   "version": "2.3.0",
-  "description": "Hono middleware binding of @tunnelmindai/fareseal-core \u2014 one package covers Node, Bun, and Cloudflare Workers.",
+  "description": "Hono middleware binding of @tunnelmindai/fareseal-core — one package covers Node, Bun, and Cloudflare Workers.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -22,10 +22,10 @@
     "@tunnelmindai/fareseal-adapter-stripe": "workspace:*",
     "@tunnelmindai/fareseal-adapter-x402": "workspace:*",
     "@tunnelmindai/fareseal-maze": "workspace:*",
-    "hono": "^4.13.7"
+    "hono": "^4.13.16"
   },
   "peerDependencies": {
-    "hono": "^4.13.7"
+    "hono": "^4.13.16"
   },
   "repository": {
     "type": "git",

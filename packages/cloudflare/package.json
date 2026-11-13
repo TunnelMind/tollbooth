@@ -1,7 +1,7 @@
 {
   "name": "@tunnelmindai/fareseal-cloudflare",
   "version": "2.3.0",
-  "description": "Batteries-included Cloudflare Pages middleware: config in, tolling out \u2014 maze, receipts, snapshots, and settle-then-serve x402 pre-wired.",
+  "description": "Batteries-included Cloudflare Pages middleware: config in, tolling out — maze, receipts, snapshots, and settle-then-serve x402 pre-wired.",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -20,7 +20,7 @@
     "@tunnelmindai/fareseal-core": "workspace:*",
     "@tunnelmindai/fareseal-hono": "workspace:*",
     "@tunnelmindai/fareseal-maze": "workspace:*",
-    "hono": "^4.13.7"
+    "hono": "^4.13.16"
   },
   "repository": {
     "type": "git",
