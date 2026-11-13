@@ -373,10 +373,13 @@ export function makeSettlingVerify(
           remember(notYetValid, key, BigInt(validAfter));
           // Re-read at write time, not the pre-await `fails`: concurrent
           // settles from one payer finish out of order and each must count.
+          // The clock too (L2): with the pre-await `now`, a slow settle
+          // landing last would end the cooldown early, at its start + 600 s.
           const cur = payerFails.get(payer);
+          const t = Date.now();
           remember(payerFails, payer, {
-            n: (cur && now < cur.untilMs ? cur.n : 0) + 1,
-            untilMs: now + PAYER_COOLDOWN_MS,
+            n: (cur && t < cur.untilMs ? cur.n : 0) + 1,
+            untilMs: t + PAYER_COOLDOWN_MS,
           });
           return { ok: false, payer: null, reason: "not-yet-valid" };
         }
@@ -386,11 +389,12 @@ export function makeSettlingVerify(
         // Known cost (R002 L1): the data-api route answers OUR bad price_usd
         // with a 400 too, so that misconfiguration is charged to the payer.
         remember(seenPayments, key, reason);
-        // Re-read at write time, as in row 5.
+        // Count and clock re-read at write time, as in row 5.
         const cur = payerFails.get(payer);
+        const t = Date.now();
         remember(payerFails, payer, {
-          n: (cur && now < cur.untilMs ? cur.n : 0) + 1,
-          untilMs: now + PAYER_COOLDOWN_MS,
+          n: (cur && t < cur.untilMs ? cur.n : 0) + 1,
+          untilMs: t + PAYER_COOLDOWN_MS,
         });
         return { ok: false, payer: null, reason };
       } catch {

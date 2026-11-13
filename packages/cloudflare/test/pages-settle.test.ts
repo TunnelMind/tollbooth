@@ -1652,6 +1652,66 @@ describe("makeSettlingVerify — not-yet-valid is answered locally until validAf
     },
   );
 
+  // T003 (spec 006, L2 / A8): the cooldown runs from the moment a failure
+  // is written, not from the moment its settle call started. A starts at
+  // 0 s and its answer is held; B and C fail at 1 s and 2 s; A's failure
+  // lands at 5 s as the third (n = 3), so the payer is cooled until 605 s.
+  // Stamped with A's start time it was free again at 600 s. At most 2
+  // settles are in flight, which T004's per-payer reservation still allows.
+  it.each(ROWS)(
+    "L2: a held $row failure landing at 5 s cools the payer until 605 s, not 600 s",
+    async ({ reason, data, failing }) => {
+      let ms = T0 * 1000;
+      const at = (offsetMs: number) => {
+        ms = T0 * 1000 + offsetMs;
+      };
+      const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
+      try {
+        // Each settle call waits here until the test answers it.
+        let calls = 0;
+        const answers: ((data: Record<string, unknown>) => void)[] = [];
+        const verify = makeSettlingVerify(
+          () =>
+            new Promise<Response>((resolve) => {
+              calls++;
+              answers.push((d) =>
+                resolve(new Response(JSON.stringify({ ok: true, data: d }))),
+              );
+            }),
+          SETTLE_URL,
+          "settle-secret",
+        );
+        const cfg = parseConfig(toml());
+        const unfunded = { settled: false, reason: "insufficient_funds" };
+
+        const a = verify(failing(T0), cfg); // A starts at 0 s, answer held
+        for (const offsetMs of [1_000, 2_000]) {
+          at(offsetMs); // B at 1 s, C at 2 s: answered at once (newest call)
+          const p = verify(freshPayment(), cfg);
+          answers.pop()?.(unfunded);
+          expect((await p).reason).toBe("insufficient_funds");
+        }
+        at(5_000);
+        answers.pop()?.(data); // A's failure lands at 5 s: n = 3
+        expect((await a).reason).toBe(reason);
+        expect(calls).toBe(3);
+
+        at(604_999); // 1 ms short of A's landing + 600 s
+        const cooled = verify(freshPayment(), cfg);
+        // Checked before the await: a settle call here is never answered.
+        expect(calls).toBe(3);
+        expect((await cooled).reason).toBe("payer-cooldown");
+        at(605_000);
+        const free = verify(freshPayment(), cfg);
+        expect(calls).toBe(4); // reaches settle
+        answers.pop()?.(unfunded);
+        expect((await free).reason).toBe("insufficient_funds");
+      } finally {
+        clock.mockRestore();
+      }
+    },
+  );
+
   it("M1 + L-b: an honest verified agent, clock 30 s fast, retrying one payment at 0,5..30 s is served at +30 s and never mazed", async () => {
     let ms = T0 * 1000;
     const clock = vi.spyOn(Date, "now").mockImplementation(() => ms);
