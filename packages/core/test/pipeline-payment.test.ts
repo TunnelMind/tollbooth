@@ -272,6 +272,95 @@ pay_to = "0xabc"
     expect((await decide(req, CFG, deps)).action).toBe("consequence");
   });
 
+  // Second review H1: a held repeat must not move the agent's offer window.
+  // The reviewer's schedule (window 10m, offer_grace 3); main answers the
+  // maze at t=1203, because the window that counts restarted at 650, not at
+  // the held repeat (602). `seeded: false` drops the t=0 offer, so the held
+  // repeat is the first the ledger hears of the key: main's answer is the same.
+  it.each([true, false])(
+    "a held repeat after the window expired does not restart it (H1, seeded=%s)",
+    async (seeded) => {
+      const agent = await makeAgent();
+      const ledger = new OfferLedger(10);
+      const at = async (t: number, payment?: string) =>
+        (
+          await decide(
+            {
+              ...crawler,
+              ...(await signedRequest(agent, {
+                created: NOW + t,
+                expires: NOW + t + 60,
+              })),
+              ...(payment !== undefined ? { payment } : {}),
+            },
+            CFG,
+            {
+              fetchDirectory: dirWith(agent.jwk),
+              nowS: NOW + t,
+              ledger,
+              verifyPayment: () => ({
+                ok: false,
+                payer: null,
+                reason: "not-yet-valid-held",
+              }),
+            },
+          )
+        ).action;
+      if (seeded) expect(await at(0)).toBe("offer");
+      expect(await at(602, "xp")).toBe("offer");
+      for (let i = 0; i < 3; i++) expect(await at(650)).toBe("offer");
+      expect(await at(1203)).toBe("consequence"); // main: 302
+      // Past 650 + 10m the window is over on main too.
+      expect(await at(1251)).toBe("offer");
+    },
+  );
+
+  // R001 attempt 2 (QA): held repeats from an expired window must not count
+  // toward the 60. Expected actions were read off main's `decide` on this
+  // schedule (crew-scratch --rev main): every held repeat is an offer and the
+  // plain requests at 701 s are offer, offer, offer, consequence.
+  it("held repeats spread over two windows: 50 + 11 record no offer (main's answers)", async () => {
+    const agent = await makeAgent();
+    const ledger = new OfferLedger(10);
+    const key = agent.jwk.x as string;
+    const at = async (t: number, payment?: string) =>
+      (
+        await decide(
+          {
+            ...crawler,
+            ...(await signedRequest(agent, {
+              created: NOW + t,
+              expires: NOW + t + 60,
+            })),
+            ...(payment !== undefined ? { payment } : {}),
+          },
+          CFG,
+          {
+            fetchDirectory: dirWith(agent.jwk),
+            nowS: NOW + t,
+            ledger,
+            verifyPayment: () => ({
+              ok: false,
+              payer: null,
+              reason: "not-yet-valid-held",
+            }),
+          },
+        )
+      ).action;
+    expect(await at(0)).toBe("offer");
+    for (let i = 0; i < 50; i++) expect(await at(1, "xp")).toBe("offer");
+    for (let i = 0; i < 11; i++) expect(await at(700, "xp")).toBe("offer");
+    expect(ledger.get(key)?.offersSent).toBe(1);
+    const plain: string[] = [];
+    for (let i = 0; i < 4; i++) plain.push(await at(701));
+    expect(plain).toEqual(["offer", "offer", "offer", "consequence"]);
+    expect(ledger.get(key)).toMatchObject({
+      offersSent: 4,
+      offersInWindow: 3,
+      windowStart: (NOW + 701) * 1000,
+    });
+  });
+
   it("held repeats from an anonymous agent are never ledgered", async () => {
     const { ledger, deps } = await setup("not-yet-valid-held");
     // No signature headers: anonymous-agent, the same deps and ledger.

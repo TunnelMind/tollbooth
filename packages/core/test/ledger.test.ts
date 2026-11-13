@@ -53,25 +53,98 @@ describe("D-3 offer ledger", () => {
     });
   });
 
-  it("recordHeld rolls with the window like recordOffer", () => {
+  // Second review H1: this test used to pin the opposite ("recordHeld rolls
+  // with the window like recordOffer"). A held repeat wrote nothing before
+  // R-O3, so it must leave the offer window exactly where it was.
+  it("recordHeld never rolls the offer window (H1)", () => {
     const ledger = new OfferLedger(10);
     ledger.recordOffer("k", 0, 1000);
     ledger.recordHeld("k", 500, 1000);
-    // Exactly windowMs old is still inside the window (the roll is `>`).
     expect(ledger.recordHeld("k", 1000, 1000)).toBe(2);
+    const before = { ...ledger.get("k") };
+    // The reviewer's case: the window (1000) expired long before t=1203.
+    expect(ledger.recordHeld("k", 1203, 1000)).toBe(3);
+    expect(ledger.get("k")).toMatchObject({
+      windowStart: before.windowStart,
+      offersInWindow: before.offersInWindow,
+      offersSent: 1,
+      heldInWindow: 3,
+    });
+    expect(before).toMatchObject({ windowStart: 0, offersInWindow: 1 });
+  });
+
+  // R001 attempt 2 (QA): the held count expires with its own window. Left to
+  // pile up across an expired offer window, the 61st repeat overall recorded
+  // an offer and the agent was mazed one request early. Expected values are
+  // main's ledger on this schedule (main writes nothing for a held repeat).
+  it("the held count expires with its own window, not the offer window", () => {
+    const W = 600_000;
+    const ledger = new OfferLedger(10);
+    ledger.recordOffer("k", 0, W);
+    for (let i = 0; i < 50; i++)
+      expect(ledger.recordHeld("k", 1000 + i, W)).toBe(i + 1);
+    // The held window opened at 1000; 700000 is past it, so the count restarts.
+    for (let i = 0; i < 11; i++)
+      expect(ledger.recordHeld("k", 700_000 + i, W)).toBe(i + 1);
+    // None of that touched the offer window.
     expect(ledger.get("k")).toMatchObject({
       windowStart: 0,
       offersInWindow: 1,
-    });
-    // Past it: one shared window, so the offer count rolls too.
-    expect(ledger.recordHeld("k", 1001, 1000)).toBe(1);
-    expect(ledger.get("k")).toMatchObject({
-      windowStart: 1001,
-      offersInWindow: 0,
-      heldInWindow: 1,
       offersSent: 1,
     });
+    // Main: three offers from 701000, the fourth request is exhausted.
+    const answers: boolean[] = [];
+    for (let i = 0; i < 4; i++) {
+      answers.push(ledger.exhausted("k", 701_000 + i, W, 3));
+      if (!answers[i]) ledger.recordOffer("k", 701_000 + i, W);
+    }
+    expect(answers).toEqual([false, false, false, true]);
+    expect(ledger.get("k")).toMatchObject({
+      offersSent: 4,
+      offersInWindow: 3,
+      windowStart: 701_000,
+    });
   });
+
+  it("the held window edge: exactly windowMs old still counts, 1 ms more restarts", () => {
+    const ledger = new OfferLedger(10);
+    expect(ledger.recordHeld("k", 100, 1000)).toBe(1);
+    expect(ledger.recordHeld("k", 1100, 1000)).toBe(2);
+    expect(ledger.recordHeld("k", 1101, 1000)).toBe(1);
+  });
+
+  // H1 sweep: for every time across the window edge, the offer state is the
+  // same whether or not a held repeat came in, before and after the next
+  // offer, and so is the maze answer. `seeded` = the key had an offer at 0;
+  // unseeded is the key whose only entry was made by recordHeld.
+  it.each([true, false])(
+    "recordHeld leaves offers alone at every t across the edge (seeded=%s)",
+    (seeded) => {
+      const W = 1000;
+      const offers = (l: OfferLedger) => {
+        const s = l.get("k");
+        return s && [s.windowStart, s.offersInWindow, s.offersSent];
+      };
+      for (let t = 0; t <= 2500; t++) {
+        const held = new OfferLedger(10);
+        const plain = new OfferLedger(10);
+        if (seeded) for (const l of [held, plain]) l.recordOffer("k", 0, W);
+        held.recordHeld("k", t, W);
+        if (seeded) expect(offers(held), `t=${t}`).toEqual(offers(plain));
+        // grace 0 is the hardest case: any open window is exhausted.
+        for (const grace of [0, 1])
+          expect(held.exhausted("k", t, W, grace), `t=${t} g=${grace}`).toBe(
+            plain.exhausted("k", t, W, grace),
+          );
+        for (const l of [held, plain]) l.recordOffer("k", t + 47, W);
+        expect(offers(held), `t=${t} +offer`).toEqual(offers(plain));
+        for (const probe of [t + 47, t + 47 + W, t + 48 + W])
+          expect(held.exhausted("k", probe, W, 1), `t=${t} p=${probe}`).toBe(
+            plain.exhausted("k", probe, W, 1),
+          );
+      }
+    },
+  );
 
   it("recordOffer's window roll clears the held count", () => {
     const ledger = new OfferLedger(10);
