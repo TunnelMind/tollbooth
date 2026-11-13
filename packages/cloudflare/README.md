@@ -93,7 +93,7 @@ wins. Operator rows never burn the payer's nonce or cooldown, so the same
 | 0c | the settle call throws (connection failure), or a 2xx body is not JSON | operator | `settle-unreachable` | no | no | no |
 | 1 | HTTP 2xx and `data.settled === true` and a valid tx id (FR-005) | paid | — (served) | yes, `already-settled` | cleared | n/a (served) |
 | 2 | HTTP 2xx and `data.settled === true` and no valid tx id | settle-endpoint fault (the payer may have paid; no offer recorded) | `no-transaction-id` | yes | no | no |
-| 3a | any non-2xx with `data.settled === true`, or the settle call times out (10 s) (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (error-only 402 `settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator`) | no (the key is remembered as unconfirmed, see below) | no | no |
+| 3a | any non-2xx with `data.settled === true`, or the settle call times out (25 s) (money may have moved) | unconfirmed (no offer recorded) | `settle-unconfirmed` (error-only 402 `settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator`) | no (the key is remembered as unconfirmed, see below) | no | no |
 | 3 | `data.retryable === true`; or `data.reason` is `network-mismatch`, or is an operator fault by core's `isOperatorFault` (`settle-retryable`, `settle-throttled`, `settlement-unconfigured`, `settlement-not-configured`, `settle-unreachable`, starts with `verify-error:` / `settle-error:`, or matches `^(verify\|settle)-failed\((5\d\d\|401\|403\|429)\)$`) | operator | `settle-retryable` | no | no | no |
 | 4 | HTTP status 5xx, 401, 403, 404, 405 or 429, whatever the body (404/405: a wrong settle URL or method is ours) | operator | `settle-retryable` | no | no | no |
 | 5 | `data.reason` contains `valid_after` (F3) | payer clock, transient | `not-yet-valid`; repeats of the same payment before its `validAfter` are `not-yet-valid-held` (same 402 text `authorization not yet valid`, plus a `Retry-After` header: whole seconds until `validAfter`, at least 1). Once `validAfter` has passed the payment is due: it gets one attempt that goes to settle even if the payer is cooled down. A due attempt that meets an empty settle bucket (row 0b) or an operator fault stays due. A due attempt answered row 5 again is not held again: the next retry is an ordinary attempt (`payer-cooldown` if the payer is cooled down, else a settle call) | no, held locally until its `validAfter` (repeats: no settle call) | yes, once per nonce | yes, first attempt only (held repeats: no) |
@@ -111,9 +111,21 @@ held repeat
 gets the same 402 with `Retry-After` and an offer is recorded, and once
 `offer_grace` is spent the agent gets the usual 302 to the maze.
 `test/pages-settle.test.ts` ("README table") checks every row of
-this table against the code. A timeout is row 3a: the settle fetch is
-aborted after 10 s and answered `settle-unconfirmed`, because the transfer
-may already have been broadcast.
+this table against the code. A timeout is row 3a: the settle call (the
+fetch and the read of its body, whatever the status) is aborted after 25 s
+and answered `settle-unconfirmed`, because the transfer may already have
+been broadcast.
+
+The two time limits, side by side:
+
+| Limit | Value | Why this value |
+| --- | --- | --- |
+| settle timeout (`SETTLE_TIMEOUT_MS`) | 25 s | the settle route awaits verify, then settle, each with its own 10 s limit, then writes the receipt: about 20 s plus the write for a call that succeeds; 25 s clears that |
+| reservation and in-flight limit (`RESERVATION_TTL_MS`) | 45 s | the timeout plus a 20 s margin, so neither ends while its settle can still be running |
+
+Both values are reasoned from the route's budget, not measured, owner
+approval pending. No latency data backs them. A settle answer slower than
+25 s is not served (row 3a) although the transfer may have confirmed.
 
 Rows 2 and 3a are the answers where the payer may already have paid. Their
 402 is error-only: the body is `{"x402Version":1,"error":"…"}` and nothing
@@ -131,9 +143,11 @@ and a bucket token. The 512 and the 10 minutes are judgments, not
 measurements. Known cost: a payer in this state is served only once the
 settle route confirms that payment; if the route keeps refusing the spent
 nonce, the payer has paid and must contact the operator. A settle in
-flight stops counting toward its payer's limit after 30 s (the timeout plus
+flight stops counting toward its payer's limit after 45 s (the timeout plus
 a margin), so a settle whose request the runtime cancelled cannot keep the
-payer locked out.
+payer locked out. The in-flight join of copies of one payment ends at the
+same 45 s: the same payment sent again after that is a new attempt (one new
+settle call, an answer) instead of waiting on a settle that never returns.
 
 Known costs. Row 7: the settle route answers a `price_usd` outside its
 bounds (our misconfiguration) with HTTP 400, so that 400 is still charged to

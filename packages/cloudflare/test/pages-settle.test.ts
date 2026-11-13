@@ -44,7 +44,9 @@ import {
 import {
   createPagesMiddleware,
   makeSettlingVerify,
+  RESERVATION_TTL_MS,
   SETTLE_BUCKET_CAP,
+  SETTLE_TIMEOUT_MS,
   UNCONFIRMED_CAP,
   UNCONFIRMED_TTL_MS,
 } from "../src/index.js";
@@ -956,6 +958,27 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     );
     await expectOperator({ ...t, verify }, "settle-unconfirmed");
   });
+
+  // R013 (second review 2, L1). The non-2xx body read swallowed every
+  // rejection, the timeout too, so the answer was classified by status alone:
+  // 502 became "retry the same payment", 400 became row 7 (cached, counted).
+  for (const status of [502, 400])
+    it(`row 3a (R013 L1): HTTP ${status} headers, then the timeout fires during the body read → settle-unconfirmed, not cached, not counted`, async () => {
+      const t = table(200, {});
+      const verify = makeSettlingVerify(
+        async () => {
+          t.s.calls += 1;
+          return new Response(
+            new ReadableStream({ start: (c) => c.error(timedOut()) }),
+            { status },
+          );
+        },
+        SETTLE_URL,
+        "settle-secret",
+      );
+      await expectOperator({ ...t, verify }, "settle-unconfirmed");
+      expect(verify._sizes()).toMatchObject({ seen: 0, payerFails: 0 });
+    });
 
   // R012 (second review 2, M2). The unconfirmed 402 used to carry a full
   // offer beside "do not pay again"; a client acting on `accepts` signs a
@@ -2405,11 +2428,13 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
   });
 
   // R002 (second review of 2abd077, M1): a reservation has a time limit
-  // (RESERVATION_TTL_MS = 30 s, checked on read) and the settle fetch a hard
-  // timeout (SETTLE_TIMEOUT_MS = 10 s). Before, a settle that never answered
+  // (RESERVATION_TTL_MS, checked on read) and the settle fetch a hard
+  // timeout (SETTLE_TIMEOUT_MS). Before, a settle that never answered
   // kept its reservation for the life of the isolate: three of them locked
-  // the payer out for good.
-  const TTL_MS = 30_000;
+  // the payer out for good. The tests take both values from the source, so
+  // they follow the constants (25 s and 45 s since R013).
+  const TTL_MS = RESERVATION_TTL_MS;
+  const TTL_S = TTL_MS / 1000;
   const okResponse = () => new Response(JSON.stringify(OK), { status: 200 });
   /** AbortSignal.timeout is native and runs on real time, which a mocked
    * Date.now does not move. Replace it with signals the test fires by hand;
@@ -2461,7 +2486,7 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     expect(refused.status).toBe(402);
     expect(await errorOf(refused)).toBe(COOLING);
     expect(h.calls).toBe(3);
-    // At the bound (and past the 10 s settle timeout) they no longer count.
+    // At the bound (and past the settle timeout) they no longer count.
     ms += 1;
     const r = send(freshPayment());
     await inFlight(h, 4);
@@ -2529,8 +2554,10 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
 
   // On the verify function itself, where `_sizes()` lives. Bound: a
   // reservation needs a bucket token, so at most SETTLE_BUCKET_CAP + 5/s x
-  // 30 s = 170 can be alive at once; this run starts 5 per second.
-  it("R002 M1 test 3: hung payers at 5/s for 60 s leave 150 reservations, not 300; 0 after the bound and a sweep", async () => {
+  // 45 s = 245 can be alive at once; this run starts 5 per second. The
+  // per-payment `inflight` entries have the same age limit and are swept in
+  // the same pass (R013 M3), so the two sizes move together.
+  it("R002 M1 test 3: hung payers at 5/s for 60 s leave 5 x RESERVATION_TTL_MS/1000 (225) reservations and inflight entries, not 300; 0 after the bound and a sweep", async () => {
     const t = manualTimeouts();
     const h = hungSettle();
     const verify = makeSettlingVerify(
@@ -2543,38 +2570,44 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     for (let s = 0; s < 60; s++) {
       for (let i = 0; i < 5; i++)
         hung.push(verify(rotatingPayerPayment(), cfg));
-      // Reservations made at second s-29..s are alive: 5 x min(s + 1, 30).
-      expect(verify._sizes().payerInflight).toBe(5 * Math.min(s + 1, 30));
+      // Those started in the last TTL_S seconds are alive: 5 x min(s + 1, TTL_S).
+      const alive = 5 * Math.min(s + 1, TTL_S);
+      expect(verify._sizes()).toMatchObject({
+        inflight: alive,
+        payerInflight: alive,
+      });
       ms += 1000;
     }
     expect(h.calls).toBe(300);
+    expect(5 * TTL_S).toBe(225);
     expect(verify._sizes()).toMatchObject({
-      inflight: 300,
-      payerInflight: 150,
+      inflight: 5 * TTL_S,
+      payerInflight: 5 * TTL_S,
     });
-    // Past the bound for the newest one; the next settle to start sweeps.
+    // Past the bound for the newest one; the next settle to start sweeps
+    // both maps, although no settle has answered and no release has run.
     ms += TTL_MS;
     h.hang = false;
     expect((await verify(rotatingPayerPayment(), cfg)).ok).toBe(true);
-    // `inflight` is per payment and has no age limit (the join must hold
-    // while a settle runs); its entries go when the settle timeout fires.
-    expect(verify._sizes()).toMatchObject({ inflight: 300, payerInflight: 0 });
+    expect(verify._sizes()).toMatchObject({ inflight: 0, payerInflight: 0 });
     expect(t.made.length).toBe(301);
+    // The 300 dead settles end at last (the timeout fires): their late
+    // releases find nothing of their own and remove nothing else.
     t.fire();
     await Promise.all(hung);
     expect(verify._sizes()).toMatchObject({ inflight: 0, payerInflight: 0 });
   }, 30_000);
 
-  it("R002 M1 test 4: a copy of an in-flight payment whose reservation expired still joins it: one settle call, served once", async () => {
+  // Until R013 the per-payment entry had no age limit, and this test moved
+  // the clock a full RESERVATION_TTL_MS and still expected the join. The
+  // entry now ends with the reservation, so the join is pinned up to one ms
+  // short of the limit; the tests after test 6 pin what happens at it.
+  it("R002 M1 test 4: a copy of an in-flight payment still joins it one ms before RESERVATION_TTL_MS: one settle call, served once", async () => {
     const { h, send } = await viaMiddleware();
     const xp = freshPayment();
     const leader = send(xp);
-    for (let i = 0; i < 2; i++) void send(freshPayment());
-    await inFlight(h, 3);
-    ms += TTL_MS;
-    // The reservations did expire: a fresh payment from the payer starts.
-    void send(freshPayment());
-    await inFlight(h, 4);
+    await inFlight(h, 1);
+    ms += TTL_MS - 1;
     // The copy must wait on the leader, not settle again.
     let copyDone = false;
     const copy = send(xp).then((r) => {
@@ -2583,17 +2616,17 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     });
     await new Promise((r) => setTimeout(r, 20));
     expect(copyDone).toBe(false);
-    expect(h.calls).toBe(4);
-    h.answer(200, OK); // the oldest waiting call is the leader's
+    expect(h.calls).toBe(1);
+    h.answer(200, OK);
     const [a, b] = await Promise.all([leader, copy]);
     expect(a.status).toBe(200);
     expect(a.headers.get("x-payment-response")).not.toBeNull();
     expect(b.status).toBe(402);
     expect(b.headers.get("x-payment-response")).toBeNull();
-    expect(h.calls).toBe(4); // one call for `xp`, ever
+    expect(h.calls).toBe(1); // one call for `xp`, ever
     const replay = await send(xp);
     expect(replay.status).toBe(402);
-    expect(h.calls).toBe(4);
+    expect(h.calls).toBe(1);
   });
 
   it("R002 M1 test 5: an expired reservation whose settle answers late does not release a newer one", async () => {
@@ -2630,7 +2663,8 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     const xp = freshPayment();
     const r = send(xp);
     await vi.waitFor(() => expect(h.calls).toBe(1));
-    expect(t.made.map((m) => m.ms)).toEqual([10_000]);
+    expect(SETTLE_TIMEOUT_MS).toBe(25_000);
+    expect(t.made.map((m) => m.ms)).toEqual([SETTLE_TIMEOUT_MS]);
     t.fire();
     const timedOut = await r;
     expect(timedOut.status).toBe(402);
@@ -2642,6 +2676,166 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
     expect(retry.status).toBe(200);
     expect(h.calls).toBe(2);
   });
+
+  // R013 (second review 2 of 7e81768, M3). A settle whose promise never
+  // settles is what a request cancelled by the runtime leaves behind: its
+  // `finally` never runs. Before, the same payment sent again joined that
+  // dead promise and never got an answer, for the life of the isolate. The
+  // clock here is the mocked Date.now the limit is read from (there is no
+  // timer in the code to fake).
+  /** A settle that never answers and ignores the signal; with `dead` off it
+   * answers OK. */
+  function deadSettle() {
+    const d = { calls: 0, dead: true };
+    const verify = makeSettlingVerify(
+      () => {
+        d.calls += 1;
+        return d.dead
+          ? new Promise<Response>(() => {})
+          : Promise.resolve(okResponse());
+      },
+      SETTLE_URL,
+      "settle-secret",
+    );
+    return { d, verify, cfg: parseConfig(toml()) };
+  }
+
+  it("R013 M3: the same payment sent again RESERVATION_TTL_MS after a settle that never returns gets one new settle call and an answer", async () => {
+    const { d, verify, cfg } = deadSettle();
+    const xp = freshPayment();
+    void verify(xp, cfg); // never answered
+    expect(d.calls).toBe(1);
+    // One ms short of the limit: the copy still joins (no settle call) and,
+    // the settle being dead, is not answered.
+    ms += TTL_MS - 1;
+    let joinedDone = false;
+    void Promise.resolve(verify(xp, cfg)).then(() => {
+      joinedDone = true;
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(joinedDone).toBe(false);
+    expect(d.calls).toBe(1);
+    // At the limit the dead entry is dropped: one new settle call, answered.
+    ms += 1;
+    d.dead = false;
+    const retry = await verify(xp, cfg);
+    expect(retry.ok).toBe(true);
+    expect(d.calls).toBe(2);
+    expect(verify._sizes()).toMatchObject({ inflight: 0, payerInflight: 0 });
+    // Settled and cached for the nonce: a third copy makes no call.
+    expect((await verify(xp, cfg)).reason).toBe("already-settled");
+    expect(d.calls).toBe(2);
+  });
+
+  it("R013 M3: 51 dead settles leave no inflight entry after the limit and a sweep", async () => {
+    const { d, verify, cfg } = deadSettle();
+    // More than the bucket holds at once: spread over time, as the review's
+    // probe did (it found 51 entries still there at +31 s and +4.5 min).
+    for (let i = 0; i < 51; i++, ms += 200)
+      void verify(rotatingPayerPayment(), cfg);
+    expect(d.calls).toBe(51);
+    expect(verify._sizes()).toMatchObject({ inflight: 51, payerInflight: 51 });
+    ms += TTL_MS;
+    d.dead = false;
+    expect((await verify(rotatingPayerPayment(), cfg)).ok).toBe(true);
+    expect(verify._sizes()).toMatchObject({ inflight: 0, payerInflight: 0 });
+  });
+
+  it("R013 M3: a settle that answers after its entry expired does not remove the newer entry for the same payment", async () => {
+    // Only a fetch that ignores the abort signal can answer this late.
+    const waiting: ((r: Response) => void)[] = [];
+    const verify = makeSettlingVerify(
+      () => new Promise<Response>((resolve) => waiting.push(resolve)),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const cfg = parseConfig(toml());
+    const xp = freshPayment();
+    const old = verify(xp, cfg);
+    ms += TTL_MS;
+    const newer = verify(xp, cfg); // drops the expired entry, starts again
+    expect(waiting.length).toBe(2);
+    expect(verify._sizes().inflight).toBe(1);
+    // The old settle answers at last. A release by key would remove the
+    // newer entry here, and the next copy would settle a third time.
+    waiting[0]?.(new Response(JSON.stringify(UNFUNDED), { status: 503 }));
+    expect((await old).reason).toBe("settle-retryable");
+    expect(verify._sizes().inflight).toBe(1);
+    const copy = verify(xp, cfg); // joins the newer one: no third call
+    await new Promise((r) => setTimeout(r, 20));
+    expect(waiting.length).toBe(2);
+    waiting[1]?.(okResponse());
+    expect((await newer).ok).toBe(true);
+    expect((await copy).reason).toBe("already-settled");
+    expect(verify._sizes().inflight).toBe(0);
+  });
+
+  // R013 (second review 2, L2). Every other timeout test throws a hand-made
+  // DOMException or replaces AbortSignal.timeout. This one runs the native
+  // timer for the real SETTLE_TIMEOUT_MS: it takes 25 s by design. The stubs
+  // only honour the signal the code passes, as fetch does. Two settles run
+  // side by side: one never answers at all, one answers 502 headers and then
+  // stalls in the body (L1).
+  it("R013 L2: the native AbortSignal.timeout(SETTLE_TIMEOUT_MS) ends a hung settle, and a stalled non-2xx body, as settle-unconfirmed (real timer, 25 s)", async () => {
+    const signals: AbortSignal[] = [];
+    const cfg = parseConfig(toml());
+    const noAnswer = makeSettlingVerify(
+      (_url, init) =>
+        new Promise<Response>((_, reject) => {
+          const signal = init?.signal as AbortSignal;
+          signals.push(signal);
+          signal.addEventListener("abort", () => reject(signal.reason));
+        }),
+      SETTLE_URL,
+      "settle-secret",
+    );
+    const stalledBody = makeSettlingVerify(
+      async (_url, init) => {
+        const signal = init?.signal as AbortSignal;
+        signals.push(signal);
+        return new Response(
+          new ReadableStream({
+            start: (c) =>
+              signal.addEventListener("abort", () => c.error(signal.reason)),
+          }),
+          { status: 502 },
+        );
+      },
+      SETTLE_URL,
+      "settle-secret",
+    );
+    // Date.now is mocked in this describe; performance.now is the real clock.
+    const t0 = performance.now();
+    const results = await Promise.all([
+      noAnswer(freshPayment(), cfg),
+      stalledBody(freshPayment(), cfg),
+    ]);
+    const tookMs = performance.now() - t0;
+    for (const r of results)
+      expect(r).toEqual({
+        ok: false,
+        payer: null,
+        reason: "settle-unconfirmed",
+      });
+    // The native signal, and what it rejects with.
+    expect(signals.length).toBe(2);
+    for (const signal of signals) {
+      expect(signal.aborted).toBe(true);
+      expect(signal.reason).toBeInstanceOf(DOMException);
+      expect((signal.reason as DOMException).name).toBe("TimeoutError");
+    }
+    // At the timeout, not before (50 ms of timer slack) and not much after.
+    expect(tookMs).toBeGreaterThanOrEqual(SETTLE_TIMEOUT_MS - 50);
+    expect(tookMs).toBeLessThan(SETTLE_TIMEOUT_MS + 5_000);
+    for (const v of [noAnswer, stalledBody])
+      expect(v._sizes()).toMatchObject({
+        seen: 0,
+        payerFails: 0,
+        inflight: 0,
+        payerInflight: 0,
+        unconfirmed: 1,
+      });
+  }, 35_000);
 
   // R004 (second review of 2abd077, L6). The handler used to build one state
   // per request that arrived during the first build, so on a cold isolate

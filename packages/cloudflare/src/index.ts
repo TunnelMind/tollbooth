@@ -89,20 +89,30 @@ const SETTLE_REFILL_PER_S = 5;
 // is answered as settle-unconfirmed (row 3a, R006), not settle-unreachable:
 // the facilitator may have broadcast the transfer before we gave up. Not
 // cached, not counted.
-// NOT MEASURED (R010): 10 s is a choice the owner has not yet approved. No
-// latency data backs it; nothing shows the data-api settle route answers
-// under 10 s at p99, on-chain wait included. The consequence if it does not:
-// a settle answer slower than 10 s is answered settle-unconfirmed (an
-// error-only 402) and the payer is not served, while the transfer may already
-// have confirmed. The owner decides: see "Choices for the owner" in
+// NOT MEASURED (R010, R013): 25 s and the 45 s below are both reasoned from
+// the settle route's own budget, not from latency data, and both wait on the
+// owner's approval. The reasoning: the data-api settle route awaits the
+// facilitator's verify, then its settle, each with its own 10 s timeout, then
+// writes the receipt. So a call that succeeds can take about 20 s plus the
+// write, and a limit below that cuts off payments the route would have
+// settled and answered (second review 2, M1: the first value, 10 s, did).
+// 25 s clears that worst successful case. Nothing shows how long the route
+// really takes, on-chain wait included. A settle answer slower than 25 s is
+// still answered settle-unconfirmed (an error-only 402) and the payer is not
+// served, while the transfer may already have confirmed. The owner decides:
+// see "Choices for the owner" in
 // specs/006-fareseal-contract-o1o4-1/pr-body.md.
-const SETTLE_TIMEOUT_MS = 10_000;
-// A per-payer reservation older than this no longer counts and is removed
-// when next read. It covers the case the timeout cannot: on Workers a client
-// disconnect can cancel the request, and then the release in `finally` never
-// runs. 30 s = the settle timeout plus a 20 s margin (judgment), so a
-// reservation does not expire while its own settle can still be running.
-const RESERVATION_TTL_MS = 30_000;
+// Exported for tests only.
+export const SETTLE_TIMEOUT_MS = 25_000;
+// A per-payer reservation, and a per-payment `inflight` entry, older than
+// this no longer counts and is removed when next read. It covers the case the
+// timeout cannot: on Workers a client disconnect can cancel the request, and
+// then the release in `finally` never runs. 45 s = the settle timeout plus a
+// 20 s margin, so neither expires while its own settle can still be running
+// (the fetch is aborted at SETTLE_TIMEOUT_MS). Reasoned from the same budget,
+// NOT measured, owner approval pending, like the timeout above.
+// Exported for tests only.
+export const RESERVATION_TTL_MS = 45_000;
 // Payments whose last settle answer was settle-unconfirmed are remembered
 // (R012, second review 2 M2), so that a later payer-class answer for the same
 // payment (typically "nonce used", because the first transfer did land) is
@@ -181,6 +191,10 @@ interface State {
   reporting: boolean;
   settling: boolean;
 }
+
+/** The rejection AbortSignal.timeout() gives a fetch or its body read. */
+const isTimeout = (err: unknown): boolean =>
+  (err as { name?: unknown } | null)?.name === "TimeoutError";
 
 const remember = <K, V>(map: Map<K, V>, k: K, v: V, cap = DAMP_CAP): void => {
   map.set(k, v);
@@ -261,7 +275,18 @@ export function makeSettlingVerify(
   // Concurrent identical payments share one settle; only the starter passes.
   // The x402 resource is not in the signed EIP-3009 authorization, so sharing
   // ok:true would let one payment sent to many paths unlock all of them.
-  const inflight = new Map<string, Promise<X402VerifyResult>>();
+  // Each entry holds its start time. One older than RESERVATION_TTL_MS is
+  // dead by construction (its fetch was aborted at SETTLE_TIMEOUT_MS, well
+  // before): it is removed on read and by the sweep below, so a settle whose
+  // release never ran (a request the runtime cancelled) cannot leave the same
+  // payment waiting on a promise that never settles, or grow this map
+  // (R013, second review 2 M3). Bounded like the reservations.
+  // Known limit: a custom opts.fetch that ignores the abort signal can still
+  // be running at that age; the same payment then gets a second settle call.
+  // One EIP-3009 authorization moves money at most once, so that costs a
+  // facilitator call, not a second charge.
+  type Inflight = { atMs: number; p: Promise<X402VerifyResult> };
+  const inflight = new Map<string, Inflight>();
   // Settle calls started per payer and not finished (R-O1, spec 006). They
   // count toward PAYER_FAIL_LIMIT with the recorded failures; otherwise a
   // concurrent burst from one payer all passes the cooldown check before the
@@ -270,7 +295,7 @@ export function makeSettlingVerify(
   // older than RESERVATION_TTL_MS is dropped on read, so a settle whose
   // release never runs cannot lock its payer out (R002 M1). Bounded: a
   // reservation costs a bucket token, so at most SETTLE_BUCKET_CAP +
-  // SETTLE_REFILL_PER_S x 30 s = 170 are younger than the limit, and every
+  // SETTLE_REFILL_PER_S x 45 s = 245 are younger than the limit, and every
   // new one sweeps the older out.
   const payerInflight = new Map<string, { atMs: number }[]>();
   /** The payer's reservations still inside the limit; the rest are removed. */
@@ -331,16 +356,21 @@ export function makeSettlingVerify(
           retryAfterS: Number(early - nowS),
         };
     }
+    const now = Date.now();
     const pending = inflight.get(key);
     if (pending !== undefined) {
-      const leader = await pending;
-      return {
-        ok: false,
-        payer: null,
-        reason: leader.ok ? "already-settled" : leader.reason,
-      };
+      if (now - pending.atMs < RESERVATION_TTL_MS) {
+        const leader = await pending.p;
+        return {
+          ok: false,
+          payer: null,
+          reason: leader.ok ? "already-settled" : leader.reason,
+        };
+      }
+      // Past the limit its settle cannot still be running: joining it could
+      // wait for ever. Drop it; this request is a new attempt (R013 M3).
+      inflight.delete(key);
     }
-    const now = Date.now();
     const fails = payerFails.get(payer);
     // Live failures plus settles in flight. With nothing in flight this is
     // the plain cooldown check. Known cost: an honest payer's 4th concurrent
@@ -364,10 +394,12 @@ export function makeSettlingVerify(
     if (due) notYetValid.delete(key);
     // Reserve in the same synchronous run as the check above: no await
     // between them, so concurrent requests cannot all pass first.
-    // ponytail: every new reservation scans the whole map for expired ones
-    // (at most 170 entries, see above); keep an age-ordered list if the
-    // bucket ever grows by orders of magnitude.
+    // ponytail: every new reservation scans both maps for expired entries
+    // (at most 245 each, see above); keep an age-ordered list if the bucket
+    // ever grows by orders of magnitude.
     for (const p of payerInflight.keys()) liveReservations(p, now);
+    for (const [k, e] of inflight)
+      if (now - e.atMs >= RESERVATION_TTL_MS) inflight.delete(k);
     const reservation = { atMs: now };
     payerInflight.set(payer, [
       ...(payerInflight.get(payer) ?? []),
@@ -403,10 +435,15 @@ export function makeSettlingVerify(
         });
         // A non-2xx body may not parse (a proxy's HTML 502); it is still
         // classified by status below. A 2xx that fails to parse throws, as
-        // before, into settle-unreachable.
+        // before, into settle-unreachable. Our timeout during the read is
+        // not a parse failure: rethrown to the catch below (row 3a) whatever
+        // the status, never "retry the same payment" or row 7 (R013 L1).
         const body = (await (resp.ok
           ? resp.json()
-          : resp.json().catch(() => null))) as {
+          : resp.json().catch((err: unknown) => {
+              if (isTimeout(err)) throw err;
+              return null;
+            }))) as {
           data?: Record<string, unknown>;
         } | null;
         const data = body?.data ?? {};
@@ -535,15 +572,14 @@ export function makeSettlingVerify(
         // operator-fault answer (which comes with a fresh offer):
         // unconfirmed, not cached, not counted. Any other
         // throw (connection failure, a 2xx that is not JSON) is row 0c.
-        if ((err as { name?: unknown } | null)?.name === "TimeoutError")
-          return answerUnconfirmed();
+        if (isTimeout(err)) return answerUnconfirmed();
         return { ok: false, payer: null, reason: "settle-unreachable" };
       }
     };
-    const p = settle();
-    inflight.set(key, p);
+    const entry: Inflight = { atMs: now, p: settle() };
+    inflight.set(key, entry);
     try {
-      const result = await p;
+      const result = await entry.p;
       // Row A7: an operator fault ("retry the same payment") must not cost
       // the payer its due pass. Put the hold back, same validAfter, so the
       // retry is the due attempt again. settle-unconfirmed and
@@ -562,10 +598,11 @@ export function makeSettlingVerify(
         remember(notYetValid, key, { ...hold, faults: hold.faults + 1 });
       return result;
     } finally {
-      inflight.delete(key);
       // Release on every outcome; settle() itself never rejects. Only this
-      // call's own reservation: if it expired and was swept while the settle
-      // ran, there is nothing to remove and the payer's newer ones stay.
+      // call's own entry and reservation: if they expired and were swept
+      // while the settle ran, there is nothing to remove, and a newer entry
+      // for the same payment or the payer's newer reservations stay.
+      if (inflight.get(key) === entry) inflight.delete(key);
       const left = (payerInflight.get(payer) ?? []).filter(
         (r) => r !== reservation,
       );
