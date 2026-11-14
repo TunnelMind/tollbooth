@@ -57,6 +57,15 @@ Tollbooth was renamed Fareseal on 2026-11-10.
   `X-PAYMENT-RESPONSE.transaction`. A `settled: true` answer with neither now
   stays 402 with reason `no-transaction-id`; that payment is never settled
   again and the payer is not damped.
+- The hono floor is raised from `^4.13.7` to `^4.13.16` for
+  `@tunnelmindai/fareseal-cloudflare` (dependency) and
+  `@tunnelmindai/fareseal-hono` (peer; an installer on an older hono 4.13 gets
+  a peer warning). It fixes GHSA-3gg2-335m-rxc6, GHSA-46wx-v44x-9hh2,
+  GHSA-4h7h-rv7c-7m2v, GHSA-4m76-xfj5-7975 and GHSA-h7mg-cq63-vhpq.
+  Behaviour change from GHSA-h7mg-cq63-vhpq: a path with an encoded line
+  terminator (`%0A`, `%0D`, `%E2%80%A8`, `%E2%80%A9`) now passes through the
+  fareseal middleware and reaches the origin; on 4.13.13 it returned a 404
+  that skipped both.
 
 ## 2.2.0
 

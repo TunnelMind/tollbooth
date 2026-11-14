@@ -6,6 +6,6 @@
     "@tunnelmindai/fareseal-adapter-x402": "workspace:*",
     "@tunnelmindai/fareseal-core": "workspace:*",
     "@tunnelmindai/fareseal-hono": "workspace:*",
-    "hono": "^4.13.7"
+    "hono": "^4.13.16"
   }
 }
