@@ -42,6 +42,7 @@ import {
   type TestAgent,
 } from "../../core/test/fixtures/wba.js";
 import {
+  BUILD_TTL_MS,
   createPagesMiddleware,
   makeSettlingVerify,
   RESERVATION_TTL_MS,
@@ -2935,6 +2936,63 @@ describe("per-payer in-flight settles are reserved (spec 006 T004, R-O1)", () =>
       expect(rs.filter((r) => r.status === 200).length).toBe(1);
       expect(rs.filter((r) => r.status === 402).length).toBe(2);
       expect(b.settles.length).toBe(1);
+    });
+
+    // R019. The site key makes the build await crypto.subtle (the public
+    // key's SHA-512); the first build's digest is held to stand for a build
+    // that never settles.
+    it("a build that never settles holds requests for BUILD_TTL_MS at most; settling late, it does not replace the newer state", async () => {
+      const b = settleBinding({ settled: true, payer: "0xabc", tx: TX });
+      const env = {
+        ...envOf(b),
+        TOLLBOOTH_SITE_KEY: toBase64Url(generateSecretKey()),
+      };
+      const mw = settlingMw();
+      const t0 = Date.now();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+      const digest = crypto.subtle.digest.bind(crypto.subtle);
+      let release = () => {};
+      const held = new Promise<void>((r) => {
+        release = r;
+      });
+      const spy = vi
+        .spyOn(crypto.subtle, "digest")
+        .mockImplementationOnce(async (...a) => {
+          await held;
+          return digest(...a);
+        });
+      const hung = (p: Promise<Response>) =>
+        Promise.race([
+          p.then(() => false),
+          new Promise<boolean>((r) => setTimeout(() => r(true), 50)),
+        ]);
+      try {
+        const r1 = mw(ctx("/r", agent(), env));
+        // Inside the limit a second request joins the same build.
+        clock.mockReturnValue(t0 + BUILD_TTL_MS - 1);
+        const r2 = mw(ctx("/r", agent(), env));
+        expect(await hung(r2)).toBe(true);
+        // At the limit the next request builds again and is answered.
+        clock.mockReturnValue(t0 + BUILD_TTL_MS);
+        const xp = freshPayment();
+        const paid = mw(ctx("/r", agent({ "x-payment": xp }), env));
+        expect(await hung(paid)).toBe(false);
+        expect((await paid).status).toBe(200);
+        expect(b.settles.length).toBe(1);
+        // The old build settles late: its requests are answered, and the
+        // handler keeps the newer state. The replay proves it: only the
+        // state that settled `xp` refuses it without a settle call.
+        release();
+        expect((await r1).status).toBe(402);
+        expect((await r2).status).toBe(402);
+        const again = await mw(ctx("/r", agent({ "x-payment": xp }), env));
+        expect(again.status).toBe(402);
+        expect(b.settles.length).toBe(1);
+      } finally {
+        release();
+        spy.mockRestore();
+        clock.mockRestore();
+      }
     });
   });
 });

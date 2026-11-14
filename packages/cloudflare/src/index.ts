@@ -113,6 +113,11 @@ export const SETTLE_TIMEOUT_MS = 25_000;
 // NOT measured, owner approval pending, like the timeout above.
 // Exported for tests only.
 export const RESERVATION_TTL_MS = 45_000;
+// How long a shared state build (the `building` entry) may hold the requests
+// that joined it; an older entry is replaced by a new build (R019). The build
+// only awaits crypto.subtle, so 10 s is a generous ceiling, NOT measured.
+// Exported for tests only.
+export const BUILD_TTL_MS = 10_000;
 // Payments whose last settle answer was settle-unconfirmed are remembered
 // (R012, second review 2 M2), so that a later payer-class answer for the same
 // payment (typically "nonce used", because the first transfer did land) is
@@ -687,8 +692,11 @@ export function createPagesMiddleware(
   // The build in progress, if any. Requests that arrive during it await this
   // one promise, so a cold isolate's first burst shares one State (one
   // in-flight map, one bucket, one set of reservations) instead of each
-  // request building its own.
-  let building: { key: string; p: Promise<State> } | null = null;
+  // request building its own. It holds its start time: an entry older than
+  // BUILD_TTL_MS is replaced, so a build that never settles (a request the
+  // runtime cancelled) cannot hold every later request on the isolate (R019,
+  // the same liveness class as `inflight`).
+  let building: { key: string; p: Promise<State>; atMs: number } | null = null;
   let isolateId: string | null = null;
   let seq = 0;
   let lastFlushMs = 0;
@@ -854,11 +862,22 @@ export function createPagesMiddleware(
       if (state !== null && stateKey === key) {
         s = state;
       } else {
-        if (building === null || building.key !== key) {
+        const now = Date.now();
+        if (
+          building === null ||
+          building.key !== key ||
+          now - building.atMs >= BUILD_TTL_MS
+        ) {
           const p: Promise<State> = buildState(context.env, toml)
             .then((built) => {
-              state = built;
-              stateKey = key;
+              // Only the current build is kept. One that was replaced (too
+              // old, or another key) and settles late still answers the
+              // requests that awaited it, but must not put its State, or its
+              // stale key, over the newer one.
+              if (building?.p === p) {
+                state = built;
+                stateKey = key;
+              }
               return built;
             })
             // Settled either way, the entry goes: a rejected build is not
@@ -866,7 +885,7 @@ export function createPagesMiddleware(
             .finally(() => {
               if (building?.p === p) building = null;
             });
-          building = { key, p };
+          building = { key, p, atMs: now };
         }
         s = await building.p;
       }
