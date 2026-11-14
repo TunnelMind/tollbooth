@@ -136,8 +136,8 @@ The two time limits, side by side:
 | settle timeout (`SETTLE_TIMEOUT_MS`) | 25 s | the settle route awaits verify, then settle, each with its own 10 s limit, then writes the receipt: about 20 s plus the write for a call that succeeds; 25 s clears that |
 | reservation and in-flight limit (`RESERVATION_TTL_MS`) | 45 s | the timeout plus a 20 s margin, so neither ends while its settle can still be running |
 
-Both values are reasoned from the route's budget, not measured, owner
-approval pending. No latency data backs them. A settle answer slower than
+Both values are approved by the owner 2026-11-14; reasoned from the settle
+route's budget, not measured. No latency data backs them. A settle answer slower than
 25 s is not served (row 3a) although the transfer may have confirmed.
 
 Rows 2 and 3a are the answers where the payer may already have paid. Their
@@ -152,7 +152,16 @@ is longer than a payment can live). While it is remembered, a row 6, 6b or 7
 answer for that same payment (typically "nonce used", because the first
 transfer did land) is answered `settle-unconfirmed` again: not cached, not
 counted toward the payer's cooldown. Each such retry is still a settle call
-and a bucket token. The 512 and the 10 minutes are judgments, not
+and a bucket token. The same holds when the retry of a remembered payment
+meets a second fault: a row 0b, 0c, 3, 4 or 5 answer, `payer-cooldown`, or
+the local check's `expired`, `not-yet-valid` or `window-too-long` (for
+example a 502 from the settle route, a connection failure, the empty
+bucket, or the payment's own `validBefore` passing while it is remembered).
+While a payment is remembered, every 402 for it is the error-only one. It is answered `settle-unconfirmed` too, the error-only 402 with no
+`x-payment-required` and no `accepts`, instead of that row's 402 with an
+offer. It is not cached, not counted, records no offer and writes no row 5
+hold; the entry is kept and its 10 minutes are not renewed. A payment that
+is not remembered gets the row's usual answer. The 512 and the 10 minutes are judgments, not
 measurements. (The replay cache has the same 512 cap and turns over in about
 100 s at the bucket rate; see above for what a replay then rests on.) Known cost: a payer in this state is served only once the
 settle route confirms that payment; if the route keeps refusing the spent

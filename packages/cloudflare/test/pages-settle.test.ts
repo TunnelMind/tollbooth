@@ -1135,6 +1135,320 @@ describe("makeSettlingVerify — FR-001 classifier table (T005)", () => {
     }
   });
 
+  // R020 (second review 3, L2): the other way into the memory. Only the
+  // timeout entry was tested; a non-2xx that says settled:true must be
+  // remembered too, or the retry's "nonce used" is blamed on the payer.
+  it("row 3a (R020 L2): HTTP 502 + settled:true, then the same payment answered nonce_used → settle-unconfirmed again, not cached, payerFails 0", async () => {
+    const t = table(502, { ok: true, data: { settled: true, tx: TX } });
+    const xp = freshPayment();
+    expect((await t.verify(xp, t.cfg)).reason).toBe("settle-unconfirmed");
+    expect(t.verify._sizes().unconfirmed).toBe(1);
+    t.s.status = 200;
+    t.s.body = settledFalse("nonce_used");
+    for (const calls of [2, 3]) {
+      expect(await t.verify(xp, t.cfg)).toMatchObject({
+        ok: false,
+        reason: "settle-unconfirmed",
+      });
+      expect(t.s.calls).toBe(calls); // not cached: each try reaches settle
+    }
+    expect(t.verify._sizes()).toMatchObject({
+      seen: 0,
+      payerFails: 0,
+      unconfirmed: 1,
+    });
+  });
+
+  // R020 (second review 3, L1). A payment answered settle-unconfirmed may
+  // have moved money. Its retry used to get a full offer again whenever it
+  // met a second fault; a client acting on `accepts` then signs a new payment.
+  // Each row: the fault's name, the reason and 402 text a payment with no
+  // unconfirmed history gets (unchanged), whether the retry reaches the
+  // settle route, and how to arm the fault. `send` sends other payments.
+  type Arm = (t: T, send: (xp: string) => unknown) => Promise<void>;
+  const secondFaults: [string, string, string, boolean, Arm][] = [
+    [
+      "HTTP 502 from the settle route",
+      "settle-retryable",
+      OPERATOR_FAULT,
+      true,
+      async (t) => {
+        t.s.status = 502;
+        t.s.body = { ok: false, error: "bad gateway" };
+      },
+    ],
+    [
+      "a connection failure",
+      "settle-unreachable",
+      OPERATOR_FAULT,
+      true,
+      async (t) => {
+        t.s.throws = true;
+      },
+    ],
+    [
+      "the settle throttle",
+      "settle-throttled",
+      OPERATOR_FAULT,
+      false,
+      // Drained by other payers with operator faults: this payer is never
+      // counted, so the retry meets the bucket, not the cooldown.
+      async (t, send) => {
+        t.s.status = 503;
+        for (let i = 0; i < SETTLE_BUCKET_CAP; i++)
+          await send(rotatingPayerPayment());
+      },
+    ],
+    [
+      "the payer cooldown",
+      "payer-cooldown",
+      "payer cooling down after repeated failures; retry later",
+      false,
+      // freshPayment() signs with the one test payer, the remembered
+      // payment's own: three counted failures cool that payer down.
+      async (t, send) => {
+        t.s.body = settledFalse("insufficient_funds");
+        for (let i = 0; i < 3; i++) await send(freshPayment());
+      },
+    ],
+  ];
+  for (const [name, reason, error, reaches, arm] of secondFaults)
+    for (const remembered of [true, false])
+      it(`R020 L1: ${remembered ? "timeout, then the same payment" : "a payment with no unconfirmed history"} meets ${name} → ${remembered ? "settle-unconfirmed, error-only 402, nothing written, entry kept" : `${reason} with the offer, as before`}`, async () => {
+        // Frozen clock: the bucket does not refill, the cooldown stays live.
+        const clock = vi.spyOn(Date, "now").mockReturnValue(Date.now());
+        try {
+          const t = table(200, {});
+          const xp = freshPayment();
+          if (remembered) {
+            t.s.throws = timedOut();
+            expect((await t.verify(xp, t.cfg)).reason).toBe(
+              "settle-unconfirmed",
+            );
+            t.s.throws = false;
+          }
+          await arm(t, (p) => t.verify(p, t.cfg));
+          const before = t.verify._sizes();
+          expect(before.unconfirmed).toBe(remembered ? 1 : 0);
+          const c0 = t.s.calls;
+          for (const n of [1, 2]) {
+            expect(await t.verify(xp, t.cfg)).toMatchObject({
+              ok: false,
+              payer: null,
+              reason: remembered ? "settle-unconfirmed" : reason,
+            });
+            // Not cached, and not short-circuited before the settle call.
+            expect(t.s.calls - c0).toBe(reaches ? n : 0);
+          }
+          // Nothing written (seen, payerFails, notYetValid) and the entry kept.
+          expect(t.verify._sizes()).toEqual(before);
+          if (remembered && reaches) {
+            // Still allowed to settle: served once the route confirms it.
+            t.s.throws = false;
+            t.s.status = 200;
+            t.s.body = { ok: true, data: { settled: true, tx: TX } };
+            expect((await t.verify(xp, t.cfg)).ok).toBe(true);
+            expect(t.verify._sizes().unconfirmed).toBe(0);
+          }
+
+          // The same through the middleware (its own isolate state).
+          const m = table(200, {});
+          const mw = settlingMw();
+          const send = (p: string) =>
+            mw(ctx("/r", agent({ "x-payment": p }), envOf(m)));
+          const xp2 = freshPayment();
+          if (remembered) {
+            m.s.throws = timedOut();
+            expect((await (await send(xp2)).json()).error).toBe(UNCONFIRMED);
+            m.s.throws = false;
+          }
+          await arm(m, send);
+          const r = await send(xp2);
+          expect(r.status).toBe(402);
+          const body = await r.json();
+          if (remembered) {
+            expect(r.headers.get("x-payment-required")).toBeNull();
+            expect(r.headers.get("link")).toBeNull();
+            expect(body).toEqual({ x402Version: 1, error: UNCONFIRMED });
+            expect(body.accepts).toBeUndefined();
+          } else {
+            expect(r.headers.get("x-payment-required")).not.toBeNull();
+            expect(body.accepts).toHaveLength(1);
+            expect(body.options).toBeDefined();
+            expect(body.error).toBe(error);
+          }
+        } finally {
+          clock.mockRestore();
+        }
+      });
+
+  // R020 rework: rows 3 and 5 have their own guards in the source (the 502
+  // above only reaches row 4). Row 5 writes a hold and a count for an
+  // ordinary payment; for a remembered one it must write neither.
+  const R020_VALID_AFTER =
+    "invalid_exact_evm_payload_authorization_valid_after";
+  for (const [name, body, reason, early] of [
+    [
+      "row 3 (HTTP 200 retryable:true)",
+      { ok: true, data: { settled: false, retryable: true } },
+      "settle-retryable",
+      false,
+    ],
+    [
+      "row 5 (valid_after, validAfter still ahead)",
+      settledFalse(R020_VALID_AFTER),
+      "not-yet-valid",
+      true,
+    ],
+  ] as [string, unknown, string, boolean][])
+    it(`R020 L1: timeout, then the same payment answered ${name} → settle-unconfirmed, error-only 402, no hold, no count, entry kept`, async () => {
+      const t0 = Date.now();
+      const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+      const pay = () =>
+        early ? earlyPayment(Math.floor(t0 / 1000)) : freshPayment();
+      try {
+        const t = table(200, {});
+        t.s.throws = timedOut();
+        const xp = pay();
+        expect((await t.verify(xp, t.cfg)).reason).toBe("settle-unconfirmed");
+        const before = t.verify._sizes();
+        expect(before).toMatchObject({ unconfirmed: 1, notYetValid: 0 });
+        t.s.throws = false;
+        t.s.body = body;
+        for (const calls of [2, 3]) {
+          expect(await t.verify(xp, t.cfg)).toEqual({
+            ok: false,
+            payer: null,
+            reason: "settle-unconfirmed",
+          });
+          expect(t.s.calls).toBe(calls); // not held: each try reaches settle
+        }
+        expect(t.verify._sizes()).toEqual(before);
+        expect(before).toMatchObject({ payerFails: 0, seen: 0 });
+        // Control: a payment with no unconfirmed history gets the row's
+        // usual answer.
+        expect((await t.verify(pay(), t.cfg)).reason).toBe(reason);
+
+        const m = table(200, {});
+        m.s.throws = timedOut();
+        const mw = settlingMw();
+        const xp2 = pay();
+        const send = (p: string) =>
+          mw(ctx("/r", agent({ "x-payment": p }), envOf(m)));
+        expect((await (await send(xp2)).json()).error).toBe(UNCONFIRMED);
+        m.s.throws = false;
+        m.s.body = body;
+        const r = await send(xp2);
+        expect(r.status).toBe(402);
+        expect(r.headers.get("x-payment-required")).toBeNull();
+        expect(r.headers.has("retry-after")).toBe(false);
+        expect(await r.json()).toEqual({ x402Version: 1, error: UNCONFIRMED });
+        const other = await send(pay());
+        expect(other.headers.get("x-payment-required")).not.toBeNull();
+        expect((await other.json()).accepts).toHaveLength(1);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+  // R020 rework: the local check runs before the settle path. A payment
+  // lives about 300 s, the memory 600 s: in between, the expired retry of a
+  // remembered payment used to get "authorization expired" with a full offer.
+  it("R020 L1: timeout, then the same payment past its validBefore → settle-unconfirmed, error-only 402, no settle call, entry kept; at UNCONFIRMED_TTL_MS the usual expired offer", async () => {
+    const t0 = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      const t = table(200, {});
+      t.s.throws = timedOut();
+      const xp = freshPayment(); // validBefore = t0 + 300 s
+      const notRemembered = freshPayment();
+      expect((await t.verify(xp, t.cfg)).reason).toBe("settle-unconfirmed");
+      const before = t.verify._sizes();
+      clock.mockReturnValue(t0 + 301_000);
+      for (let i = 0; i < 2; i++)
+        expect(await t.verify(xp, t.cfg)).toEqual({
+          ok: false,
+          payer: null,
+          reason: "settle-unconfirmed",
+        });
+      expect(t.s.calls).toBe(1); // expired: never sent to settle
+      expect(t.verify._sizes()).toEqual(before);
+      // A payment that is not remembered: the local answer, as before.
+      expect((await t.verify(notRemembered, t.cfg)).reason).toBe("expired");
+      // A copy with another validBefore is not that signature: no amnesty.
+      const forged = JSON.parse(atob(xp));
+      forged.payload.authorization.validBefore = String(
+        Math.floor(t0 / 1000) + 100,
+      );
+      expect((await t.verify(btoa(JSON.stringify(forged)), t.cfg)).reason).toBe(
+        "expired",
+      );
+      // A validBefore too large for a number is answered locally, no throw.
+      forged.payload.authorization.validBefore = "9".repeat(400);
+      expect((await t.verify(btoa(JSON.stringify(forged)), t.cfg)).reason).toBe(
+        "window-too-long",
+      );
+      expect(t.verify._sizes()).toEqual(before);
+      // The entry is not renewed: at its age limit the answer is ordinary.
+      clock.mockReturnValue(t0 + UNCONFIRMED_TTL_MS);
+      expect((await t.verify(xp, t.cfg)).reason).toBe("expired");
+      expect(t.verify._sizes().unconfirmed).toBe(0);
+
+      clock.mockReturnValue(t0);
+      const m = table(200, {});
+      m.s.throws = timedOut();
+      const mw = settlingMw();
+      const xp2 = freshPayment();
+      const fresh2 = freshPayment();
+      const send = (p: string) =>
+        mw(ctx("/r", agent({ "x-payment": p }), envOf(m)));
+      expect((await (await send(xp2)).json()).error).toBe(UNCONFIRMED);
+      clock.mockReturnValue(t0 + 301_000);
+      const r = await send(xp2);
+      expect(r.status).toBe(402);
+      expect(r.headers.get("x-payment-required")).toBeNull();
+      const body = await r.json();
+      expect(body).toEqual({ x402Version: 1, error: UNCONFIRMED });
+      expect(body.accepts).toBeUndefined();
+      expect(m.s.calls).toBe(1);
+      const other = await send(fresh2);
+      expect(other.status).toBe(402);
+      expect(other.headers.get("x-payment-required")).not.toBeNull();
+      const otherBody = await other.json();
+      expect(otherBody.accepts).toHaveLength(1);
+      expect(otherBody.error).not.toBe(UNCONFIRMED);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("R020 L1: the second fault does not renew the entry: at UNCONFIRMED_TTL_MS it is dropped and the fault is answered as usual", async () => {
+    const t0 = Date.now();
+    // The payment's own clock is pinned, as in the R012 expiry test.
+    const opts = { nowS: Math.floor(t0 / 1000) };
+    const clock = vi.spyOn(Date, "now").mockReturnValue(t0);
+    try {
+      const t = table(200, {});
+      t.s.throws = timedOut();
+      const xp = freshPayment();
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe(
+        "settle-unconfirmed",
+      );
+      t.s.throws = false;
+      t.s.status = 502;
+      clock.mockReturnValue(t0 + UNCONFIRMED_TTL_MS - 1);
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe(
+        "settle-unconfirmed",
+      );
+      expect(t.verify._sizes().unconfirmed).toBe(1);
+      clock.mockReturnValue(t0 + UNCONFIRMED_TTL_MS);
+      expect((await t.verify(xp, t.cfg, opts)).reason).toBe("settle-retryable");
+      expect(t.verify._sizes()).toMatchObject({ unconfirmed: 0, seen: 0 });
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
   it("row 0c (R006): a connection failure (TypeError) and a non-timeout abort stay settle-unreachable", async () => {
     const t = table(200, {});
     t.s.throws = new TypeError("fetch failed");
@@ -3207,8 +3521,11 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
   });
 
   // R003 L5 (mutant M26): settle-unconfirmed is not an operator fault for
-  // row A7; the hold is not put back.
-  it("row A7: a due attempt answered 502 with settled:true (settle-unconfirmed) is not put back; the retry is payer-cooldown with no call", async () => {
+  // row A7; the hold is not put back. So the retry is not a due attempt: it
+  // meets the cooldown and makes no settle call (that is what kills M26).
+  // R020: the payment is remembered as unconfirmed, so the cooldown is
+  // answered with the unconfirmed 402 (no offer), not "payer cooling down".
+  it("row A7: a due attempt answered 502 with settled:true (settle-unconfirmed) is not put back; the retry meets the cooldown: no call, the unconfirmed 402 (R020)", async () => {
     const { f, send, xps } = await cooledByThreeEarly();
     at(55);
     f.status = 502;
@@ -3219,7 +3536,8 @@ describe("a due hold passes a payer cooldown once (spec 006 T005, R-O4)", () => 
     expect(f.calls).toBe(4);
     const retry = await send(xps[0]);
     expect(retry.status).toBe(402);
-    expect(await errorOf(retry)).toBe(COOLING);
+    expect(await errorOf(retry)).toBe(UNCONFIRMED);
+    expect(retry.headers.get("x-payment-required")).toBeNull();
     expect(f.calls).toBe(4);
   });
 

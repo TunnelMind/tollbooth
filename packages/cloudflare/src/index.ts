@@ -89,9 +89,9 @@ const SETTLE_REFILL_PER_S = 5;
 // is answered as settle-unconfirmed (row 3a, R006), not settle-unreachable:
 // the facilitator may have broadcast the transfer before we gave up. Not
 // cached, not counted.
-// NOT MEASURED (R010, R013): 25 s and the 45 s below are both reasoned from
-// the settle route's own budget, not from latency data, and both wait on the
-// owner's approval. The reasoning: the data-api settle route awaits the
+// NOT MEASURED (R010, R013): 25 s and the 45 s below are both approved by
+// the owner 2026-11-14; reasoned from the settle route's budget, not
+// measured (no latency data). The data-api settle route awaits the
 // facilitator's verify, then its settle, each with its own 10 s timeout, then
 // writes the receipt. So a call that succeeds can take about 20 s plus the
 // write, and a limit below that cuts off payments the route would have
@@ -99,8 +99,8 @@ const SETTLE_REFILL_PER_S = 5;
 // 25 s clears that worst successful case. Nothing shows how long the route
 // really takes, on-chain wait included. A settle answer slower than 25 s is
 // still answered settle-unconfirmed (an error-only 402) and the payer is not
-// served, while the transfer may already have confirmed. The owner decides:
-// see "Choices for the owner" in
+// served, while the transfer may already have confirmed. The owner's
+// decision is recorded under "Choices for the owner" in
 // specs/006-fareseal-contract-o1o4-1/pr-body.md.
 // Exported for tests only.
 export const SETTLE_TIMEOUT_MS = 25_000;
@@ -109,8 +109,8 @@ export const SETTLE_TIMEOUT_MS = 25_000;
 // timeout cannot: on Workers a client disconnect can cancel the request, and
 // then the release in `finally` never runs. 45 s = the settle timeout plus a
 // 20 s margin, so neither expires while its own settle can still be running
-// (the fetch is aborted at SETTLE_TIMEOUT_MS). Reasoned from the same budget,
-// NOT measured, owner approval pending, like the timeout above.
+// (the fetch is aborted at SETTLE_TIMEOUT_MS). Approved by the owner 2026-11-14;
+// reasoned from the settle route's budget, not measured, like the timeout.
 // Exported for tests only.
 export const RESERVATION_TTL_MS = 45_000;
 // How long a shared state build (the `building` entry) may hold the requests
@@ -315,6 +315,19 @@ export function makeSettlingVerify(
   // key -> when (ms) its settle was last answered settle-unconfirmed by the
   // settle call itself (row 3a). See UNCONFIRMED_TTL_MS.
   const unconfirmed = new Map<string, number>();
+  // Is this payment remembered as unconfirmed (row 3a) and inside the age
+  // limit? An older entry is removed: an ordinary payment from here on.
+  // Reading never renews the entry's time.
+  const unconfirmedNow = (key: string): boolean => {
+    const since = unconfirmed.get(key);
+    if (since === undefined) return false;
+    if (Date.now() - since < UNCONFIRMED_TTL_MS) return true;
+    unconfirmed.delete(key);
+    return false;
+  };
+  /** The payment's identity: recovered signer + the nonce as a number. */
+  const keyOf = (payer: string, nonce: string): string =>
+    `${payer}:${BigInt(`0x${nonce.slice(2) || "0"}`).toString(16)}`;
   const bucket = { tokens: SETTLE_BUCKET_CAP, atMs: Date.now() };
   const verify: X402Adapter["verifyProof"] = async (
     xPayment,
@@ -322,7 +335,43 @@ export function makeSettlingVerify(
     opts = {},
   ) => {
     const local = verifyProof(xPayment, cfg, opts);
-    if (!local.ok || local.payer === null) return local;
+    if (!local.ok || local.payer === null) {
+      // R020: a remembered payment (row 3a) that now fails the local check
+      // only because of the clock, in practice expired (a payment lives
+      // about 300 s, the memory 600 s), is still not offered a new payment.
+      // The rejection carries no payer, so the same check is run again with
+      // the clock at the payment's own validBefore: it passes only for a
+      // well-formed, correctly signed authorization, and gives the signer
+      // for the key. Only these three reasons, which verifyProof gives after
+      // it parsed the payment; only while something is remembered, so an
+      // ordinary rejection costs no second signature recovery. Nothing is
+      // written and no settle call is made.
+      if (
+        unconfirmed.size > 0 &&
+        ["expired", "not-yet-valid", "window-too-long"].includes(
+          local.reason ?? "",
+        )
+      ) {
+        const a = (
+          JSON.parse(atob(xPayment)) as {
+            payload: { authorization: { nonce: string; validBefore: string } };
+          }
+        ).payload.authorization;
+        // A validBefore beyond a number's range would make verifyProof
+        // throw; such a payment was never remembered.
+        const nowS = Number(BigInt(a.validBefore));
+        const then = Number.isSafeInteger(nowS)
+          ? verifyProof(xPayment, cfg, { nowS })
+          : local;
+        if (
+          then.ok &&
+          then.payer !== null &&
+          unconfirmedNow(keyOf(then.payer, a.nonce))
+        )
+          return { ok: false, payer: null, reason: "settle-unconfirmed" };
+      }
+      return local;
+    }
     const payer = local.payer;
     if (settleToken === "")
       return { ok: false, payer: null, reason: "settlement-unconfigured" };
@@ -335,9 +384,21 @@ export function makeSettlingVerify(
         payload: { authorization: { nonce: string; validAfter: string } };
       }
     ).payload.authorization;
-    const key = `${payer}:${BigInt(`0x${nonce.slice(2) || "0"}`).toString(16)}`;
+    const key = keyOf(payer, nonce);
     const seen = seenPayments.get(key);
     if (seen !== undefined) return { ok: false, payer: null, reason: seen };
+    // R020 (second review 3, L1): every answer below that comes with a fresh
+    // offer goes through here. The transfer of a remembered payment may have
+    // landed, so its retry is never offered a new payment, whatever second
+    // fault it meets: the error-only unconfirmed answer instead. Nothing is
+    // written for it (no cache, no count, no hold) and the entry is kept as
+    // it is. The retry is not stopped early: it still reaches the settle call
+    // when the cooldown and the bucket allow, and is served if that confirms.
+    // A payment that is not remembered gets `r` unchanged.
+    const fault = (r: X402VerifyResult): X402VerifyResult =>
+      unconfirmedNow(key)
+        ? { ok: false, payer: null, reason: "settle-unconfirmed" }
+        : r;
     // Before inflight/cooldown/bucket: no settle call, no token, no count.
     // Same clock as verifyProof (opts.nowS, else wall time).
     const nowS = BigInt(opts.nowS ?? Math.floor(Date.now() / 1000));
@@ -354,12 +415,12 @@ export function makeSettlingVerify(
       // shows the payer the same "not yet valid" text.
       // retryAfterS: hono turns it into `Retry-After` on this 402 only.
       if (nowS < early)
-        return {
+        return fault({
           ok: false,
           payer: null,
           reason: "not-yet-valid-held",
           retryAfterS: Number(early - nowS),
-        };
+        });
     }
     const now = Date.now();
     const pending = inflight.get(key);
@@ -383,7 +444,7 @@ export function makeSettlingVerify(
     // A due attempt (R-O4) skips this once; its outcome is counted as usual.
     const live = fails && now < fails.untilMs ? fails.n : 0;
     if (!due && live + liveReservations(payer, now).length >= PAYER_FAIL_LIMIT)
-      return { ok: false, payer: null, reason: "payer-cooldown" };
+      return fault({ ok: false, payer: null, reason: "payer-cooldown" });
     bucket.tokens = Math.min(
       SETTLE_BUCKET_CAP,
       bucket.tokens + ((now - bucket.atMs) / 1000) * SETTLE_REFILL_PER_S,
@@ -391,7 +452,7 @@ export function makeSettlingVerify(
     bucket.atMs = now;
     // The operator's own limit, not the payer's fault: no damping, no cache.
     if (bucket.tokens < 1)
-      return { ok: false, payer: null, reason: "settle-throttled" };
+      return fault({ ok: false, payer: null, reason: "settle-throttled" });
     bucket.tokens -= 1;
     // The due pass is spent with the token. Like the reservation below, in
     // the same synchronous run as the checks: a concurrent copy finds no
@@ -500,7 +561,7 @@ export function makeSettlingVerify(
           reason === "network-mismatch" ||
           isOperatorFault(reason)
         )
-          return { ok: false, payer: null, reason: "settle-retryable" };
+          return fault({ ok: false, payer: null, reason: "settle-retryable" });
         // Row 4: the settle route itself is down, refuses our token or rate,
         // or is not there (404/405: a wrong settle.url or method, R002 L1),
         // whatever the body says.
@@ -508,7 +569,7 @@ export function makeSettlingVerify(
           resp.status >= 500 ||
           [401, 403, 404, 405, 429].includes(resp.status)
         )
-          return { ok: false, payer: null, reason: "settle-retryable" };
+          return fault({ ok: false, payer: null, reason: "settle-retryable" });
         // Row 5: the authorization is not valid yet (payer clock ahead of
         // the chain's). Not cached: the same X-PAYMENT may be retried once
         // valid_after has passed; until then the retry is answered locally
@@ -521,6 +582,10 @@ export function makeSettlingVerify(
         // could attach a fresh early unfunded payment to every request and
         // never be mazed, L6); the held repeats above record none (L-b).
         if (reason.includes("valid_after")) {
+          // A remembered payment (R020): unconfirmed, before the hold and
+          // the count below are written.
+          if (unconfirmedNow(key))
+            return { ok: false, payer: null, reason: "settle-unconfirmed" };
           // Held only while still early by our clock. A due attempt never
           // is (R-O4, row A5), so it is not held again and the next retry is
           // an ordinary attempt that meets the cooldown. The same goes for
@@ -556,12 +621,8 @@ export function makeSettlingVerify(
         // counted. The entry's time is NOT renewed here, so the uncounted
         // retries of one payment end at the age limit (each still costs a
         // bucket token).
-        const since = unconfirmed.get(key);
-        if (since !== undefined) {
-          if (Date.now() - since < UNCONFIRMED_TTL_MS)
-            return { ok: false, payer: null, reason: "settle-unconfirmed" };
-          unconfirmed.delete(key); // too old: an ordinary answer from here on
-        }
+        if (unconfirmedNow(key))
+          return { ok: false, payer: null, reason: "settle-unconfirmed" };
         remember(seenPayments, key, reason);
         // Count and clock re-read at write time, as in row 5.
         const cur = payerFails.get(payer);
@@ -578,7 +639,7 @@ export function makeSettlingVerify(
         // unconfirmed, not cached, not counted. Any other
         // throw (connection failure, a 2xx that is not JSON) is row 0c.
         if (isTimeout(err)) return answerUnconfirmed();
-        return { ok: false, payer: null, reason: "settle-unreachable" };
+        return fault({ ok: false, payer: null, reason: "settle-unreachable" });
       }
     };
     const entry: Inflight = { atMs: now, p: settle() };

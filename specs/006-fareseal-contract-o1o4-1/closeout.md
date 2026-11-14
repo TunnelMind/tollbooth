@@ -288,8 +288,8 @@ The fix is commit `ed98127`. Line numbers are at `a2681ea`, so they include what
 
 Corrected by R015. Both values were changed by R013 (commit `926bb12`); the two lines below give the current values, with line numbers at `04828e6`. History: R002 (`ed98127`) set a 10 s timeout and a 30 s limit, as judgment only. Review round 2 (M1) found 10 s below the settle route's own worst successful case. Detail in section 13.
 
-- `SETTLE_TIMEOUT_MS = 25_000` (CF:106). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:434). Why 25 s: reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured, owner approval pending (the comment at CF:92-104, and `pr-body.md` "Choices for the owner"). No latency data shows how long the data-api settle route really takes with its on-chain wait. If it takes longer than 25 s, the payer is answered `settle-unconfirmed` and not served, while the transfer may already have confirmed. Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
-- `RESERVATION_TTL_MS = 45_000` (CF:115). Why 45 s: the settle timeout plus a 20 s margin, so a reservation does not expire while its own settle can still be running (CF:107-113). Reasoned from the same budget, NOT measured, owner approval pending.
+- `SETTLE_TIMEOUT_MS = 25_000` (CF:106). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:434). Why 25 s: reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured (the comment at CF:92-104, and `pr-body.md` "Choices for the owner"). No latency data shows how long the data-api settle route really takes with its on-chain wait. If it takes longer than 25 s, the payer is answered `settle-unconfirmed` and not served, while the transfer may already have confirmed. Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
+- `RESERVATION_TTL_MS = 45_000` (CF:115). Why 45 s: the settle timeout plus a 20 s margin, so a reservation does not expire while its own settle can still be running (CF:107-113). NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured.
 - **Changed since R002:** at `ed98127` a timeout landed in the existing catch as `settle-unreachable`. Since R006 (`a2681ea`) it is answered `settle-unconfirmed` (row 3a; CF:497-498), because the transfer may have been broadcast before the abort. Not cached, not counted.
 
 **`waitUntil`: not built.** R002(b) asked to run the settle and its release under `ctx.waitUntil` where a context exists. The verifier is built once per isolate, inside `buildState` (`makeSettlingVerify`, CF:686), not per request. hono calls it with only `{ nowS, resource }` (HONO:862-865); it passes no context. Wiring `waitUntil` would mean changing `packages/hono`. So liveness rests on the reservation limit (45 s since R013):
@@ -508,12 +508,12 @@ Red/green as recorded in `c6d1e92`'s message, not re-run by R015: the six new R0
 
 ### R013 (commit `926bb12`): rows A9, A10 and A13
 
-**The numbers (M1).** Both are named constants. Both are reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured, owner approval pending.
+**The numbers (M1).** Both are named constants. Both are reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured.
 
-- **A9** (CHANGELOG:16): `SETTLE_TIMEOUT_MS = 25_000`, CF:106; used at CF:434 (`AbortSignal.timeout(SETTLE_TIMEOUT_MS)`). Reasoning in the comment at CF:92-104: the data-api settle route awaits the facilitator's verify, then its settle, each with its own 10 s timeout, then writes the receipt, so a call that succeeds can take about 20 s plus the write. 25 s clears that case; the 10 s of R002 did not. NOT measured, owner approval pending.
-- **A10** (CHANGELOG:17): `RESERVATION_TTL_MS = 45_000`, CF:115; comment at CF:107-113. It is the settle timeout plus a 20 s margin. Read for reservations at CF:304 (`liveReservations`). NOT measured, owner approval pending.
+- **A9** (CHANGELOG:16): `SETTLE_TIMEOUT_MS = 25_000`, CF:106; used at CF:434 (`AbortSignal.timeout(SETTLE_TIMEOUT_MS)`). Reasoning in the comment at CF:92-104: the data-api settle route awaits the facilitator's verify, then its settle, each with its own 10 s timeout, then writes the receipt, so a call that succeeds can take about 20 s plus the write. 25 s clears that case; the 10 s of R002 did not. NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured.
+- **A10** (CHANGELOG:17): `RESERVATION_TTL_MS = 45_000`, CF:115; comment at CF:107-113. It is the settle timeout plus a 20 s margin. Read for reservations at CF:304 (`liveReservations`). NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured.
 
-**A13, the age limit on `inflight`** (CHANGELOG:20, M3). The limit is `RESERVATION_TTL_MS`, so it has the same status: NOT measured, owner approval pending.
+**A13, the age limit on `inflight`** (CHANGELOG:20, M3). The limit is `RESERVATION_TTL_MS`, so it has the same status: NOT measured; approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured.
 
 - An entry is `{ atMs, p }`: CF:288-289.
 - On read, CF:360-373: a copy joins the settle only while the entry is younger than the limit (CF:362); an entry at or past it is deleted (CF:372) and the request goes on as a new attempt.
@@ -542,3 +542,44 @@ The six `R002 M1` tests have moved since section 8b listed them: they are now at
 R015 ran none of these tests. The only run R015 made is the golden comparison in section 3.
 
 **Still stale, not R015's to edit:** spec.md and pr-body.md still carry the 10 s and 30 s values (queued as R016 and R017).
+
+## 14. R020: owner decisions of 2026-11-14, and review round 3 L1 and L2
+
+Review: `second-review-32c3a07.md` (round 3 of `32c3a07`, PASS, eight lows). CF and PS lines in this section are as of R020; R020 moved the source below CF:320 down by about 60 lines, so CF lines in earlier sections are as of their own commits.
+
+**(a) The timeouts.** The owner approved `SETTLE_TIMEOUT_MS = 25_000` (CF:106) and `RESERVATION_TTL_MS = 45_000` (CF:115) as they are: approved by the owner 2026-11-14; reasoned from the settle route's budget, not measured. Values unchanged. The wording is changed in the CF comments, CHANGELOG A9, A10 and A13, the README, this file (sections 8b and 13) and `pr-body.md`.
+
+**(b) L1, row A14.** While a payment is remembered as unconfirmed (A12), every 402 for it is the error-only unconfirmed 402. Source:
+
+- CF:321 `unconfirmedNow(key)`: entry present and younger than `UNCONFIRMED_TTL_MS`; an older entry is deleted. It never renews the entry. CF:329 `keyOf`: the payment key, as before.
+- CF:398 `fault(r)`: `settle-unconfirmed` for a remembered payment, else `r` unchanged. It wraps `not-yet-valid-held` (CF:418), `payer-cooldown` (CF:447), `settle-throttled` (CF:455), `settle-retryable` rows 3 and 4 (CF:564, CF:572) and `settle-unreachable` (CF:642).
+- CF:587: row 5 for a remembered payment returns before the hold and the count are written (review L8: it was counted before).
+- CF:624: the R012 row 6/7 amnesty, same behaviour, now through the helper.
+- CF:338-374: the local check. Its rejection carries no payer, so for `expired`, `not-yet-valid` and `window-too-long`, and only while something is remembered, `verifyProof` is run again with the clock at the payment's own `validBefore`. It passes only for a well-formed, correctly signed authorization and gives the signer for the key. A `validBefore` beyond a safe integer is not tried. The other local reasons (malformed, wrong network or recipient, low value, bad signature, signer mismatch) cannot be a remembered payment: the same signed bytes passed that check when the payment was remembered.
+- Nothing is written on any of these paths: no `seenPayments`, `payerFails` or `notYetValid` entry, and a live `unconfirmed` entry is neither deleted nor re-timestamped. The retry is not stopped before the settle call. The due-pass block and `packages/hono` are unchanged.
+
+**Tests (PS:1138-1445, and the row A7 test at PS:3528).** 14 tests carry `R020` in the name:
+
+- 4 remembered second faults (502, connection failure, throttle, cooldown) and the same 4 for a payment that is not remembered (today's reason, text and offer).
+- L2: HTTP 502 + `settled:true` is remembered; the retry answered `nonce_used` is unconfirmed, not cached, not counted.
+- Row 3 (HTTP 200 `retryable:true`) and row 5 (`valid_after`, `validAfter` still ahead) for a remembered payment: unconfirmed, `_sizes()` unchanged (no hold, no count, entry kept), no `x-payment-required`, no `retry-after`.
+- A remembered payment past its `validBefore`: unconfirmed, no settle call, nothing written; a payment that is not remembered and a copy with an altered `validBefore` get `expired`; an oversized `validBefore` does not throw; at 600 s the entry is dropped and the answer is `expired`.
+- The entry is not renewed by a second fault.
+- The existing row A7 test (a due attempt answered 502 + `settled:true` is not put back) changed its expectation: its retry meets the cooldown as a remembered payment, so it now gets the unconfirmed 402 instead of "payer cooling down". Its guard for mutant M26 (no settle call, 4 calls) is kept. Sections 9's quotes of its old name are records of past runs.
+
+**Red, then green** (`vitest run packages/cloudflare/test/pages-settle.test.ts -t R020`):
+
+| step | source | result |
+|---|---|---|
+| first tests written | `32c3a07` source | 5 failed, 5 passed. Failed: the 4 remembered second faults and "does not renew". Passed: the 4 not-remembered tests and L2 (a test gap; the code was right) |
+| after `fault()` and the row 5 guard | first fix | 10 passed; full suite 60 files, 832 passed (1 existing test, row A7, updated as above) |
+| QA: `fault()` off | mutant | 6 failed, 5 passed (11 tests with row A7) |
+| rework tests written | first fix | 1 failed, 13 passed. Failed: the `validBefore` test |
+| row 5 guard off (`if (false)`) | mutant of the first fix | the row 5 test fails (and the `validBefore` test, not yet fixed) |
+| row 3 `fault()` removed | mutant of the first fix | the row 3 test fails (and the `validBefore` test, not yet fixed) |
+| oversized `validBefore` case added, before its guard | local-check fix without the guard | the `validBefore` test fails with a RangeError |
+| after the local-check fix | final | 14 passed |
+
+Full run on the final tree: `npm run typecheck` exit 0; `npm test` 60 files, 835 passed, 0 failed (822 at `32c3a07` plus 13 new); `npm run lint` exit 0.
+
+**Not changed (review lows L3 to L7):** not in R020's scope.
