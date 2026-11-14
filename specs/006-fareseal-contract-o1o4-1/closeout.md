@@ -2,15 +2,15 @@
 
 Branch `crew/fareseal-contract-o1o4-1`, on main `6825c30`. The head that review round 2 read is `7e81768` (second-review-7e81768.md). The R-task commits made after it (R012 onward) are listed by `git log 7e81768..HEAD`; a file cannot name the commit that carries it.
 
-History of this file, not a head claim: written by T010 (2026-11-13) at `2d680f1`; section 9 by R003 on `ed98127`; section 10 by R004 on `7f87051`; sections 8a and 8b (R001 and R002) by R007 on `a2681ea`, with line numbers at that tree; sections 11 and 12 by R014 on `926bb12`.
+History of this file, not a head claim: written by T010 (2026-11-13) at `2d680f1`; section 9 by R003 on `ed98127`; section 10 by R004 on `7f87051`; sections 8a and 8b (R001 and R002) by R007 on `a2681ea`, with line numbers at that tree; sections 11 and 12 by R014 on `926bb12`; section 13, the re-run in section 3 and the corrected numbers in section 8b by R015 on `04828e6`.
 
-Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change. Line numbers in section 10 are at `7f87051` plus the R004 change.
+Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change. Line numbers in section 10 are at `7f87051` plus the R004 change. Line numbers in section 13, and those marked R015 in sections 3 and 8b, are at `04828e6`.
 
 Every run below was made on 2026-11-13. Runs on changed source were made in throwaway copies (`~/agent-crew/bin/crew-scratch`), never in the worktree.
 
 **Two things for the reviewer, before the detail:**
 
-1. **Finding (section 3).** The golden file run on main's source fails on 2 entries, not 1: `held` (row A2, expected) and `fourth concurrent payment (A1)`. The second is the 27th entry, added by T004 for row A1; it is not one of the 26 shapes in FR-001. Of the 26, only `held` fails, and only by the `retry-after` header. SC-002 as written ("fails only on the held-repeat entry") is not met by the file as a whole. Nothing was loosened.
+1. **Finding (section 3, re-run by R015 on `04828e6`).** The golden file run on main's source fails on 4 entries, not 1: `held` (row A2, expected), `no tx id` and `unconfirmed` (both since R012: the error-only 402, row A11) and `fourth concurrent payment (A1)`. The last is the 27th entry, added by T004 for row A1; it is not one of the 26 shapes in FR-001. Of the 26, three differ from main: `held` by the `retry-after` header only, `no tx id` and `unconfirmed` by body and headers. SC-002 as written ("fails only on the held-repeat entry") is not met. Nothing was loosened. When T010 wrote this file (`2d680f1`, before R012) the same run failed on `held` and the A1 entry only.
 2. **spec.md's per-nonce bound: corrected by R003.** R-O4 "Bound" (spec.md line 51) and US4 (line 90) now state both bounds as ruled at T005, on the supervisor's R003 brief (section 9).
 3. **For the owner: row A7 is now bounded (R003, section 9).** A hold's due pass survives at most 3 operator-fault answers. The cap of 3 is a choice; the owner may prefer a different cap or none.
 4. **For the owner: this branch also fixes behaviour main has today (R004, section 10).** On main, on a cold isolate, requests that arrive during the first state build each build their own state: 5 concurrent copies of one payment make 5 settle calls, 100 concurrent fresh payments from one payer make 100. After this change they make 1 and 3. It is not one of the spec's rows; the second review found it (L6) on main and head alike.
@@ -65,63 +65,64 @@ m01's other 7 red tests, all in PS: `L2: a held 'row 5' failure landing at 5 s c
 
 In a scratch copy: every file under `packages/*/src` replaced with `git show main:<path>`, HEAD's tests and snapshot kept, then `pnpm exec tsc -b` (the cloudflare tests import core and hono from their built `dist/`, so main's source had to be rebuilt), then `CI=true pnpm exec vitest run packages/cloudflare/test/contract-golden.test.ts`.
 
+**Re-run by R015 on `04828e6`** (main `6825c30`), after R012 changed two golden entries. The result T010 recorded here at `2d680f1` (two entries failing: `held` and the A1 entry; 25 of 27 passing) is replaced by this run. Command, from the repo root: `~/agent-crew/bin/crew-scratch -- sh r015-golden.sh`, where the script is:
+
+```sh
+for f in $(git ls-files 'packages/*/src/*'); do git cat-file -e main:$f 2>/dev/null || { echo "not on main, removed: $f"; rm -f $f; }; done
+for f in $(git ls-tree -r --name-only main -- packages | grep '^packages/[^/]*/src/'); do mkdir -p $(dirname $f); git show main:$f > $f; done
+echo "--- src now differs from main in:"; git diff --stat main -- 'packages/*/src/*'
+echo "--- src differs from HEAD in:"; git diff --stat HEAD -- 'packages/*/src/*'
+pnpm exec tsc -b; echo "tsc -b exit: $?"
+CI=true pnpm exec vitest run packages/cloudflare/test/contract-golden.test.ts 2>&1
+```
+
+Summary lines of its output (the three snapshot diffs are described below, not pasted):
+
 ```
 --- src now differs from main in:
 --- src differs from HEAD in:
- packages/cloudflare/src/index.ts | 105 +++++++--------------------------------
- packages/core/src/ledger.ts      |  28 ++---------
- packages/core/src/pipeline.ts    |  20 +-------
- packages/hono/src/index.ts       |  16 ------
- 4 files changed, 21 insertions(+), 148 deletions(-)
+ packages/cloudflare/src/index.ts | 313 +++++----------------------------------
+ packages/core/src/ledger.ts      |  67 +--------
+ packages/core/src/pipeline.ts    |  20 +--
+ packages/hono/src/index.ts       |  49 +-----
+ 4 files changed, 47 insertions(+), 402 deletions(-)
 tsc -b exit: 0
 
- ❯ packages/cloudflare/test/contract-golden.test.ts (27 tests | 2 failed) 5365ms
-     × held 20ms
-     × fourth concurrent payment (A1) 5004ms
+ ❯ packages/cloudflare/test/contract-golden.test.ts (27 tests | 4 failed) 5589ms
+     × held 22ms
+     × no tx id 25ms
+     × unconfirmed 21ms
+     × fourth concurrent payment (A1) 5006ms
 
  FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > held
 Error: Snapshot `golden contract (spec 006 FR-001) > held 1` mismatched
-
-- Expected
-+ Received
-
-@@ -8,14 +8,10 @@
-      [
-        "content-type",
-        "application/json",
-      ],
-      [
--       "retry-after",
--       "55",
--     ],
--     [
-        "x-payment-required",
-        "{"scheme":"exact","network":"base-sepolia",…}",
-      ],
-    ],
-    "status": 402,
-
+ FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > no tx id
+Error: Snapshot `golden contract (spec 006 FR-001) > no tx id 1` mismatched
+ FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > unconfirmed
+Error: Snapshot `golden contract (spec 006 FR-001) > unconfirmed 1` mismatched
  FAIL  packages/cloudflare/test/contract-golden.test.ts > golden contract (spec 006 FR-001) > fourth concurrent payment (A1)
 Error: Test timed out in 5000ms.
 
-  Snapshots  1 failed
+  Snapshots  3 failed
              1 obsolete
              ↳ packages/cloudflare/test/contract-golden.test.ts
                · golden contract (spec 006 FR-001) > fourth concurrent payment (A1) 1
 
  Test Files  1 failed (1)
-      Tests  2 failed | 25 passed (27)
+      Tests  4 failed | 23 passed (27)
 ```
 
-(The `x-payment-required` value is cut short here with `…`; it is a context line, the same on both sides.)
+The empty list under "src now differs from main in" shows the copy's source is main's. No file was reported "not on main".
 
-What this shows:
+What this shows. Four entries differ from main:
 
-- **`held` (A2):** the one snapshot mismatch. The only differing lines are the `retry-after` / `55` header pair. Status, body and every other header are the same.
+- **`held` (A2):** a snapshot mismatch. The only differing lines are the `retry-after` / `55` header pair, present at HEAD and absent on main. Status, body and every other header are the same.
+- **`no tx id` (A11, R012):** a snapshot mismatch. HEAD answers the error-only 402: body `{"x402Version":1,"error":"settle failed: no transaction id"}`, headers `cache-control` and `content-type`. Main answers the full offer: the body also carries `v`, `price_usd`, `options` and `accepts`, and there is an `x-payment-required` header. Status 402 and the error text are the same.
+- **`unconfirmed` (A11, R012):** a snapshot mismatch, the same difference in shape as `no tx id`, and the error text differs too: HEAD `settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator`, main `settlement status unconfirmed; do not pay again, contact the operator`. Status 402 is the same.
 - **`fourth concurrent payment (A1)` — the finding.** T004 added this entry for row A1 (tasks.md T004: "Add the A1 shape … as a new golden entry"). It holds three settles open and expects the fourth payment to be refused at once. On main the fourth payment goes to settle (row A1 "before"), the stub never answers it, and the test times out. It never reaches its snapshot, which is why vitest lists that snapshot as obsolete. This is row A1's before/after difference seen through a test written for the "after" side. It is not one of the 26 shapes of FR-001.
-- **The other 25 pass on main's source** unchanged. So among the 26 shapes only `held` differs, and only by its headers.
+- **The other 23 pass on main's source** unchanged. So among the 26 shapes three differ: `held` by its headers only, `no tx id` and `unconfirmed` by body and headers.
 
-For the reviewer to decide: accept SC-002 as "of the 26 shapes, only A2's headers differ" (what the run shows), or move the A1 entry out of the golden file so the file as a whole fails on one entry.
+For the reviewer to decide: SC-002 as written ("fails only on the held-repeat entry") no longer describes the file. Either accept it as "of the 26 shapes, A2's headers and A11's two maybe-paid 402s differ, each a listed change" (what the run shows), or change SC-002. The A1 entry could still be moved out of the golden file; that would leave three failing entries, not one.
 
 ## 4. T008 budget table: head against main
 
@@ -285,15 +286,17 @@ The fix is commit `ed98127`. Line numbers are at `a2681ea`, so they include what
 
 **The numbers.**
 
-- `SETTLE_TIMEOUT_MS = 10_000` (CF:92). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:375), and the `tagged` wrapper forwards it with the rest of `init` (CF:205-212). Why 10 s: judgment only. It is not measured and the owner has not yet approved it (R010; the comment above the constant, and `pr-body.md` "Choices for the owner"). No latency data shows the data-api settle route answers under 10 s at p99 with its on-chain wait. If it takes longer, the payer is answered `settle-unconfirmed` ("do not pay again") and not served, while the transfer may already have confirmed. Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
-- `RESERVATION_TTL_MS = 30_000` (CF:98). Why 30 s: the settle timeout plus a 20 s margin (judgment), so a reservation does not expire while its own settle can still be running (CF:96-97).
+Corrected by R015. Both values were changed by R013 (commit `926bb12`); the two lines below give the current values, with line numbers at `04828e6`. History: R002 (`ed98127`) set a 10 s timeout and a 30 s limit, as judgment only. Review round 2 (M1) found 10 s below the settle route's own worst successful case. Detail in section 13.
+
+- `SETTLE_TIMEOUT_MS = 25_000` (CF:106). The settle fetch passes `AbortSignal.timeout(SETTLE_TIMEOUT_MS)` (CF:434). Why 25 s: reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured, owner approval pending (the comment at CF:92-104, and `pr-body.md` "Choices for the owner"). No latency data shows how long the data-api settle route really takes with its on-chain wait. If it takes longer than 25 s, the payer is answered `settle-unconfirmed` and not served, while the transfer may already have confirmed. Without a limit a settle route that never answers holds the request, its reservation and its `inflight` entry for the life of the isolate.
+- `RESERVATION_TTL_MS = 45_000` (CF:115). Why 45 s: the settle timeout plus a 20 s margin, so a reservation does not expire while its own settle can still be running (CF:107-113). Reasoned from the same budget, NOT measured, owner approval pending.
 - **Changed since R002:** at `ed98127` a timeout landed in the existing catch as `settle-unreachable`. Since R006 (`a2681ea`) it is answered `settle-unconfirmed` (row 3a; CF:497-498), because the transfer may have been broadcast before the abort. Not cached, not counted.
 
-**`waitUntil`: not built.** R002(b) asked to run the settle and its release under `ctx.waitUntil` where a context exists. The verifier is built once per isolate, inside `buildState` (`makeSettlingVerify`, CF:686), not per request. hono calls it with only `{ nowS, resource }` (HONO:862-865); it passes no context. Wiring `waitUntil` would mean changing `packages/hono`. So liveness rests on the 30 s limit:
+**`waitUntil`: not built.** R002(b) asked to run the settle and its release under `ctx.waitUntil` where a context exists. The verifier is built once per isolate, inside `buildState` (`makeSettlingVerify`, CF:686), not per request. hono calls it with only `{ nowS, resource }` (HONO:862-865); it passes no context. Wiring `waitUntil` would mean changing `packages/hono`. So liveness rests on the reservation limit (45 s since R013):
 
-- A settle that hangs is aborted at 10 s, and its `finally` releases the reservation.
-- **Where there is no context (every settle today):** a client disconnect can cancel the request, and then the `finally` never runs. The reservation stops counting 30 s after it began. It is removed at the next read for that payer or the next new reservation, not by the `finally` and not by a timer.
-- The `inflight` entry for that payment has no limit of its own; it is removed only in the same `finally` (CF:524). R007 did not test this case.
+- A settle that hangs is aborted at the timeout (25 s since R013), and its `finally` releases the reservation.
+- **Where there is no context (every settle today):** a client disconnect can cancel the request, and then the `finally` never runs. The reservation stops counting at the limit (45 s since R013) after it began. It is removed at the next read for that payer or the next new reservation, not by the `finally` and not by a timer.
+- The `inflight` entry for that payment had no limit of its own when this section was written; it was removed only in the same `finally`. Since R013 it has the same 45 s limit (section 13).
 
 **Pinning tests** (PS; six, under the comment at PS:2249).
 
@@ -308,7 +311,7 @@ The fix is commit `ed98127`. Line numbers are at `a2681ea`, so they include what
 
 Red/green as recorded in `ed98127`: tests 1 to 6 red on HEAD source, green on the diff; every mutant the QA ran was killed. The commit message gives no count of mutants.
 
-**Docs.** Updated: `packages/cloudflare/README.md`:93 (row 0c no longer lists the timeout), :96 (row 3a lists it) and :114-119 (the 10 s timeout and the 30 s limit). **No CHANGELOG line was added** for the timeout or the limit.
+**Docs.** Updated: `packages/cloudflare/README.md`:93 (row 0c no longer lists the timeout), :96 (row 3a lists it) and :114-119 (the timeout and the limit, then 10 s and 30 s). **No CHANGELOG line was added** for the timeout or the limit by R002; CHANGELOG A9 and A10 carry them now, with the R013 values (section 13).
 
 **Not done.**
 
@@ -405,7 +408,7 @@ AssertionError: expected 3 to be 1 // Object.is equality
 
 On `7f87051` source the third test fails on its cold burst, not on a kept failure (that source keeps nothing). The mutant is what shows the test guards the retry.
 
-**Golden comparison, re-run.** (a) On the R004 tree the golden file passes (27 tests) and `git status` shows no change to `packages/cloudflare/test/__snapshots__/contract-golden.test.ts.snap`: every entry is byte-identical. (b) Section 3's run repeated on the R004 tree (every `packages/*/src` file replaced with `git show main:<path>`, `pnpm exec tsc -b` exit 0, then the golden file): the same result as section 3.
+**Golden comparison, re-run.** (a) On the R004 tree the golden file passes (27 tests) and `git status` shows no change to `packages/cloudflare/test/__snapshots__/contract-golden.test.ts.snap`: every entry is byte-identical. (b) Section 3's run repeated on the R004 tree (every `packages/*/src` file replaced with `git show main:<path>`, `pnpm exec tsc -b` exit 0, then the golden file): the same result as section 3 had then. History, before R012: section 3 now holds R015's re-run, which differs on four entries.
 
 ```
   packages/cloudflare/test/contract-golden.test.ts (27 tests | 2 failed)
@@ -466,3 +469,76 @@ No workerd, no facilitator and no chain are available to the crew; every test is
 - Abort over the service binding: whether a service binding honours the abort signal, and what the settle route does when it is aborted (O001).
 - The native timer on workerd: PS:2779 runs the real `AbortSignal.timeout` in Node only (O001).
 - First-burst interleaving on a cold workerd isolate: the cold-start tests use Node's interleaving (O001).
+
+## 13. R012 and R013: review round 2 of 7e81768, M2, M1 and M3
+
+Written by R015 on `04828e6` (`git rev-parse --short HEAD`). Line numbers here are at that tree. R015 changes this file only. CHANGELOG lines are in `packages/cloudflare/CHANGELOG.md`.
+
+### R012 (commit `c6d1e92`): rows A11 and A12
+
+**A11, the error-only 402** (CHANGELOG:18). For `settle-unconfirmed` and `no-transaction-id` the payer may already have paid, so the 402 carries no offer.
+
+- The two reasons: `MAYBE_PAID`, HONO:630.
+- The answer: HONO:708-719. One header is set, `cache-control: no-store` (HONO:714); the body is `{ x402Version: 1, error }` (HONO:715-718). It returns before the offer is built (HONO:720 onward), so there is no `x-payment-required`, no `accepts`, no `options`, no `price_usd` and no Stripe `link`.
+- The new `settle-unconfirmed` text: HONO:624-625. It replaces `…do not pay again, contact the operator`. The `no-transaction-id` text (HONO:618) is unchanged.
+- Golden entries `no tx id` and `unconfirmed` (GOLD:201-202) changed with it; section 3 shows both now differ from main.
+
+**A12, the map of unconfirmed payments** (CHANGELOG:19).
+
+- Constants: `UNCONFIRMED_CAP = DAMP_CAP` (512) at CF:124, `UNCONFIRMED_TTL_MS = 600_000` (10 minutes) at CF:125. The comment at CF:116-123 calls the age limit a judgment, not a measurement.
+- The map: CF:312, payment key to the time of its last unconfirmed answer.
+- Written by `answerUnconfirmed` (CF:410-413) through `remember` (CF:199; capped, oldest out). Its callers are the row 3a paths; the timeout path is CF:575.
+- Read at CF:554-559, before the `seenPayments` write (CF:560) and the `payerFails` write (CF:564): while an entry is younger than the limit, a payer-class settle answer for that payment is `settle-unconfirmed` again, not cached, not counted. The entry's time is not renewed there. An entry at or past the limit is deleted (CF:558).
+- A confirmed settle deletes the entry: CF:468.
+- `_sizes()` reports `unconfirmed`: CF:620.
+
+**Pinning tests** (PS; names as grep prints them).
+
+| Row | Test | Line |
+|---|---|---|
+| A11 | `rows 2 and 3a (R012 M2): the maybe-paid 402 is error-only: no x-payment-required, no accepts, no options, no price` | PS:986 |
+| A11 | golden entries `no tx id` and `unconfirmed` | GOLD:201-202 |
+| A11 (text) | the `settle-unconfirmed` text in `packages/hono/test/payment-errors.test.ts` | :90 |
+| A12 | `row 3a (R012 M2): timeout, then the same payment answered ${name} → settle-unconfirmed again, not cached, payerFails 0` (run for row 6 and row 7, PS:1028-1031) | PS:1032 |
+| A12 | `row 3a (R012 M2): through the middleware, timeout then nonce-used on the retry is the unconfirmed 402 again` | PS:1064 |
+| A12 | `R012 M2: an unconfirmed entry expires at UNCONFIRMED_TTL_MS, and an answer in between does not renew it` | PS:1079 |
+| A12 | `R012 M2: the unconfirmed map is capped at UNCONFIRMED_CAP, oldest out` | PS:1111 |
+
+Red/green as recorded in `c6d1e92`'s message, not re-run by R015: the six new R012 tests fail on the source before it and pass on the diff; three mutants (limit `<` to `<=`, cap removed, delete-on-success removed) were each killed.
+
+### R013 (commit `926bb12`): rows A9, A10 and A13
+
+**The numbers (M1).** Both are named constants. Both are reasoned from the route budget (verify 10 s + settle 10 s + receipt write), NOT measured, owner approval pending.
+
+- **A9** (CHANGELOG:16): `SETTLE_TIMEOUT_MS = 25_000`, CF:106; used at CF:434 (`AbortSignal.timeout(SETTLE_TIMEOUT_MS)`). Reasoning in the comment at CF:92-104: the data-api settle route awaits the facilitator's verify, then its settle, each with its own 10 s timeout, then writes the receipt, so a call that succeeds can take about 20 s plus the write. 25 s clears that case; the 10 s of R002 did not. NOT measured, owner approval pending.
+- **A10** (CHANGELOG:17): `RESERVATION_TTL_MS = 45_000`, CF:115; comment at CF:107-113. It is the settle timeout plus a 20 s margin. Read for reservations at CF:304 (`liveReservations`). NOT measured, owner approval pending.
+
+**A13, the age limit on `inflight`** (CHANGELOG:20, M3). The limit is `RESERVATION_TTL_MS`, so it has the same status: NOT measured, owner approval pending.
+
+- An entry is `{ atMs, p }`: CF:288-289.
+- On read, CF:360-373: a copy joins the settle only while the entry is younger than the limit (CF:362); an entry at or past it is deleted (CF:372) and the request goes on as a new attempt.
+- Swept with the reservations when a new settle starts: CF:401-402.
+- A new entry is stamped at CF:579-580.
+- The `finally` removes only its own entry, by identity (CF:605), so a settle that answers late leaves a newer entry for the same payment alone.
+- Known limit, CF:284-287: a custom `fetch` that ignores the abort signal can still be running at that age, and the payment then gets a second settle call.
+
+**Also in `926bb12` (L1):** the non-2xx body read rethrows a timeout (`isTimeout`, CF:196-197; the rethrow, CF:444). Section 11 gives its tests.
+
+**Pinning tests** (PS).
+
+| Row | Test | Line |
+|---|---|---|
+| A9, 25 s | `R002 M1 test 6: a hung settle is aborted at SETTLE_TIMEOUT_MS → settle-unconfirmed (row 3a, R006), not served, nonce not cached`; the value is asserted at PS:2666 (`expect(SETTLE_TIMEOUT_MS).toBe(25_000)`) | PS:2656 |
+| A9, 25 s | `R013 L2: the native AbortSignal.timeout(SETTLE_TIMEOUT_MS) ends a hung settle, and a stalled non-2xx body, as settle-unconfirmed (real timer, 25 s)` | PS:2779 |
+| A10, 45 s | `R002 M1 test 3: hung payers at 5/s for 60 s leave 5 x RESERVATION_TTL_MS/1000 (225) reservations and inflight entries, not 300; 0 after the bound and a sweep`; the value is asserted at PS:2582 (`expect(5 * TTL_S).toBe(225)`, so 45 s) | PS:2560 |
+| A10 | `R002 M1 test 1: 3 settles that never answer; once RESERVATION_TTL_MS has passed the payer is served again` | PS:2479 |
+| A13 | `R002 M1 test 4: a copy of an in-flight payment still joins it one ms before RESERVATION_TTL_MS: one settle call, served once` | PS:2605 |
+| A13 | `R013 M3: the same payment sent again RESERVATION_TTL_MS after a settle that never returns gets one new settle call and an answer` | PS:2703 |
+| A13 | `R013 M3: 51 dead settles leave no inflight entry after the limit and a sweep` | PS:2730 |
+| A13 | `R013 M3: a settle that answers after its entry expired does not remove the newer entry for the same payment` | PS:2744 |
+
+The six `R002 M1` tests have moved since section 8b listed them: they are now at PS:2479, 2508, 2560, 2605, 2632 and 2656, and tests 3 and 4 were renamed by R013. They take both values from the source (PS:2435-2437). No test asserts the literal `45_000`; PS:2582 pins it through 5 x 45 = 225.
+
+R015 ran none of these tests. The only run R015 made is the golden comparison in section 3.
+
+**Still stale, not R015's to edit:** spec.md and pr-body.md still carry the 10 s and 30 s values (queued as R016 and R017).
