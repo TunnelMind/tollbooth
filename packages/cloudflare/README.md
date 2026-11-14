@@ -82,6 +82,19 @@ config or binding error, failed open otherwise, as before) and the next
 request builds again. Each isolate still has its own state; across isolates
 only the chain refuses a reused nonce.
 
+The same is true inside one isolate once the replay cache has turned over.
+The cache of payments already seen holds 512 entries, oldest out. At the
+settle bucket's rate (5 calls per second) 512 other settled payments pass in
+about 100 s, and a payment can live longer than that (up to 300 s plus the
+clock-skew allowance). After the turnover a
+replay of a settled payment is no longer answered locally: it takes a bucket
+token and a settle call, as it does on another isolate. From then on replay
+safety rests on the settle route refusing a spent nonce. That refusal was
+read in the route's code, not run against a facilitator. A settle route
+that answers a spent nonce as settled again (an idempotent route) would
+serve such a replay twice, so do not make it one without changing this
+cache.
+
 Each settle answer is classified by this table; the first row that matches
 wins. Operator rows never burn the payer's nonce or cooldown, so the same
 `X-PAYMENT` can be retried once settlement is healthy.
@@ -140,7 +153,8 @@ answer for that same payment (typically "nonce used", because the first
 transfer did land) is answered `settle-unconfirmed` again: not cached, not
 counted toward the payer's cooldown. Each such retry is still a settle call
 and a bucket token. The 512 and the 10 minutes are judgments, not
-measurements. Known cost: a payer in this state is served only once the
+measurements. (The replay cache has the same 512 cap and turns over in about
+100 s at the bucket rate; see above for what a replay then rests on.) Known cost: a payer in this state is served only once the
 settle route confirms that payment; if the route keeps refusing the spent
 nonce, the payer has paid and must contact the operator. A settle in
 flight stops counting toward its payer's limit after 45 s (the timeout plus

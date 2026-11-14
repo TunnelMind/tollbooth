@@ -392,12 +392,12 @@ No flake. Biome prints 1 warning and 4 infos, all in files this branch does not 
   any payment provider, facilitator, chain RPC or Stripe endpoint. Keys were fixed test
   seeds inside the temp copy.
 - The worktree was not changed (`git status --short` empty before and after; head 2abd077).
-  Nothing was pushed or commented. Nothing under ~/.crew/runs/ was read.
-- The temp copy /home/o2k/.crew/coord/review-tmp/fso1o4 (git archive copies of head and
+  Nothing was pushed or commented. Nothing under the crew's runs directory was read.
+- The temp copy <review-temp-dir>/fso1o4 (git archive copies of head and
   main, copied node_modules, probe files, logs) was removed and its absence checked. Other
-  files in ~/.crew/coord/review-tmp/ are not mine and were not touched.
+  files in <review-temp-dir> are not mine and were not touched.
 - Left behind: this report, and my probe scripts in the session scratchpad
-  C:\Users\o2k_m\AppData\Local\Temp\claude\0e8fb1d9fd1149ee\b1fb3e3f-547a-4d31-9987-7f9a7cba7e8f\scratchpad\
+  <review-temp-dir>/scratchpad/ (a separate session directory, not the removed copy above)
   (zzlib.ts, zz-fuzz.test.ts, zz-probe.test.ts, zz-golden.test.ts, zz-extra.test.ts,
   zz-win.test.ts, fs_*.sh, fs_*.py).
 - Stripe code: none removed.

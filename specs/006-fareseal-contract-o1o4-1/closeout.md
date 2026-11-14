@@ -1,6 +1,8 @@
 # Closeout: fareseal-contract-o1o4-1 (FR-010)
 
-Branch `crew/fareseal-contract-o1o4-1` at HEAD `ed98127`, on main `6825c30`. Written by T010 (2026-11-13) at `2d680f1`; updated by R003 (2026-11-13) on `ed98127` (section 9). Updated by R004 (2026-11-13) on `7f87051` (section 10); the branch head is then `7f87051` plus the R004 commit. Sections 8a and 8b (R001 and R002) were added by R007 (2026-11-13) on `a2681ea`, with line numbers at that tree.
+Branch `crew/fareseal-contract-o1o4-1`, on main `6825c30`. The head that review round 2 read is `7e81768` (second-review-7e81768.md). The R-task commits made after it (R012 onward) are listed by `git log 7e81768..HEAD`; a file cannot name the commit that carries it.
+
+History of this file, not a head claim: written by T010 (2026-11-13) at `2d680f1`; section 9 by R003 on `ed98127`; section 10 by R004 on `7f87051`; sections 8a and 8b (R001 and R002) by R007 on `a2681ea`, with line numbers at that tree; sections 11 and 12 by R014 on `926bb12`.
 
 Short names: CF = `packages/cloudflare/src/index.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, GOLD = `packages/cloudflare/test/contract-golden.test.ts`, BUDGET = `packages/cloudflare/test/settle-budget.test.ts`. Line numbers in sections 1 to 8 are as T010 wrote them, at `2d680f1`; R001 to R003 have moved CF and PS lines since. Line numbers in section 9 are at `ed98127` plus the R003 change. Line numbers in section 10 are at `7f87051` plus the R004 change.
 
@@ -191,7 +193,7 @@ packages/hono/src/index.ts:730:      c.header("retry-after", String(rejected.ret
 $ tsc -b
 $ vitest run
 
- RUN  v4.1.12 /home/o2k/.crew/work/fareseal-contract-o1o4-1/code
+ RUN  v4.1.12 <worktree>
 
 
  Test Files  58 passed (58)
@@ -231,7 +233,7 @@ This is local verify only. GitHub CI on the draft PR is GATE F's check (SC-001).
 
 ## 8. Not done, and whose
 
-All of these are the owner's (**O001**, Josh). No agent does them.
+All of these are the owner's (**O001**). No agent does them.
 
 - Live facilitator measurements. Every settle answer in this work is an in-process stub.
 - workerd / Pages measurements. The tests call `createPagesMiddleware` in Node under vitest.
@@ -354,7 +356,7 @@ AssertionError: expected 'settlement status unconfirmed; do not…' to be 'payer
 
 **L2.** spec.md line 51 (R-O4 "Bound") and line 90 (US4) now state both bounds as ruled at T005: 3 settle calls for a lone early nonce against a lagging facilitator (first attempt, due attempt, one ordinary retry under row A5), 2 for a payer who is cooled down or reserved out. Same wording as the README and the CHANGELOG. Edited on the supervisor's R003 brief. spec.md line 50 (R-O4 "How it is counted") and table row A7 (line 70) now carry the cap too, in the README's words: the put-back happens at most twice, and the third operator-fault answer for one hold drops the hold. Rows A5 and A6 are unchanged.
 
-**L3.** Line 3 of this file names `ed98127`, the head this update was written on. The R003 commit itself comes after it; its sha cannot be written inside it.
+**L3.** At R003, line 3 of this file named the commit that update was written on as the head; the R003 commit came after it, so the claim was stale as soon as it was committed (review round 2, L6). Corrected by R014: line 3 now names the round-2 review head `7e81768` and points to `git log` for the commits after it (section 11).
 
 **Also changed, outside the brief's file list, on purpose.** `packages/cloudflare/CHANGELOG.md`, entry A7: the bound added, since the entry said the hold is put back with no limit. The supervisor has confirmed it stays.
 
@@ -428,3 +430,39 @@ The review's cold failures (seeds 1, 5, 7) are reproduced on `7f87051` source an
 **Full verify** (the section 6 command) on `7f87051` plus the R004 change, in the worktree, 2026-11-13: **58 test files, 793 tests passed** (790 + the 3 above), bun-hono example OK, bench NFR-1 PASS (added p50 0.012 ms, p99 0.043 ms), exit code **0**. `pnpm lint`: the same 1 warning and 4 infos as section 6, no error.
 
 **Could not determine.** Whether workerd delivers a cold isolate's first requests in the interleaving the tests use (several requests entering the handler before the first build's await resumes). No workerd here; the tests are Node under vitest, as in section 8. The shared build removes the fault whatever the interleaving.
+
+## 11. R014: review round 2 of 7e81768, docs and lows
+
+Written on `926bb12` (`git rev-parse --short HEAD`), with the R014 change in the worktree. Line numbers here are at that tree. R014 changes no file under `packages/*/src`.
+
+**Head line (round 2 L6, round 1 L3).** Line 3 of this file named two older commits as the head. It now names `7e81768`, the head review round 2 read, and points to `git log 7e81768..HEAD` for the R-task commits after it. The per-section commit notes stay as history. The L3 note in section 9 is corrected the same way.
+
+**L1 (a timeout during a non-2xx body read) was closed by R013, commit `926bb12`.** It is not a known gap. The non-2xx body read now rethrows a timeout, so the README and CHANGELOG A9 sentences ("the read of its body, whatever the status"; "a 2xx or a non-2xx body alike") are true as written and R014 does not change them. Pinned by:
+
+- PS:966 `row 3a (R013 L1): HTTP ${status} headers, then the timeout fires during the body read → settle-unconfirmed, not cached, not counted` (run for 502 and 400).
+- PS:2779 `R013 L2: the native AbortSignal.timeout(SETTLE_TIMEOUT_MS) ends a hung settle, and a stalled non-2xx body, as settle-unconfirmed (real timer, 25 s)`.
+
+**L3 (two surviving ledger mutants): both now killed.** The review ran 20 mutants on the fix lines: 18 killed, 2 survived. R014 adds two tests to `packages/core/test/ledger.test.ts` and ran those 2 mutants again; the other 18 were not re-run. Each mutant was made in a throwaway copy (`crew-scratch`, one `sed` deleting the line), never in the worktree.
+
+| Source | `ledger.test.ts` result | Failing test | Failure |
+|---|---|---|---|
+| HEAD `926bb12` | 13 passed / 13 | none | |
+| LEDGER:67 deleted (`roll` keeps the held start) | 1 failed / 12 passed | `recordOffer's window roll restarts the held window, it does not carry the old start over` | `expected 1 to be 2` |
+| LEDGER:114 deleted (`recordPaid` keeps the held start) | 1 failed / 12 passed | `recordPaid clears the held window's start, not only its count` | `expected 1 to be 2` |
+
+Why the older tests missed them: after a roll or a payment the held count is 0 either way. Only the window's end differs, and that shows in a later held repeat that is inside the restarted window but more than one window after the old start. Result for the review's set, if its other 18 still hold: 20 of 20 killed.
+
+**L4 (replay-cache turnover): stated, not changed.** The in-isolate replay cache holds 512 entries, oldest out (`DAMP_CAP`, CF:79; read at CF:334). At the bucket rate, 5 settle calls per second (CF:85), 512 other settled payments pass in about 100 s (the review's probe P7: 98.6 s). A payment can live up to 300 s plus the skew allowance, so a settled payment can outlive its cache entry. After the turnover a replay of it is not answered locally: it takes a bucket token and a settle call. Replay safety then rests on the settle route refusing a spent nonce. The review read that in the data-api route (`fareseal-settle.js:106-107`); it was read only, not run against a facilitator, and R014 did not read it again. This is the same in one isolate and across isolates. The README now says so in the paragraph on one state per isolate, with a pointer from the row 3a paragraph. The route was not made idempotent, and the README says it must not be without changing this cache. Same on main.
+
+**Paths and names (L6).** This repo is public. Replaced with neutral wording: the worktree path in section 6's vitest banner (`<worktree>`); the owner's first name in section 8; the local temp and scratchpad paths in second-review-2abd077.md's disclosure (`<review-temp-dir>`); the local coordinator path in spec.md line 5 (`<coord>/…`, on the coordinator's ruling; nothing else in spec.md). Not changed, by the brief: tasks.md and second-review-7e81768.md, which still carry the first name and local paths, and the first name elsewhere in spec.md (lines 3, 10, 13, 150).
+
+## 12. R014: what cannot be tested here
+
+No workerd, no facilitator and no chain are available to the crew; every test is Node under vitest with a stub settle route. Each item below is the owner's (**O001**, tasks.md:18).
+
+- Cross-isolate behaviour: each test has one isolate's state, so what two isolates do with one payment is not run (O001).
+- The late on-chain settle: whether a transfer lands after the toll's timeout needs a real facilitator and chain (O001).
+- Runtime cancellation: whether workerd cancels the settle fetch and skips `finally` when the client disconnects (O001).
+- Abort over the service binding: whether a service binding honours the abort signal, and what the settle route does when it is aborted (O001).
+- The native timer on workerd: PS:2779 runs the real `AbortSignal.timeout` in Node only (O001).
+- First-burst interleaving on a cold workerd isolate: the cold-start tests use Node's interleaving (O001).

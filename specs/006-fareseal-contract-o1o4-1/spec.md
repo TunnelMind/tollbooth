@@ -2,7 +2,7 @@
 
 **Source:** Josh's prompt (2026-11-13), brought from another chat. Josh: "3 = yes on Fareseal O1, O2, O3 and O4." and "draft PRs, merges stay mine".
 **Options defined in:** `specs/005-fareseal-pay-lows-2/spec.md` "Open Questions" and its `closeout.md` (merged with tollbooth#16, main `6825c30`).
-**Second review in scope:** `~/.crew/coord/fix5/fareseal-pay-lows-2-second-review.md` (PASS with lows L1–L5, on f24a66e).
+**Second review in scope:** `<coord>/fareseal-pay-lows-2-second-review.md` (PASS with lows L1–L5, on f24a66e).
 **Base:** main `6825c30`. CF = `packages/cloudflare/src/index.ts`, PS = `packages/cloudflare/test/pages-settle.test.ts`, HONO = `packages/hono/src/index.ts`, PIPE = `packages/core/src/pipeline.ts`, LEDGER = `packages/core/src/ledger.ts`, README = `packages/cloudflare/README.md`, CHANGELOG = `packages/cloudflare/CHANGELOG.md`. Line numbers are at `6825c30`.
 
 ## Intent

@@ -165,4 +165,33 @@ describe("D-3 offer ledger", () => {
     expect(ledger.get("k")?.heldInWindow).toBe(0);
     expect(ledger.recordHeld("k", 11, 1000)).toBe(1);
   });
+
+  // R014 (second review 2, L3). The two tests above read only the count,
+  // which is 0 after a roll or a payment whether or not the held window's
+  // start was dropped too. A start that is carried over ends the next held
+  // window early (more free held repeats). The end is only visible through
+  // a later recordHeld: one that is inside the restarted window but more
+  // than windowMs after the old start.
+  it("recordOffer's window roll restarts the held window, it does not carry the old start over", () => {
+    const ledger = new OfferLedger(10);
+    ledger.recordOffer("k", 0, 1000);
+    expect(ledger.recordHeld("k", 900, 1000)).toBe(1); // held window opens at 900
+    ledger.recordOffer("k", 1500, 1000); // offer window rolls mid held-window
+    expect(ledger.recordHeld("k", 1600, 1000)).toBe(1); // reopens at 1600
+    // 2000 is 400 ms into the new held window and 1100 ms after the old start.
+    expect(ledger.recordHeld("k", 2000, 1000)).toBe(2);
+    expect(ledger.recordHeld("k", 2600, 1000)).toBe(3); // edge: 1600 + 1000
+    expect(ledger.recordHeld("k", 2601, 1000)).toBe(1);
+  });
+
+  it("recordPaid clears the held window's start, not only its count", () => {
+    const ledger = new OfferLedger(10);
+    expect(ledger.recordHeld("k", 0, 1000)).toBe(1); // held window opens at 0
+    ledger.recordPaid("k", 500);
+    expect(ledger.recordHeld("k", 600, 1000)).toBe(1); // reopens at 600
+    // 1100 is 500 ms into the new held window and 1100 ms after the old start.
+    expect(ledger.recordHeld("k", 1100, 1000)).toBe(2);
+    expect(ledger.recordHeld("k", 1600, 1000)).toBe(3); // edge: 600 + 1000
+    expect(ledger.recordHeld("k", 1601, 1000)).toBe(1);
+  });
 });
