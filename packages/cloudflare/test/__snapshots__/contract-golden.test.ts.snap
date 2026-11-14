@@ -1,0 +1,586 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`golden contract (spec 006 FR-001) > 2xx HTML 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > 400 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settle failed","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > 404 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > 500 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > JSON that is not a payment 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"malformed X-PAYMENT header","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > amount too low 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"amount too low","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > cooldown 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"payer cooling down after repeated failures; retry later","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > early 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"authorization not yet valid","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > expired 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"authorization expired","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > fourth concurrent payment (A1) 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"payer cooling down after repeated failures; retry later","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > garbage 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"malformed X-PAYMENT header","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > held 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"authorization not yet valid","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "retry-after",
+      "55",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > human pass (200) 1`] = `
+{
+  "body": "site content",
+  "headers": [
+    [
+      "content-type",
+      "text/plain;charset=UTF-8",
+    ],
+  ],
+  "status": 200,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > mazed agent (302) 1`] = `
+{
+  "body": "",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "location",
+      "/.well-known/fareseal-maze/",
+    ],
+  ],
+  "status": 302,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > no payment 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"X-PAYMENT header is required","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > no token 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > no tx id 1`] = `
+{
+  "body": "{"x402Version":1,"error":"settle failed: no transaction id"}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > replay 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"facilitator rejected: insufficient_funds","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > replay after success 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"nonce already used","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > retryable 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > success 1`] = `
+{
+  "body": "site content",
+  "headers": [
+    [
+      "content-type",
+      "text/plain;charset=UTF-8",
+    ],
+    [
+      "x-payment-response",
+      "eyJzdWNjZXNzIjp0cnVlLCJ0cmFuc2FjdGlvbiI6IjB4YWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYmFiYWJhYiIsIm5ldHdvcmsiOiJiYXNlLXNlcG9saWEiLCJwYXllciI6IjB4YWJjIn0=",
+    ],
+  ],
+  "status": 200,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > three concurrent failures 1`] = `
+[
+  {
+    "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"facilitator rejected: insufficient_funds","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+    "headers": [
+      [
+        "cache-control",
+        "no-store",
+      ],
+      [
+        "content-type",
+        "application/json",
+      ],
+      [
+        "x-payment-required",
+        "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+      ],
+    ],
+    "status": 402,
+  },
+  {
+    "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"facilitator rejected: insufficient_funds","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+    "headers": [
+      [
+        "cache-control",
+        "no-store",
+      ],
+      [
+        "content-type",
+        "application/json",
+      ],
+      [
+        "x-payment-required",
+        "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+      ],
+    ],
+    "status": 402,
+  },
+  {
+    "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"facilitator rejected: insufficient_funds","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+    "headers": [
+      [
+        "cache-control",
+        "no-store",
+      ],
+      [
+        "content-type",
+        "application/json",
+      ],
+      [
+        "x-payment-required",
+        "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+      ],
+    ],
+    "status": 402,
+  },
+]
+`;
+
+exports[`golden contract (spec 006 FR-001) > throttled 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > too early 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"authorization not yet valid","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > unconfirmed 1`] = `
+{
+  "body": "{"x402Version":1,"error":"settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator"}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > unfunded 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"facilitator rejected: insufficient_funds","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;
+
+exports[`golden contract (spec 006 FR-001) > unreachable 1`] = `
+{
+  "body": "{"v":1,"price_usd":"0.001","options":[{"method":"x402","network":"base-sepolia","pay_to":"0x1111111111111111111111111111111111111111","price_usd":"0.001"}],"x402Version":1,"error":"settlement unavailable (operator fault); retry the same payment","accepts":[{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}]}",
+  "headers": [
+    [
+      "cache-control",
+      "no-store",
+    ],
+    [
+      "content-type",
+      "application/json",
+    ],
+    [
+      "x-payment-required",
+      "{"scheme":"exact","network":"base-sepolia","maxAmountRequired":"1000","resource":"https://site.example/research","description":"Paid access to this resource (fareseal toll)","mimeType":"application/json","payTo":"0x1111111111111111111111111111111111111111","asset":"0x036CbD53842c5426634e7929541eC2318f3dCF7e","maxTimeoutSeconds":300,"outputSchema":null,"extra":{"name":"USDC","version":"2"}}",
+    ],
+  ],
+  "status": 402,
+}
+`;

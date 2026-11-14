@@ -70,6 +70,13 @@ export interface X402VerifyResult {
   reason?: string;
   /** On-chain transaction hash, when a settling verifier has one. */
   transaction?: string;
+  /**
+   * Whole seconds until a held payment's validAfter. Set only on a held
+   * refusal (`ok: false`, the verifier is holding an early payment and
+   * answered without a settle call); the 402 then carries it as
+   * a `Retry-After` header. Absent on every other result.
+   */
+  retryAfterS?: number;
 }
 
 /** @tunnelmindai/fareseal-maze's makeMazeHandler satisfies this structurally. */
@@ -610,11 +617,17 @@ const PAYMENT_ERRORS: Record<string, string> = {
   "payer-cooldown": "payer cooling down after repeated failures; retry later",
   "no-transaction-id": "settle failed: no transaction id",
   "settle-failed": "settle failed",
-  // A non-2xx that claimed settled:true: money may have moved, so never
-  // "retry the same payment" (R002 L7).
+  // A non-2xx that claimed settled:true, or a settle that timed out: money
+  // may have moved. Sending the SAME payment again is safe (one EIP-3009
+  // nonce moves money at most once) and is how the payer gets served once
+  // settlement answers; signing a new one could pay twice (R012 M2).
   "settle-unconfirmed":
-    "settlement status unconfirmed; do not pay again, contact the operator",
+    "settlement status unconfirmed; do not sign a new payment; the same payment may be retried, or contact the operator",
 };
+
+// Rejections where the payer may already have paid (README table rows 2 and
+// 3a). Their 402 is error-only, see offerResponse.
+const MAYBE_PAID = new Set(["no-transaction-id", "settle-unconfirmed"]);
 
 export function paymentError(reason?: string): string {
   if (reason === undefined) return "payment rejected";
@@ -688,6 +701,22 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
     // option (AC-2.1). The body carries both dialects: x402 v1 clients read
     // x402Version/error/accepts, older pre-rename clients read v/price_usd/
     // options - no key is shared, so each ignores the other's fields.
+    // R012 (second review 2, M2): a payment that may already have moved
+    // money gets no offer at all: no x-payment-required, no accepts, no
+    // options, no Stripe link. A client that acts on `accepts` without
+    // reading the error text would sign a NEW payment and could pay twice.
+    if (
+      c.req.header("x-payment") !== undefined &&
+      rejected?.ok === false &&
+      rejected.reason !== undefined &&
+      MAYBE_PAID.has(rejected.reason)
+    ) {
+      c.header("cache-control", "no-store");
+      return c.json(
+        { x402Version: 1, error: paymentError(rejected.reason) },
+        402,
+      );
+    }
     let x402Body = {};
     if (x402 && cfg.toll.x402.enabled) {
       const { headers, requirement } = x402.buildOffer(cfg, resourceOf(c));
@@ -712,6 +741,15 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
         "link",
         `<${cfg.toll.stripe.payment_link}>; rel="payment"; title="stripe-voucher"`,
       );
+    // A held early payment: tell the payer when the same payment can be
+    // retried. Only here, so a 302 consequence never carries it.
+    if (
+      c.req.header("x-payment") !== undefined &&
+      rejected?.ok === false &&
+      Number.isSafeInteger(rejected.retryAfterS) &&
+      (rejected.retryAfterS as number) > 0
+    )
+      c.header("retry-after", String(rejected.retryAfterS));
     // An offer is per-request (price, payment state): never cache a 402.
     c.header("cache-control", "no-store");
     return c.json({ ...body, ...x402Body }, 402);
@@ -866,7 +904,10 @@ export function fareseal(options: FaresealOptions): MiddlewareHandler {
       const nowSec = nowS ?? Math.floor(Date.now() / 1000);
       const agentKey =
         decision.identity?.kind === "agent" ? decision.identity.agentKey : null;
-      const state = agentKey === null ? undefined : ledger.get(agentKey);
+      // usableState, not get: an entry only held repeats have written has
+      // no offer window, and must not date the receipt (R005).
+      const state =
+        agentKey === null ? undefined : ledger.usableState(agentKey);
       const window = state
         ? {
             count: Math.max(state.offersInWindow, 1),

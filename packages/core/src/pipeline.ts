@@ -93,6 +93,14 @@ export type VerifyPayment = (
   | { ok: boolean; payer: string | null; reason?: string }
   | Promise<{ ok: boolean; payer: string | null; reason?: string }>;
 
+/**
+ * R-O3: held repeats per verified agent key per offer window that record no
+ * offer. validAfter is at most skew_tolerance (default 60 s) ahead of our
+ * clock, so an honest agent polling once a second on its one early payment
+ * makes at most 60 and is never mazed for waiting. Not a config key.
+ */
+const HELD_REPEATS_FREE = 60;
+
 const OPERATOR_FAULTS = new Set([
   "settle-retryable",
   "settle-throttled",
@@ -368,6 +376,9 @@ export async function decide(
   // mazed while it waits; the first answer, which reached the facilitator,
   // did record one. Unlike the no-offer faults it still meets step 7, so an
   // agent already mazed stays mazed by repeating one held payment.
+  // R-O3: only the first HELD_REPEATS_FREE repeats per key per window are
+  // free. After that each one records an offer, or a throwaway payment
+  // would hold the offer open for as long as the hold lasts.
   let ledgerOffer = true;
   if (req.payment !== undefined && deps.verifyPayment) {
     const paid = await deps.verifyPayment(req.payment);
@@ -380,7 +391,14 @@ export async function decide(
     // check, no ledger.
     if (isNoOfferFault(paid.reason))
       return { action: "offer", identity, body: buildOfferBody(cfg) };
-    ledgerOffer = paid.reason !== "not-yet-valid-held";
+    if (paid.reason === "not-yet-valid-held") {
+      // Anonymous traffic is never ledgered, here or at step 8 (spec sec 8).
+      ledgerOffer =
+        identity.kind === "agent" &&
+        deps.ledger !== undefined &&
+        deps.ledger.recordHeld(identity.agentKey, nowMs, cfg.toll.window) >
+          HELD_REPEATS_FREE;
+    }
   }
 
   // Step 7: grace offers ignored within the window -> the consequence

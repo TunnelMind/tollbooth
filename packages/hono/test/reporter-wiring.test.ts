@@ -4,6 +4,7 @@
 import { buildOffer, verifyProof } from "@tunnelmindai/fareseal-adapter-x402";
 import {
   generateSecretKey,
+  mintVoucher,
   publicKeyOf,
   type Receipt,
   ReceiptReporter,
@@ -122,6 +123,111 @@ describe("receipt emission wiring", () => {
     await vi.waitFor(() => expect(reporter.queued).toBe(1));
     await reporter.flush();
     expect(batches[0]?.map((r) => r.type)).toEqual(["PASS_PAID"]);
+  });
+
+  // R005: a held early-payment repeat writes a ledger entry with no offer
+  // window. It must not date a later receipt. A held repeat is an offer and
+  // emits no receipt itself, so the receipt read here is the key's next
+  // one: a voucher bound to another key, rejected (VOUCHER_MISMATCH).
+  it("R005: a held-only ledger entry does not set the receipt window", async () => {
+    const secret = generateSecretKey();
+    const site: SiteKeyPair = { secret, pub: await publicKeyOf(secret) };
+    const batches: Receipt[][] = [];
+    const reporter = new ReceiptReporter({
+      url: "https://log.test/ingest",
+      autoFlush: false,
+      fetchFn: (async (_url: RequestInfo | URL, init?: RequestInit) => {
+        batches.push(
+          (JSON.parse(init?.body as string) as { receipts: Receipt[] })
+            .receipts,
+        );
+        return new Response("", { status: 200 });
+      }) as typeof fetch,
+    });
+    const agent = await makeAgent();
+    const other = await makeAgent();
+    const clock = { now: NOW };
+    const app = new Hono();
+    app.use(
+      fareseal({
+        config: CFG,
+        siteKeys: site,
+        reporter,
+        x402: {
+          buildOffer,
+          // Every payment is the local repeat of one held early payment.
+          verifyProof: async () => ({
+            ok: false,
+            payer: null,
+            reason: "not-yet-valid-held",
+          }),
+        },
+        fetchDirectory: dirWith(agent.jwk),
+        nowS: () => clock.now,
+      }),
+    );
+    app.get("*", (c) => c.text("content"));
+    const asAgent = async () => {
+      const wba = await signedRequest(agent, {
+        created: clock.now,
+        expires: clock.now + 60,
+      });
+      return {
+        "user-agent": "curl/8.7.1",
+        accept: "*/*",
+        signature: wba.signature,
+        "signature-input": wba.signatureInput,
+        "signature-agent": wba.signatureAgent,
+      };
+    };
+    const get = (headers: Record<string, string>) =>
+      app.request("http://example.com/article", { headers });
+
+    // P is first held under another identity (anonymous: never ledgered)...
+    expect(
+      (
+        await get({
+          "user-agent": "curl/8.7.1",
+          accept: "*/*",
+          "x-payment": "P",
+        })
+      ).status,
+    ).toBe(402);
+    // ...then repeated twice under agent key A: A's entry is held-only.
+    for (let i = 0; i < 2; i++)
+      expect(
+        (await get({ ...(await asAgent()), "x-payment": "P" })).status,
+      ).toBe(402);
+    expect(reporter.queued).toBe(0);
+
+    // Later, A's first receipt-bearing request.
+    clock.now = NOW + 30;
+    const stolen = await mintVoucher(
+      {
+        agentKey: other.jwk.x,
+        credits: 5,
+        expiresS: clock.now + 3600,
+        nowS: clock.now,
+      },
+      secret,
+    );
+    expect(
+      (await get({ ...(await asAgent()), "fareseal-voucher": stolen })).status,
+    ).toBe(403);
+    await vi.waitFor(() => expect(reporter.queued).toBe(1));
+    await reporter.flush();
+
+    const receipt = batches[0]?.[0];
+    if (!receipt) throw new Error("no receipt");
+    expect(receipt.type).toBe("VOUCHER_MISMATCH");
+    expect(receipt.agent_key).toBe(agent.jwk.x);
+    // What main signs for this request: no usable entry, so the window is
+    // the request's own second (nowSec), not the first held repeat's.
+    const nowIso = new Date(clock.now * 1000).toISOString();
+    expect(receipt.window_start).toBe(nowIso);
+    expect(receipt.window_end).toBe(nowIso);
+    expect(receipt.count).toBe(1);
+    expect(await verifyReceipt(receipt, site.pub)).toEqual({ ok: true });
   });
 
   it("the report endpoint exposes queue depth and drops", async () => {
